@@ -355,7 +355,8 @@
         "END_R": "\\r 줄 끝",
         "END_N": "\\n 줄 끝",
         "PORT_OPENED": "시리얼 포트가 열렸습니다",
-        "PORT_CLOSED": "시리얼 포트가 닫혔습니다"
+        "PORT_CLOSED": "시리얼 포트가 닫혔습니다",
+        "NO_CHART_DATA": "데이터 없음"
     },
     "MODEL_DEPLOY": {
         "TITLE": "모델 배포",

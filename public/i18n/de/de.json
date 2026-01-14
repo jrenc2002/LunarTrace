@@ -359,7 +359,8 @@
         "END_R": "\\r Zeilenende",
         "END_N": "\\n Zeilenende",
         "PORT_OPENED": "Serieller Port geöffnet",
-        "PORT_CLOSED": "Serieller Port geschlossen"
+        "PORT_CLOSED": "Serieller Port geschlossen",
+        "NO_CHART_DATA": "Keine Daten"
     },
     "MODEL_DEPLOY": {
         "TITLE": "Modellbereitstellung",

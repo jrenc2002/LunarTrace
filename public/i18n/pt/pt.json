@@ -359,7 +359,8 @@
         "END_R": "Fim de linha \\r",
         "END_N": "Fim de linha \\n",
         "PORT_OPENED": "Porta serial aberta",
-        "PORT_CLOSED": "Porta serial fechada"
+        "PORT_CLOSED": "Porta serial fechada",
+        "NO_CHART_DATA": "Sem dados"
     },
     "MODEL_DEPLOY": {
         "TITLE": "Implantação de Modelo",

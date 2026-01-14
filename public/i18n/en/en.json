@@ -411,7 +411,8 @@
         "END_R": "\\r Line Ending",
         "END_N": "\\n Line Ending",
         "PORT_OPENED": "Serial port opened",
-        "PORT_CLOSED": "Serial port closed"
+        "PORT_CLOSED": "Serial port closed",
+        "NO_CHART_DATA": "No data"
     },
     "MODEL_STORE": {
         "TITLE": "Model Store",

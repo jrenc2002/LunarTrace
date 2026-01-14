@@ -21,10 +21,12 @@
     cursor: pointer;
     color: #ddd;
     position: relative;
+    overflow: hidden;
 
     .name {
       white-space: nowrap;
-      flex: 1;
+      // flex: 1;
+      flex-shrink: 0;
       min-width: 0;
     }
 

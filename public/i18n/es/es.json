@@ -359,7 +359,8 @@
         "END_R": "Fin de línea \\r",
         "END_N": "Fin de línea \\n",
         "PORT_OPENED": "Puerto serial abierto",
-        "PORT_CLOSED": "Puerto serial cerrado"
+        "PORT_CLOSED": "Puerto serial cerrado",
+        "NO_CHART_DATA": "Sin datos"
     },
     "MODEL_DEPLOY": {
         "TITLE": "Despliegue de Modelo",

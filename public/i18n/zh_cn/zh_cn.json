@@ -411,7 +411,8 @@
         "END_R": "\\r 结束符",
         "END_N": "\\n 结束符",
         "PORT_OPENED": "串口已打开",
-        "PORT_CLOSED": "串口已关闭"
+        "PORT_CLOSED": "串口已关闭",
+        "NO_CHART_DATA": "暂无数据"
     },
     "MODEL_DEPLOY": {
         "TITLE": "模型部署",

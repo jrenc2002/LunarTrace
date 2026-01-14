@@ -30,6 +30,7 @@ import { SearchBoxComponent } from './components/search-box/search-box.component
 import { Buffer } from 'buffer';
 import { TranslateService, TranslateModule } from '@ngx-translate/core';
 import { ConfigService } from '../../services/config.service';
+import { ElectronService } from '../../services/electron.service';
 
 @Component({
   selector: 'app-serial-monitor',
@@ -152,6 +153,7 @@ export class SerialMonitorComponent {
     private message: NzMessageService,
     private translate: TranslateService,
     private configService: ConfigService,
+    private electronService: ElectronService
   ) { }
 
   async ngOnInit() {
@@ -654,6 +656,15 @@ export class SerialMonitorComponent {
   private chart: IChartApi | null = null;
   private seriesMap: Map<number, ISeriesApi<'Line'>> = new Map();
   private chartDataMap: Map<number, { time: Time; value: number }[]> = new Map();
+
+  // 判断图表是否有数据
+  get hasChartData(): boolean {
+    if (this.chartDataMap.size === 0) return false;
+    for (const data of this.chartDataMap.values()) {
+      if (data.length > 0) return true;
+    }
+    return false;
+  }
   private chartTimeIndex = 0;
   private chartDataSubscription: Subscription | null = null;
   private dataBuffer = ''; // 用于缓存不完整的数据行
@@ -786,8 +797,8 @@ export class SerialMonitorComponent {
       // 使用 Buffer.from 确保正确处理切片数据
       const slicedData = currentData.slice(this.lastProcessedDataLength);
       // 直接转换为字符串，确保使用正确的编码
-      const newDataStr = Buffer.isBuffer(slicedData) 
-        ? slicedData.toString('utf-8') 
+      const newDataStr = Buffer.isBuffer(slicedData)
+        ? slicedData.toString('utf-8')
         : Buffer.from(slicedData).toString('utf-8');
       this.lastProcessedDataLength = currentLength;
       this.processChartData(newDataStr);
@@ -913,5 +924,10 @@ export class SerialMonitorComponent {
       this.chartDataMap.set(index, []);
       series.setData([]);
     });
+  }
+
+
+  openUrl(url) {
+    this.electronService.openUrl(url);
   }
 }

@@ -359,7 +359,8 @@
         "END_R": "\\r 改行",
         "END_N": "\\n 改行",
         "PORT_OPENED": "シリアルポートが開かれました",
-        "PORT_CLOSED": "シリアルポートが閉じられました"
+        "PORT_CLOSED": "シリアルポートが閉じられました",
+        "NO_CHART_DATA": "データがありません"
     },
     "MODEL_DEPLOY": {
         "TITLE": "モデルのデプロイ",
