@@ -69,6 +69,16 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_SIGNING_CERT }}
           p12-password: ${{ secrets.APPLE_SIGNING_PASSWORD }}
 
+      - name: Verify Certificate
+        run: |
+          echo "=== Checking available signing identities ==="
+          security find-identity -v -p codesigning
+          echo ""
+          echo "=== Looking for Developer ID Application certificate ==="
+          security find-identity -v -p codesigning | grep "Developer ID Application" || echo "⚠️  WARNING: No 'Developer ID Application' certificate found!"
+          echo ""
+          echo "Note: 'Developer ID Installer' is for .pkg only, you need 'Developer ID Application' for .app signing"
+
       - name: Compile macOS Executable
         run: |
           npm run build -- --mac
@@ -81,20 +91,163 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-      # --- 验证签名和公证 ---
-      - name: Find DMG and ZIP files
+      # --- 手动签名和公证流程 ---
+      - name: Find built files
         id: find_files
         run: |
           DMG_PATH=$(find dist/aily-blockly -name "*.dmg" -type f | head -n 1)
           ZIP_PATH=$(find dist/aily-blockly -name "*.zip" -type f | head -n 1)
+          APP_PATH=$(find dist/aily-blockly -name "*.app" -type d | head -n 1)
           echo "dmg_path=$DMG_PATH" >> $GITHUB_OUTPUT
           echo "zip_path=$ZIP_PATH" >> $GITHUB_OUTPUT
+          echo "app_path=$APP_PATH" >> $GITHUB_OUTPUT
           echo "Found DMG at: $DMG_PATH"
           echo "Found ZIP at: $ZIP_PATH"
+          echo "Found APP at: $APP_PATH"
 
-      - name: Verify Notarization and Stapling
+      - name: Manual Code Signing
         run: |
-          echo "=== Verifying DMG ==="
+          echo "=== Manual Code Signing ==="
+          
+          # 获取签名身份
+          IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
+          
+          if [ -z "$IDENTITY" ]; then
+            echo "❌ ERROR: No 'Developer ID Application' certificate found!"
+            echo "Available identities:"
+            security find-identity -v -p codesigning
+            echo ""
+            echo "You need to export 'Developer ID Application' certificate from Keychain Access"
+            exit 1
+          fi
+          
+          echo "Using identity: $IDENTITY"
+          
+          # 挂载 DMG
+          DMG_FILE="${{ steps.find_files.outputs.dmg_path }}"
+          echo "Mounting DMG: $DMG_FILE"
+          MOUNT_POINT=$(hdiutil attach "$DMG_FILE" -nobrowse | grep "/Volumes" | awk '{print $3}')
+          echo "Mounted at: $MOUNT_POINT"
+          
+          # 找到 .app
+          APP_IN_DMG=$(find "$MOUNT_POINT" -name "*.app" -type d -maxdepth 1 | head -1)
+          echo "Found app: $APP_IN_DMG"
+          
+          # 复制到临时目录进行签名
+          TEMP_APP="/tmp/app_to_sign"
+          rm -rf "$TEMP_APP"
+          cp -R "$APP_IN_DMG" "$TEMP_APP"
+          
+          # 卸载原 DMG
+          hdiutil detach "$MOUNT_POINT"
+          
+          APP_BUNDLE="$TEMP_APP/$(basename "$APP_IN_DMG")"
+          echo "Signing app bundle: $APP_BUNDLE"
+          
+          # 签名所有二进制文件 (深度签名)
+          echo "Deep signing all binaries..."
+          codesign --deep --force --verbose=4 \
+            --sign "$IDENTITY" \
+            --entitlements "build/entitlements.mac.plist" \
+            --options runtime \
+            --timestamp \
+            "$APP_BUNDLE"
+          
+          echo "Verifying signature..."
+          codesign -dvvv "$APP_BUNDLE"
+          
+          # 重新创建 DMG
+          echo "Creating new signed DMG..."
+          rm -f "$DMG_FILE"
+          hdiutil create -volname "aily blockly" -srcfolder "$TEMP_APP" -ov -format UDZO "$DMG_FILE"
+          
+          # 签名 DMG 本身
+          echo "Signing DMG..."
+          codesign --force --sign "$IDENTITY" --timestamp "$DMG_FILE"
+          
+          echo "✓ Code signing completed!"
+
+      - name: Submit to Apple Notarization
+        id: notarize
+        run: |
+          echo "=== Submitting to Apple for Notarization ==="
+          
+          DMG_FILE="${{ steps.find_files.outputs.dmg_path }}"
+          
+          echo "Submitting: $DMG_FILE"
+          
+          # 提交公证并等待结果
+          xcrun notarytool submit "$DMG_FILE" \
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --password "${{ secrets.APPLE_APP_PASSWORD }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+            --wait \
+            --timeout 30m \
+            2>&1 | tee notarize_output.txt
+          
+          # 提取 submission ID
+          SUBMISSION_ID=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' notarize_output.txt | head -1)
+          echo "submission_id=$SUBMISSION_ID" >> $GITHUB_OUTPUT
+          
+          # 检查结果
+          if grep -q "status: Accepted" notarize_output.txt; then
+            echo "notarize_status=Accepted" >> $GITHUB_OUTPUT
+            echo "✓ Notarization Accepted!"
+          elif grep -q "status: Invalid" notarize_output.txt; then
+            echo "notarize_status=Invalid" >> $GITHUB_OUTPUT
+            echo "✗ Notarization Invalid!"
+          else
+            echo "notarize_status=Unknown" >> $GITHUB_OUTPUT
+            echo "? Notarization status unknown"
+          fi
+          
+          cat notarize_output.txt
+
+      - name: Get Notarization Log (if failed)
+        if: steps.notarize.outputs.notarize_status != 'Accepted'
+        run: |
+          SUBMISSION_ID="${{ steps.notarize.outputs.submission_id }}"
+          if [ -n "$SUBMISSION_ID" ]; then
+            echo "=== Fetching Notarization Log ==="
+            xcrun notarytool log "$SUBMISSION_ID" \
+              --apple-id "${{ secrets.APPLE_ID }}" \
+              --password "${{ secrets.APPLE_APP_PASSWORD }}" \
+              --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+              notarization_log.json || echo "Failed to fetch log"
+            
+            echo "=== Notarization Log ==="
+            cat notarization_log.json
+            
+            echo ""
+            echo "=== Issues Summary ==="
+            python3 -c "
+import json
+with open('notarization_log.json') as f:
+    data = json.load(f)
+    for issue in data.get('issues', []):
+        print(f\"[{issue.get('severity')}] {issue.get('message')}\")
+        print(f\"  Path: {issue.get('path')}\")
+" || cat notarization_log.json
+          fi
+
+      - name: Staple Notarization Ticket
+        if: steps.notarize.outputs.notarize_status == 'Accepted'
+        run: |
+          echo "=== Stapling Notarization Ticket ==="
+          DMG_FILE="${{ steps.find_files.outputs.dmg_path }}"
+          
+          xcrun stapler staple "$DMG_FILE"
+          echo "✓ Stapling completed!"
+          
+          # 验证
+          echo ""
+          echo "=== Verifying Stapled DMG ==="
+          xcrun stapler validate "$DMG_FILE"
+          spctl -a -vvv -t install "$DMG_FILE"
+
+      - name: Verify Final Result
+        run: |
+          echo "=== Final Verification ==="
           DMG_FILE="${{ steps.find_files.outputs.dmg_path }}"
           
           echo "Checking code signature..."
