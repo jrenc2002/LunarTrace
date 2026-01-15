@@ -45,7 +45,7 @@ jobs:
           Write-Host "Embedding icon into executable..."
           Write-Host "Exe path: $exePath"
           Write-Host "Icon path: $iconPath"
-          node -e "require('rcedit')('$exePath', { icon: '$iconPath' }).then(() => console.log('Icon embedded successfully!')).catch(e => { console.error(e); process.exit(1); })"
+          node -e "const rcedit = require('rcedit'); rcedit('$exePath', { icon: '$iconPath' }).then(() => console.log('Icon embedded successfully!')).catch(e => { console.error(e); process.exit(1); })"
         shell: pwsh
 
       - name: Build NSIS Installer
@@ -68,97 +68,97 @@ jobs:
           path: dist/aily-blockly/ # 包含所有输出：exe, yml 等
 
   # 任务 2：macOS 客户端构建
-  build-macos:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
+  # build-macos:
+  #   runs-on: macos-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - name: Use Node.js 22.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.x'
-          cache: 'npm'
+  #     - name: Use Node.js 22.x
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '22.x'
+  #         cache: 'npm'
 
-      - name: Install Dependencies
-        run: |
-          npm install -g @angular/cli
-          npm ci
-          cd electron && npm ci
+  #     - name: Install Dependencies
+  #       run: |
+  #         npm install -g @angular/cli
+  #         npm ci
+  #         cd electron && npm ci
 
-      # --- 导入代码签名证书到 Keychain ---
-      - name: Import Codesign Certificates
-        uses: apple-actions/import-codesign-certs@v2
-        with:
-          p12-file-base64: ${{ secrets.APPLE_SIGNING_CERT }}
-          p12-password: ${{ secrets.APPLE_SIGNING_PASSWORD }}
+  #     # --- 导入代码签名证书到 Keychain ---
+  #     - name: Import Codesign Certificates
+  #       uses: apple-actions/import-codesign-certs@v2
+  #       with:
+  #         p12-file-base64: ${{ secrets.APPLE_SIGNING_CERT }}
+  #         p12-password: ${{ secrets.APPLE_SIGNING_PASSWORD }}
 
-      - name: Verify Certificate Import
-        run: |
-          echo "Available signing identities:"
-          security find-identity -v -p codesigning
-          echo ""
-          IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -n 1)
-          if [ -z "$IDENTITY" ]; then
-            echo "❌ No Developer ID Application certificate found!"
-            exit 1
-          else
-            echo "✅ Found: $IDENTITY"
-          fi
+  #     - name: Verify Certificate Import
+  #       run: |
+  #         echo "Available signing identities:"
+  #         security find-identity -v -p codesigning
+  #         echo ""
+  #         IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -n 1)
+  #         if [ -z "$IDENTITY" ]; then
+  #           echo "❌ No Developer ID Application certificate found!"
+  #           exit 1
+  #         else
+  #           echo "✅ Found: $IDENTITY"
+  #         fi
 
-      # --- 构建 + 签名 + 公证（和本地 Mac 一样） ---
-      - name: Build, Sign & Notarize
-        run: |
-          npm run build -- --mac
-        env:
-          NODE_ENV: production
-          # electron-builder 签名配置
-          CSC_LINK: ${{ secrets.APPLE_SIGNING_CERT }}
-          CSC_KEY_PASSWORD: ${{ secrets.APPLE_SIGNING_PASSWORD }}
-          # Apple 公证配置（electron-builder 要求的变量名）
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+  #     # --- 构建 + 签名 + 公证（和本地 Mac 一样） ---
+  #     - name: Build, Sign & Notarize
+  #       run: |
+  #         npm run build -- --mac
+  #       env:
+  #         NODE_ENV: production
+  #         # electron-builder 签名配置
+  #         CSC_LINK: ${{ secrets.APPLE_SIGNING_CERT }}
+  #         CSC_KEY_PASSWORD: ${{ secrets.APPLE_SIGNING_PASSWORD }}
+  #         # Apple 公证配置（electron-builder 要求的变量名）
+  #         APPLE_ID: ${{ secrets.APPLE_ID }}
+  #         APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+  #         APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-      # --- 如果 electron-builder 公证失败，手动公证 ---
-      - name: Manual Notarization (if needed)
-        if: always()
-        run: |
-          DMG_PATH=$(find dist/aily-blockly -name "*.dmg" -type f | head -n 1)
+  #     # --- 如果 electron-builder 公证失败，手动公证 ---
+  #     - name: Manual Notarization (if needed)
+  #       if: always()
+  #       run: |
+  #         DMG_PATH=$(find dist/aily-blockly -name "*.dmg" -type f | head -n 1)
           
-          if [ -z "$DMG_PATH" ]; then
-            echo "❌ DMG not found!"
-            exit 1
-          fi
+  #         if [ -z "$DMG_PATH" ]; then
+  #           echo "❌ DMG not found!"
+  #           exit 1
+  #         fi
           
-          echo "Checking if already notarized..."
-          if xcrun stapler validate "$DMG_PATH" 2>/dev/null; then
-            echo "✅ Already notarized and stapled!"
-            exit 0
-          fi
+  #         echo "Checking if already notarized..."
+  #         if xcrun stapler validate "$DMG_PATH" 2>/dev/null; then
+  #           echo "✅ Already notarized and stapled!"
+  #           exit 0
+  #         fi
           
-          echo "Submitting for notarization: $DMG_PATH"
-          xcrun notarytool submit "$DMG_PATH" \
-            --apple-id "${{ secrets.APPLE_ID }}" \
-            --password "${{ secrets.APPLE_APP_PASSWORD }}" \
-            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
-            --wait \
-            --timeout 30m
+  #         echo "Submitting for notarization: $DMG_PATH"
+  #         xcrun notarytool submit "$DMG_PATH" \
+  #           --apple-id "${{ secrets.APPLE_ID }}" \
+  #           --password "${{ secrets.APPLE_APP_PASSWORD }}" \
+  #           --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+  #           --wait \
+  #           --timeout 30m
           
-          echo "Stapling..."
-          xcrun stapler staple "$DMG_PATH"
-          echo "✅ Notarization completed!"
+  #         echo "Stapling..."
+  #         xcrun stapler staple "$DMG_PATH"
+  #         echo "✅ Notarization completed!"
 
-      - name: Final Verification
-        run: |
-          DMG_PATH=$(find dist/aily-blockly -name "*.dmg" -type f | head -n 1)
-          echo "=== Verification ==="
-          xcrun stapler validate "$DMG_PATH" && echo "✅ Notarized" || echo "⚠️ Not notarized"
+  #     - name: Final Verification
+  #       run: |
+  #         DMG_PATH=$(find dist/aily-blockly -name "*.dmg" -type f | head -n 1)
+  #         echo "=== Verification ==="
+  #         xcrun stapler validate "$DMG_PATH" && echo "✅ Notarized" || echo "⚠️ Not notarized"
       
-      - name: Archive macOS Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: AilyBlockly-macOS-Package
-          path: dist/aily-blockly/
+  #     - name: Archive macOS Artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: AilyBlockly-macOS-Package
+  #         path: dist/aily-blockly/
 
   # 任务 3：发布到 GitHub Release
   release:
