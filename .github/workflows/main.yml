@@ -25,9 +25,32 @@ jobs:
           npm ci
           cd electron && npm ci
 
-      - name: Compile Windows Executable
+      - name: Build Angular App
         run: |
-          npm run build -- --win
+          ng build --base-href ./
+        env:
+          NODE_ENV: production
+
+      - name: Build Windows Unpacked
+        run: |
+          npx electron-builder build --win --dir
+        env:
+          NODE_ENV: production
+
+      - name: Embed Icon into Executable
+        run: |
+          $exePath = "dist/aily-blockly/win-unpacked/aily blockly.exe"
+          $iconPath = "public/icon.ico"
+          Write-Host "Embedding icon into executable..."
+          Write-Host "Exe path: $exePath"
+          Write-Host "Icon path: $iconPath"
+          npx rcedit "$exePath" --set-icon "$iconPath"
+          Write-Host "Icon embedded successfully!"
+        shell: pwsh
+
+      - name: Build NSIS Installer
+        run: |
+          npx electron-builder build --win nsis --prepackaged "dist/aily-blockly/win-unpacked"
         env:
           NODE_ENV: production
 

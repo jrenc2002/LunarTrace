@@ -28,9 +28,7 @@
     },
     "files": [
       "!**/*",
-      "package.json",
-      "public/icon.ico",
-      "public/icon-512.ico"
+      "package.json"
     ],
     "extraResources": [
       {
