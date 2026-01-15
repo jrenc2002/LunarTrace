@@ -45,7 +45,29 @@ jobs:
           Write-Host "Embedding icon into executable..."
           Write-Host "Exe path: $exePath"
           Write-Host "Icon path: $iconPath"
-          node -e "const rceditModule = require('rcedit'); const rcedit = typeof rceditModule === 'function' ? rceditModule : rceditModule.default; rcedit('$exePath', { icon: '$iconPath' }).then(() => console.log('Icon embedded successfully!')).catch(e => { console.error(e); process.exit(1); })"
+          
+          # Create a temporary script to handle rcedit properly
+          @"
+          const rceditModule = require('rcedit');
+          console.log('rcedit module type:', typeof rceditModule);
+          console.log('rcedit module keys:', Object.keys(rceditModule));
+          
+          // rcedit exports an object with the function as a property
+          const rcedit = rceditModule.default || rceditModule.rcedit || rceditModule;
+          
+          (async () => {
+            try {
+              await rcedit('$exePath', { icon: '$iconPath' });
+              console.log('Icon embedded successfully!');
+            } catch (e) {
+              console.error('Error:', e);
+              process.exit(1);
+            }
+          })();
+          "@ | Out-File -FilePath "embed-icon.js" -Encoding utf8
+          
+          node embed-icon.js
+          Remove-Item -Path "embed-icon.js" -Force
         shell: pwsh
 
       - name: Build NSIS Installer
