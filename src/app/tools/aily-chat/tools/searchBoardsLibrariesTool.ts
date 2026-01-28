@@ -487,7 +487,8 @@ export const searchBoardsLibrariesTool = {
                 resultContent += `[${index + 1}]\n`;
                 resultContent += `name: ${item.name}\n`;
                 resultContent += `displayName: ${item.displayName}\n`;
-                if (dataFormat !== 'new') {
+                // 始终显示description（新格式从旧数据关联获取）
+                if (item.description) {
                     resultContent += `description: ${item.description}\n`;
                 }
                 
@@ -921,7 +922,12 @@ function searchInNewBoards(
             // 从旧数据中查找description（如果新数据中没有）
             let description = (board as any).description;
             if (!description && oldBoardsData) {
-                const oldBoard = oldBoardsData.find(ob => ob.name === board.name);
+                // 处理新旧格式name差异：新格式 "board-xxx"，旧格式 "@aily-project/board-xxx"
+                const oldBoard = oldBoardsData.find(ob => 
+                    ob.name === board.name || 
+                    ob.name === `@aily-project/${board.name}` ||
+                    ob.name.endsWith(`/${board.name}`)
+                );
                 description = oldBoard?.description;
             }
             description = description || `${board.brand} ${board.displayName}`;
@@ -1219,7 +1225,12 @@ function searchInNewLibraries(
             // 从旧数据中查找description（如果新数据中没有）
             let description = (lib as any).description;
             if (!description && oldLibrariesData) {
-                const oldLib = oldLibrariesData.find(ol => ol.name === lib.name);
+                // 处理新旧格式name差异：新格式 "lib-xxx"，旧格式 "@aily-project/lib-xxx"
+                const oldLib = oldLibrariesData.find(ol => 
+                    ol.name === lib.name || 
+                    ol.name === `@aily-project/${lib.name}` ||
+                    ol.name.endsWith(`/${lib.name}`)
+                );
                 description = oldLib?.description;
             }
             description = description || lib.displayName;

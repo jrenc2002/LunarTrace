@@ -277,7 +277,7 @@
         "SETTINGS": "Paramètres IA",
         "HISTORY": "Historique des discussions",
         "NEW_CHAT": "Nouvelle discussion",
-        "SERVICE_TITLE": "aily assistant service",
+        "SERVICE_TITLE": "ai assistant service",
         "DISCLAIMER": "Les réponses de l'IA sont fournies à titre de référence uniquement et peuvent ne pas être exactes. Elles ne représentent pas les opinions des développeurs du logiciel. Les utilisateurs doivent vérifier les informations par eux-mêmes.",
         "ADD_CONTEXT": "Ajouter un contexte",
         "ADD_FILE": "Ajouter un fichier",
@@ -338,6 +338,7 @@
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "Paramètres du Projet",
         "PINMAP": "Schéma des Broches",
+        "CIRCUIT": "Schéma de Câblage",
         "DOCUMENTATION": "Documentation",
         "FEEDBACK": "Retour d'information",
         "NO_PINMAP": "Schéma des broches non disponible pour cette carte",
@@ -473,5 +474,63 @@
         "LOGIN_SUCCESS": "Connexion réussie",
         "LOGIN_FAILED": "Échec de la connexion",
         "LOGIN_NETWORK_ERROR": "Échec de la connexion, veuillez vérifier la connexion réseau"
+    },
+    "COMMON": {
+        "FEATURE_COMING_SOON": "Fonctionnalité bientôt disponible"
+    },
+    "NPM": {
+        "INSTALLING": "Installation de {{name}}...",
+        "INSTALLING_DEPENDENCY": "Installation de la dépendance {{name}}...",
+        "INSTALL_TIMEOUT": "Délai d'installation dépassé",
+        "INSTALL_COMPLETE": "{{name}} installé avec succès",
+        "INSTALL_FAILED": "Échec de l'installation de {{name}}",
+        "UNINSTALLING": "Désinstallation de {{name}}...",
+        "UNINSTALLING_UNUSED_DEPS": "Désinstallation des dépendances inutilisées...",
+        "UNINSTALL_TIMEOUT": "Délai de désinstallation dépassé",
+        "UNINSTALL_COMPLETE": "{{name}} désinstallé avec succès",
+        "BOARD_INSTALL_COMPLETE": "Carte installée avec succès",
+        "BOARD_UNINSTALL_COMPLETE": "Carte désinstallée avec succès",
+        "BOARD_DEPS_INSTALL_COMPLETE": "Dépendances de la carte installées avec succès",
+        "BOARD_DEPS_INSTALL_FAILED": "Échec de l'installation des dépendances de la carte",
+        "DEPS_UNINSTALL_COMPLETE": "Dépendances désinstallées avec succès",
+        "DEPS_UNINSTALL_FAILED": "Échec de la désinstallation des dépendances",
+        "NAME_REQUIRED": "Le nom de {{type}} ne peut pas être vide",
+        "TYPE_TOOL": "Outil",
+        "TYPE_SDK": "SDK",
+        "TYPE_COMPILER": "Compilateur",
+        "INSTALLING_TITLE": "Installation",
+        "INSTALL_COMPLETE_TITLE": "Installation Terminée",
+        "INSTALL_FAILED_TITLE": "Échec de l'Installation",
+        "UNINSTALLING_TITLE": "Désinstallation",
+        "UNINSTALL_COMPLETE_TITLE": "Désinstallation Terminée",
+        "UNINSTALL_FAILED_TITLE": "Échec de la Désinstallation"
+    },
+    "BLOCKLY_EDITOR": {
+        "INSTALLING_DEPS": "Installation des dépendances",
+        "LOADING_BOARD_CONFIG": "Chargement de la configuration de la carte",
+        "LOADING_BLOCKLY_LIB": "Chargement des bibliothèques Blockly",
+        "LOADING_LIB": "Chargement de {{name}}",
+        "LOADING_BLOCKLY_PROGRAM": "Chargement du programme Blockly",
+        "PROJECT_LOAD_SUCCESS": "Projet chargé avec succès"
+    },
+    "PLAYGROUND": {
+        "LOADING_EXAMPLE": "Chargement de l'exemple...",
+        "EXAMPLE_LOAD_SUCCESS": "Exemple chargé avec succès",
+        "EXAMPLE_LOAD_FAILED": "Échec du chargement de l'exemple",
+        "NO_TUTORIAL_PROVIDED": "L'auteur de la bibliothèque n'a pas fourni de tutoriel"
+    },
+    "PROJECT": {
+        "CANNOT_OPEN_PROJECT": "Impossible d'ouvrir le projet: ",
+        "CREATING_PROJECT": "Création du projet...",
+        "PROJECT_CREATED": "Projet créé avec succès",
+        "PATH_NOT_EXIST": "Le chemin du projet n'existe pas, veuillez sélectionner un autre projet",
+        "SWITCHING_BOARD_CONFIG": "Changement de la configuration de la carte...",
+        "BOARD_SWITCH_COMPLETE": "Changement de carte terminé",
+        "BOARD_SWITCH_SUCCESS": "Carte changée avec succès",
+        "SWITCHING_BOARD": "Changement de carte...",
+        "UNINSTALLING_CURRENT_BOARD": "Désinstallation de la carte actuelle...",
+        "INSTALLING_NEW_BOARD": "Installation de la nouvelle carte...",
+        "UPDATING_PROJECT_CONFIG": "Mise à jour de la configuration du projet...",
+        "BOARD_SWITCH_FAILED": "Échec du changement de carte: "
     }
 }

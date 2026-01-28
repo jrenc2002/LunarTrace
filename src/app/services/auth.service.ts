@@ -14,6 +14,7 @@ export interface CommonResponse {
 export interface LoginRequest {
   username: string;
   password: string;
+  altcha?: string;
 }
 
 export interface LoginResponse {

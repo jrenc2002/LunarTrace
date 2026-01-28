@@ -119,4 +119,8 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
   openHistory() {
     this.uiService.openHistory();
   }
+
+  showCircuit() {
+    this.message.info(this.translate.instant('FLOAT_SIDER.CIRCUIT') + ' ' + this.translate.instant('COMMON.FEATURE_COMING_SOON'));
+  }
 }

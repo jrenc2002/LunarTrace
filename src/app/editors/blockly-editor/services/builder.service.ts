@@ -101,10 +101,10 @@ export class _BuilderService {
         return;
       }
 
-      // 互斥条件2：编译或上传进行中不触发自动预编译
+      // 互斥条件2：编译、上传或依赖安装进行中不触发自动预编译
       const currentState = this.workflowService.currentState;
-      if (currentState === ProcessState.BUILDING || currentState === ProcessState.UPLOADING) {
-        console.log('编译/上传进行中，跳过自动预编译');
+      if (currentState === ProcessState.BUILDING || currentState === ProcessState.UPLOADING || currentState === ProcessState.INSTALLING) {
+        console.log('编译/上传/依赖安装进行中，跳过自动预编译');
         return;
       }
 

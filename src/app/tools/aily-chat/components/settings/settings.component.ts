@@ -10,7 +10,7 @@ import { NzSwitchModule } from 'ng-zorro-antd/switch';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { TOOLS } from '../../tools/tools';
 import { ElectronService } from '../../../../services/electron.service';
-import { AilyChatConfigService, WorkspaceSecurityOption, ModelConfigOption, ApiKeyConfig } from '../../services/aily-chat-config.service';
+import { AilyChatConfigService, WorkspaceSecurityOption, ModelConfigOption } from '../../services/aily-chat-config.service';
 
 @Component({
   selector: 'aily-chat-settings',
@@ -35,15 +35,6 @@ export class AilyChatSettingsComponent implements OnInit {
   // 最大循环次数
   maxCount: number = 100;
 
-  // API配置管理
-  apiKeysList: ApiKeyConfig[] = [];
-  showAddApiKeyForm = false;
-  newApiKey = {
-    name: '',
-    baseUrl: '',
-    apiKey: ''
-  };
-
   // 工具列表配置
   availableTools: Array<{name: string, displayName: string, description: string, enabled: boolean}> = [];
   allChecked = false;
@@ -59,15 +50,15 @@ export class AilyChatSettingsComponent implements OnInit {
   allModelsChecked = false;
   modelsIndeterminate = false;
   
-  // 添加模型表单
+  // 添加/编辑模型表单
   newModel = {
     model: '',
     name: '',
-    family: '',
-    speed: '1x',
-    apiKeyId: null as string | null
+    baseUrl: '',
+    apiKey: ''
   };
   showAddModelForm = false;
+  editingModel: ModelConfigOption | null = null; // 当前正在编辑的模型
 
   /**
    * 获取启用的工具数量
@@ -103,9 +94,6 @@ export class AilyChatSettingsComponent implements OnInit {
   private loadAllConfig() {
     // 加载配置
     this.maxCount = this.ailyChatConfigService.maxCount;
-    
-    // 加载API配置
-    this.apiKeysList = [...this.ailyChatConfigService.apiKeys];
   }
 
   /**
@@ -227,119 +215,23 @@ export class AilyChatSettingsComponent implements OnInit {
     this.updateModelsAllChecked();
   }
 
-  // ==================== API密钥管理方法 ====================
-
   /**
-   * 显示/隐藏添加API密钥表单
-   */
-  toggleAddApiKeyForm(): void {
-    this.showAddApiKeyForm = !this.showAddApiKeyForm;
-    if (!this.showAddApiKeyForm) {
-      this.resetNewApiKeyForm();
-    }
-  }
-
-  /**
-   * 重置添加API密钥表单
-   */
-  private resetNewApiKeyForm(): void {
-    this.newApiKey = {
-      name: '',
-      baseUrl: '',
-      apiKey: ''
-    };
-  }
-
-  /**
-   * 添加API密钥
-   */
-  addApiKey(): void {
-    if (!this.newApiKey.name || !this.newApiKey.baseUrl || !this.newApiKey.apiKey) {
-      this.message.warning('请填写完整的API密钥信息');
-      return;
-    }
-
-    // 检查名称是否已存在
-    if (this.apiKeysList.some(k => k.name === this.newApiKey.name)) {
-      this.message.warning('该配置名称已存在');
-      return;
-    }
-
-    const newApiKeyConfig = this.ailyChatConfigService.addApiKey(this.newApiKey);
-    this.apiKeysList.push(newApiKeyConfig);
-    this.resetNewApiKeyForm();
-    this.showAddApiKeyForm = false;
-    this.message.success('API密钥已添加');
-  }
-
-  /**
-   * 删除API密钥
-   */
-  removeApiKey(apiKeyId: string): void {
-    const apiKey = this.apiKeysList.find(k => k.id === apiKeyId);
-    if (!apiKey) {
-      return;
-    }
-
-    // 检查是否有关联的模型
-    const associatedModels = this.modelList.filter(m => m.apiKeyId === apiKeyId);
-    if (associatedModels.length > 0) {
-      this.message.warning(`该API密钥有${associatedModels.length}个关联模型，无法删除`);
-      return;
-    }
-
-    if (this.ailyChatConfigService.removeApiKey(apiKeyId)) {
-      this.apiKeysList = this.apiKeysList.filter(k => k.id !== apiKeyId);
-      this.message.success('API密钥已删除');
-    }
-  }
-
-  /**
-   * 切换API密钥启用状态
-   */
-  toggleApiKeyEnabled(apiKeyId: string): void {
-    const apiKey = this.apiKeysList.find(k => k.id === apiKeyId);
-    if (apiKey) {
-      apiKey.enabled = !apiKey.enabled;
-      this.ailyChatConfigService.toggleApiKeyEnabled(apiKeyId);
-
-      this.modelList.forEach(model => {
-        if (model.apiKeyId === apiKeyId) {
-          model.enabled = apiKey.enabled;
-        }
-      });
-      this.updateModelsAllChecked();
-    }
-  }
-
-  /**
-   * 检查API密钥是否有效
-   */
-  isApiKeyValid(apiKeyId: string): boolean {
-    return this.ailyChatConfigService.isApiKeyValid(apiKeyId);
-  }
-
-  /**
-   * 获取API密钥显示名称
-   */
-  getApiKeyName(apiKeyId: string): string {
-    return this.ailyChatConfigService.getApiKeyName(apiKeyId);
-  }
-
-  /**
-   * 显示/隐藏添加模型表单
+   * 关闭模型表单（取消按钮）
    */
   toggleAddModelForm(): void {
-    // 检查是否有配置API密钥
-    if (!this.showAddModelForm && this.apiKeysList.length === 0) {
-      this.message.warning('请先配置API密钥');
-      return;
-    }
+    this.showAddModelForm = false;
+    this.resetNewModelForm();
+  }
 
-    this.showAddModelForm = !this.showAddModelForm;
-    if (!this.showAddModelForm) {
+  /**
+   * 打开添加模型表单（添加按钮）
+   */
+  openAddModelForm(): void {
+    // 如果正在编辑，先重置
+    if (this.editingModel) {
       this.resetNewModelForm();
     }
+    this.showAddModelForm = true;
   }
 
   /**
@@ -349,35 +241,75 @@ export class AilyChatSettingsComponent implements OnInit {
     this.newModel = {
       model: '',
       name: '',
-      family: '',
-      speed: '1x',
-      apiKeyId: null
+      baseUrl: '',
+      apiKey: ''
     };
+    this.editingModel = null;
   }
 
   /**
-   * 添加自定义模型
+   * 编辑模型
+   */
+  editModel(model: ModelConfigOption): void {
+    if (!model.isCustom) {
+      this.message.warning('不能编辑内置模型');
+      return;
+    }
+    this.editingModel = model;
+    this.newModel = {
+      model: model.model,
+      name: model.name,
+      baseUrl: model.baseUrl || '',
+      apiKey: model.apiKey || ''
+    };
+    this.showAddModelForm = true;
+  }
+
+  /**
+   * 添加或更新自定义模型
    */
   addCustomModel(): void {
-    if (!this.newModel.model || !this.newModel.name || !this.newModel.family || !this.newModel.apiKeyId) {
+    if (!this.newModel.model || !this.newModel.name || !this.newModel.baseUrl || !this.newModel.apiKey) {
       this.message.warning('请填写完整的模型信息');
       return;
     }
 
-    // 检查模型id是否已存在
+    // 编辑模式
+    if (this.editingModel) {
+      // 如果模型ID变更，检查新ID是否与其他模型冲突
+      if (this.newModel.model !== this.editingModel.model && 
+          this.modelList.some(m => m.model === this.newModel.model)) {
+        this.message.warning('该模型ID已存在');
+        return;
+      }
+
+      // 更新模型配置
+      this.editingModel.model = this.newModel.model;
+      this.editingModel.name = this.newModel.name;
+      this.editingModel.baseUrl = this.newModel.baseUrl;
+      this.editingModel.apiKey = this.newModel.apiKey;
+
+      this.resetNewModelForm();
+      this.showAddModelForm = false;
+      this.message.success('模型已更新');
+      return;
+    }
+
+    // 添加模式：检查模型id是否已存在
     if (this.modelList.some(m => m.model === this.newModel.model)) {
-      this.message.warning('该模型id已存在');
+      this.message.warning('该模型ID已存在');
       return;
     }
 
     const newModelConfig: ModelConfigOption = {
       model: this.newModel.model,
       name: this.newModel.name,
-      family: this.newModel.family,
-      speed: this.newModel.speed,
+      family: 'custom',
+      speed: '1x',
       enabled: true,
       isCustom: true,
-      apiKeyId: this.newModel.apiKeyId
+      baseUrl: this.newModel.baseUrl,
+      apiKey: this.newModel.apiKey
     };
 
     this.modelList.push(newModelConfig);
@@ -411,9 +343,6 @@ export class AilyChatSettingsComponent implements OnInit {
   async onSave() {
     // 保存配置
     this.ailyChatConfigService.maxCount = this.maxCount;
-
-    // 保存API配置
-    this.ailyChatConfigService.apiKeys = this.apiKeysList;
 
     // 保存启用的工具列表
     const enabledTools = this.availableTools.filter(t => t.enabled).map(t => t.name);

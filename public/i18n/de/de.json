@@ -277,7 +277,7 @@
         "SETTINGS": "KI-Einstellungen",
         "HISTORY": "Chat-Verlauf",
         "NEW_CHAT": "Neuer Chat",
-        "SERVICE_TITLE": "aily assistant service",
+        "SERVICE_TITLE": "ai assistant service",
         "DISCLAIMER": "KI-Antworten dienen nur als Referenz und sind möglicherweise nicht genau. Sie repräsentieren nicht die Meinungen der Software-Entwickler. Benutzer sollten die Informationen selbst überprüfen.",
         "ADD_CONTEXT": "Kontext hinzufügen",
         "ADD_FILE": "Datei hinzufügen",
@@ -338,6 +338,7 @@
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "Projekteinstellungen",
         "PINMAP": "Pin-Belegung",
+        "CIRCUIT": "Schaltplan",
         "DOCUMENTATION": "Dokumentation",
         "FEEDBACK": "Feedback",
         "NO_PINMAP": "Pin-Belegung für dieses Board nicht verfügbar",
@@ -473,5 +474,63 @@
         "LOGIN_SUCCESS": "Anmeldung erfolgreich",
         "LOGIN_FAILED": "Anmeldung fehlgeschlagen",
         "LOGIN_NETWORK_ERROR": "Anmeldung fehlgeschlagen, bitte überprüfen Sie die Netzwerkverbindung"
+    },
+    "COMMON": {
+        "FEATURE_COMING_SOON": "Funktion demnächst verfügbar"
+    },
+    "NPM": {
+        "INSTALLING": "{{name}} wird installiert...",
+        "INSTALLING_DEPENDENCY": "{{name}}-Abhängigkeit wird installiert...",
+        "INSTALL_TIMEOUT": "Installations-Timeout",
+        "INSTALL_COMPLETE": "{{name}} erfolgreich installiert",
+        "INSTALL_FAILED": "{{name}} Installation fehlgeschlagen",
+        "UNINSTALLING": "{{name}} wird deinstalliert...",
+        "UNINSTALLING_UNUSED_DEPS": "Nicht mehr benötigte Abhängigkeiten werden deinstalliert...",
+        "UNINSTALL_TIMEOUT": "Deinstallations-Timeout",
+        "UNINSTALL_COMPLETE": "{{name}} erfolgreich deinstalliert",
+        "BOARD_INSTALL_COMPLETE": "Board erfolgreich installiert",
+        "BOARD_UNINSTALL_COMPLETE": "Board erfolgreich deinstalliert",
+        "BOARD_DEPS_INSTALL_COMPLETE": "Board-Abhängigkeiten erfolgreich installiert",
+        "BOARD_DEPS_INSTALL_FAILED": "Board-Abhängigkeiten Installation fehlgeschlagen",
+        "DEPS_UNINSTALL_COMPLETE": "Abhängigkeiten erfolgreich deinstalliert",
+        "DEPS_UNINSTALL_FAILED": "Abhängigkeiten Deinstallation fehlgeschlagen",
+        "NAME_REQUIRED": "{{type}}-Name darf nicht leer sein",
+        "TYPE_TOOL": "Werkzeug",
+        "TYPE_SDK": "SDK",
+        "TYPE_COMPILER": "Compiler",
+        "INSTALLING_TITLE": "Installation",
+        "INSTALL_COMPLETE_TITLE": "Installation Abgeschlossen",
+        "INSTALL_FAILED_TITLE": "Installation Fehlgeschlagen",
+        "UNINSTALLING_TITLE": "Deinstallation",
+        "UNINSTALL_COMPLETE_TITLE": "Deinstallation Abgeschlossen",
+        "UNINSTALL_FAILED_TITLE": "Deinstallation Fehlgeschlagen"
+    },
+    "BLOCKLY_EDITOR": {
+        "INSTALLING_DEPS": "Abhängigkeiten werden installiert",
+        "LOADING_BOARD_CONFIG": "Board-Konfiguration wird geladen",
+        "LOADING_BLOCKLY_LIB": "Blockly-Bibliotheken werden geladen",
+        "LOADING_LIB": "{{name}} wird geladen",
+        "LOADING_BLOCKLY_PROGRAM": "Blockly-Programm wird geladen",
+        "PROJECT_LOAD_SUCCESS": "Projekt erfolgreich geladen"
+    },
+    "PLAYGROUND": {
+        "LOADING_EXAMPLE": "Beispiel wird geladen...",
+        "EXAMPLE_LOAD_SUCCESS": "Beispiel erfolgreich geladen",
+        "EXAMPLE_LOAD_FAILED": "Beispiel konnte nicht geladen werden",
+        "NO_TUTORIAL_PROVIDED": "Der Bibliotheksautor hat kein Tutorial bereitgestellt"
+    },
+    "PROJECT": {
+        "CANNOT_OPEN_PROJECT": "Projekt kann nicht geöffnet werden: ",
+        "CREATING_PROJECT": "Projekt wird erstellt...",
+        "PROJECT_CREATED": "Projekt erfolgreich erstellt",
+        "PATH_NOT_EXIST": "Projektpfad existiert nicht, bitte wählen Sie ein anderes Projekt",
+        "SWITCHING_BOARD_CONFIG": "Board-Konfiguration wird gewechselt...",
+        "BOARD_SWITCH_COMPLETE": "Board-Wechsel abgeschlossen",
+        "BOARD_SWITCH_SUCCESS": "Board erfolgreich gewechselt",
+        "SWITCHING_BOARD": "Board wird gewechselt...",
+        "UNINSTALLING_CURRENT_BOARD": "Aktuelles Board wird deinstalliert...",
+        "INSTALLING_NEW_BOARD": "Neues Board wird installiert...",
+        "UPDATING_PROJECT_CONFIG": "Projektkonfiguration wird aktualisiert...",
+        "BOARD_SWITCH_FAILED": "Board-Wechsel fehlgeschlagen: "
     }
 }

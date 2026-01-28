@@ -277,7 +277,7 @@
         "SETTINGS": "AI設定",
         "HISTORY": "チャット履歴",
         "NEW_CHAT": "新しいチャット",
-        "SERVICE_TITLE": "aily assistant service",
+        "SERVICE_TITLE": "ai assistant service",
         "DISCLAIMER": "AIの回答は参考用であり、必ずしも正確ではありません。ソフトウェア開発者の意見を表すものではなく、ユーザー自身で判断してください。",
         "ADD_CONTEXT": "コンテキストを追加",
         "ADD_FILE": "ファイルを追加",
@@ -338,6 +338,7 @@
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "プロジェクト設定",
         "PINMAP": "ピン配置図",
+        "CIRCUIT": "回路接続図",
         "DOCUMENTATION": "ドキュメント",
         "FEEDBACK": "フィードバック",
         "NO_PINMAP": "このボードのピン配置図は利用できません",
@@ -473,5 +474,63 @@
         "LOGIN_SUCCESS": "ログイン成功",
         "LOGIN_FAILED": "ログイン失敗",
         "LOGIN_NETWORK_ERROR": "ログインに失敗しました。ネットワーク接続を確認してください"
+    },
+    "COMMON": {
+        "FEATURE_COMING_SOON": "機能は近日公開予定"
+    },
+    "NPM": {
+        "INSTALLING": "{{name}}をインストール中...",
+        "INSTALLING_DEPENDENCY": "{{name}}の依存関係をインストール中...",
+        "INSTALL_TIMEOUT": "インストールタイムアウト",
+        "INSTALL_COMPLETE": "{{name}}のインストールが完了しました",
+        "INSTALL_FAILED": "{{name}}のインストールに失敗しました",
+        "UNINSTALLING": "{{name}}をアンインストール中...",
+        "UNINSTALLING_UNUSED_DEPS": "不要な依存関係をアンインストール中...",
+        "UNINSTALL_TIMEOUT": "アンインストールタイムアウト",
+        "UNINSTALL_COMPLETE": "{{name}}のアンインストールが完了しました",
+        "BOARD_INSTALL_COMPLETE": "ボードのインストールが完了しました",
+        "BOARD_UNINSTALL_COMPLETE": "ボードのアンインストールが完了しました",
+        "BOARD_DEPS_INSTALL_COMPLETE": "ボードの依存関係のインストールが完了しました",
+        "BOARD_DEPS_INSTALL_FAILED": "ボードの依存関係のインストールに失敗しました",
+        "DEPS_UNINSTALL_COMPLETE": "依存関係のアンインストールが完了しました",
+        "DEPS_UNINSTALL_FAILED": "依存関係のアンインストールに失敗しました",
+        "NAME_REQUIRED": "{{type}}名は空にできません",
+        "TYPE_TOOL": "ツール",
+        "TYPE_SDK": "SDK",
+        "TYPE_COMPILER": "コンパイラ",
+        "INSTALLING_TITLE": "インストール中",
+        "INSTALL_COMPLETE_TITLE": "インストール完了",
+        "INSTALL_FAILED_TITLE": "インストール失敗",
+        "UNINSTALLING_TITLE": "アンインストール中",
+        "UNINSTALL_COMPLETE_TITLE": "アンインストール完了",
+        "UNINSTALL_FAILED_TITLE": "アンインストール失敗"
+    },
+    "BLOCKLY_EDITOR": {
+        "INSTALLING_DEPS": "依存関係をインストール中",
+        "LOADING_BOARD_CONFIG": "ボード設定を読み込み中",
+        "LOADING_BLOCKLY_LIB": "Blocklyライブラリを読み込み中",
+        "LOADING_LIB": "{{name}}を読み込み中",
+        "LOADING_BLOCKLY_PROGRAM": "Blocklyプログラムを読み込み中",
+        "PROJECT_LOAD_SUCCESS": "プロジェクトの読み込みが完了しました"
+    },
+    "PLAYGROUND": {
+        "LOADING_EXAMPLE": "サンプルを読み込み中...",
+        "EXAMPLE_LOAD_SUCCESS": "サンプルの読み込みが完了しました",
+        "EXAMPLE_LOAD_FAILED": "サンプルの読み込みに失敗しました",
+        "NO_TUTORIAL_PROVIDED": "ライブラリ作者がチュートリアルを提供していません"
+    },
+    "PROJECT": {
+        "CANNOT_OPEN_PROJECT": "プロジェクトを開けません: ",
+        "CREATING_PROJECT": "プロジェクトを作成中...",
+        "PROJECT_CREATED": "プロジェクトが作成されました",
+        "PATH_NOT_EXIST": "プロジェクトパスが存在しません。別のプロジェクトを選択してください",
+        "SWITCHING_BOARD_CONFIG": "ボード設定を切り替え中...",
+        "BOARD_SWITCH_COMPLETE": "ボードの切り替えが完了しました",
+        "BOARD_SWITCH_SUCCESS": "ボードの切り替えに成功しました",
+        "SWITCHING_BOARD": "ボードを切り替え中...",
+        "UNINSTALLING_CURRENT_BOARD": "現在のボードをアンインストール中...",
+        "INSTALLING_NEW_BOARD": "新しいボードをインストール中...",
+        "UPDATING_PROJECT_CONFIG": "プロジェクト設定を更新中...",
+        "BOARD_SWITCH_FAILED": "ボードの切り替えに失敗しました: "
     }
 }

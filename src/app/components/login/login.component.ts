@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
@@ -10,6 +10,7 @@ import { AuthService } from '../../services/auth.service';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { ElectronService } from '../../services/electron.service';
 import sha256 from 'crypto-js/sha256';
+import { AltchaComponent } from './altcha/altcha.component';
 
 @Component({
   selector: 'app-login',
@@ -20,12 +21,15 @@ import sha256 from 'crypto-js/sha256';
     NzIconModule,
     NzInputModule,
     TranslateModule,
+    AltchaComponent,
   ],
   templateUrl: './login.component.html',
   styleUrl: './login.component.scss'
 })
 export class LoginComponent {
   private destroy$ = new Subject<void>();
+
+  @ViewChild(AltchaComponent) altchaComponent!: AltchaComponent;
 
   showWeChatLogin = false;
   showPhoneLogin = true;
@@ -69,12 +73,36 @@ export class LoginComponent {
     }
   }
 
+  /**
+   * 执行 altcha 隐式验证
+   * @returns Promise<string | null> 返回验证 token，验证失败返回 null
+   */
+  private async verifyAltcha(): Promise<string | null> {
+    if (!this.altchaComponent) {
+      // 如果 altcha 组件不存在，允许继续（向后兼容）
+      return null;
+    }
+
+    try {
+      const token = await this.altchaComponent.triggerVerification();
+      return token;
+    } catch (error) {
+      console.error('Altcha 验证失败:', error);
+      this.message.error(this.translate.instant('LOGIN.VERIFICATION_FAILED') || '验证失败，请重试');
+      return null;
+    }
+  }
 
   /**
    * 执行实际的GitHub登录流程
    */
   async loginByGithub() {
     try {
+      const altchaToken = await this.verifyAltcha();
+      if (altchaToken === null) {
+        return;
+      }
+
       // 直接通过 HTTP 请求启动 GitHub OAuth 流程
       this.authService.startGitHubOAuth().subscribe({
         next: (response) => {
@@ -105,12 +133,18 @@ export class LoginComponent {
       return;
     }
 
+    const altchaToken = await this.verifyAltcha();
+    if (altchaToken === null) {
+      return;
+    }
+
     this.isWaiting = true;
 
     try {
       const loginData = {
         username: this.inputUsername,
-        password: sha256(this.inputPassword).toString()
+        password: sha256(this.inputPassword).toString(),
+        altcha: altchaToken
       };
 
       this.authService.login(loginData).subscribe({

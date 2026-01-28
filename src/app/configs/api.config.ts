@@ -86,4 +86,6 @@ export const API = {
   // firmware info
   get firmwareInfo() { return `${getServerUrl()}/api/v1/firmware/info`; },
   get downloadFirmware() { return `${getServerUrl()}/api/v1/firmware/download`; },
+  // altcha
+  get altchaChallenge() { return `${getServerUrl()}/api/v1/altcha`; },
 };

@@ -277,7 +277,7 @@
         "SETTINGS": "Configurações de IA",
         "HISTORY": "Histórico de chat",
         "NEW_CHAT": "Novo chat",
-        "SERVICE_TITLE": "aily assistant service",
+        "SERVICE_TITLE": "ai assistant service",
         "DISCLAIMER": "As respostas da IA são apenas para referência e podem não ser precisas. Elas não representam as opiniões dos desenvolvedores do software. Os usuários devem verificar as informações por si mesmos.",
         "ADD_CONTEXT": "Adicionar contexto",
         "ADD_FILE": "Adicionar arquivo",
@@ -338,6 +338,7 @@
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "Configurações do Projeto",
         "PINMAP": "Mapa de Pinos",
+        "CIRCUIT": "Diagrama de Circuito",
         "DOCUMENTATION": "Documentação",
         "FEEDBACK": "Feedback",
         "NO_PINMAP": "Mapa de pinos não disponível para esta placa",
@@ -473,5 +474,63 @@
         "LOGIN_SUCCESS": "Login bem-sucedido",
         "LOGIN_FAILED": "Falha no login",
         "LOGIN_NETWORK_ERROR": "Falha no login, verifique a conexão de rede"
+    },
+    "COMMON": {
+        "FEATURE_COMING_SOON": "Recurso em breve"
+    },
+    "NPM": {
+        "INSTALLING": "Instalando {{name}}...",
+        "INSTALLING_DEPENDENCY": "Instalando dependência {{name}}...",
+        "INSTALL_TIMEOUT": "Tempo de instalação esgotado",
+        "INSTALL_COMPLETE": "{{name}} instalado com sucesso",
+        "INSTALL_FAILED": "Falha ao instalar {{name}}",
+        "UNINSTALLING": "Desinstalando {{name}}...",
+        "UNINSTALLING_UNUSED_DEPS": "Desinstalando dependências não utilizadas...",
+        "UNINSTALL_TIMEOUT": "Tempo de desinstalação esgotado",
+        "UNINSTALL_COMPLETE": "{{name}} desinstalado com sucesso",
+        "BOARD_INSTALL_COMPLETE": "Placa instalada com sucesso",
+        "BOARD_UNINSTALL_COMPLETE": "Placa desinstalada com sucesso",
+        "BOARD_DEPS_INSTALL_COMPLETE": "Dependências da placa instaladas com sucesso",
+        "BOARD_DEPS_INSTALL_FAILED": "Falha ao instalar dependências da placa",
+        "DEPS_UNINSTALL_COMPLETE": "Dependências desinstaladas com sucesso",
+        "DEPS_UNINSTALL_FAILED": "Falha ao desinstalar dependências",
+        "NAME_REQUIRED": "O nome de {{type}} não pode estar vazio",
+        "TYPE_TOOL": "Ferramenta",
+        "TYPE_SDK": "SDK",
+        "TYPE_COMPILER": "Compilador",
+        "INSTALLING_TITLE": "Instalando",
+        "INSTALL_COMPLETE_TITLE": "Instalação Concluída",
+        "INSTALL_FAILED_TITLE": "Instalação Falhou",
+        "UNINSTALLING_TITLE": "Desinstalando",
+        "UNINSTALL_COMPLETE_TITLE": "Desinstalação Concluída",
+        "UNINSTALL_FAILED_TITLE": "Desinstalação Falhou"
+    },
+    "BLOCKLY_EDITOR": {
+        "INSTALLING_DEPS": "Instalando dependências",
+        "LOADING_BOARD_CONFIG": "Carregando configuração da placa",
+        "LOADING_BLOCKLY_LIB": "Carregando bibliotecas Blockly",
+        "LOADING_LIB": "Carregando {{name}}",
+        "LOADING_BLOCKLY_PROGRAM": "Carregando programa Blockly",
+        "PROJECT_LOAD_SUCCESS": "Projeto carregado com sucesso"
+    },
+    "PLAYGROUND": {
+        "LOADING_EXAMPLE": "Carregando exemplo...",
+        "EXAMPLE_LOAD_SUCCESS": "Exemplo carregado com sucesso",
+        "EXAMPLE_LOAD_FAILED": "Falha ao carregar o exemplo",
+        "NO_TUTORIAL_PROVIDED": "O autor da biblioteca não forneceu um tutorial"
+    },
+    "PROJECT": {
+        "CANNOT_OPEN_PROJECT": "Não é possível abrir o projeto: ",
+        "CREATING_PROJECT": "Criando projeto...",
+        "PROJECT_CREATED": "Projeto criado com sucesso",
+        "PATH_NOT_EXIST": "O caminho do projeto não existe, selecione outro projeto",
+        "SWITCHING_BOARD_CONFIG": "Alterando configuração da placa...",
+        "BOARD_SWITCH_COMPLETE": "Troca de placa concluída",
+        "BOARD_SWITCH_SUCCESS": "Placa trocada com sucesso",
+        "SWITCHING_BOARD": "Trocando placa...",
+        "UNINSTALLING_CURRENT_BOARD": "Desinstalando placa atual...",
+        "INSTALLING_NEW_BOARD": "Instalando nova placa...",
+        "UPDATING_PROJECT_CONFIG": "Atualizando configuração do projeto...",
+        "BOARD_SWITCH_FAILED": "Falha ao trocar a placa: "
     }
 }

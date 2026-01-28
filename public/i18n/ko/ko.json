@@ -273,7 +273,7 @@
         "SETTINGS": "AI 설정",
         "HISTORY": "채팅 기록",
         "NEW_CHAT": "새 채팅",
-        "SERVICE_TITLE": "aily assistant service",
+        "SERVICE_TITLE": "ai assistant service",
         "DISCLAIMER": "AI 응답은 참고용이며 정확하지 않을 수 있습니다. 소프트웨어 개발자의 의견을 대표하지 않으며, 사용자는 정보를 직접 확인해야 합니다.",
         "ADD_CONTEXT": "컨텍스트 추가",
         "ADD_FILE": "파일 추가",
@@ -334,6 +334,7 @@
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "프로젝트 설정",
         "PINMAP": "핀 맵",
+        "CIRCUIT": "회로 연결도",
         "DOCUMENTATION": "문서",
         "FEEDBACK": "피드백",
         "NO_PINMAP": "이 보드에 대한 핀 맵을 사용할 수 없습니다",
@@ -469,5 +470,63 @@
         "LOGIN_SUCCESS": "로그인 성공",
         "LOGIN_FAILED": "로그인 실패",
         "LOGIN_NETWORK_ERROR": "로그인 실패, 네트워크 연결을 확인하세요"
+    },
+    "COMMON": {
+        "FEATURE_COMING_SOON": "기능 출시 예정"
+    },
+    "NPM": {
+        "INSTALLING": "{{name}} 설치 중...",
+        "INSTALLING_DEPENDENCY": "{{name}} 의존성 설치 중...",
+        "INSTALL_TIMEOUT": "설치 시간 초과",
+        "INSTALL_COMPLETE": "{{name}} 설치 완료",
+        "INSTALL_FAILED": "{{name}} 설치 실패",
+        "UNINSTALLING": "{{name}} 제거 중...",
+        "UNINSTALLING_UNUSED_DEPS": "사용하지 않는 의존성 제거 중...",
+        "UNINSTALL_TIMEOUT": "제거 시간 초과",
+        "UNINSTALL_COMPLETE": "{{name}} 제거 완료",
+        "BOARD_INSTALL_COMPLETE": "보드 설치 완료",
+        "BOARD_UNINSTALL_COMPLETE": "보드 제거 완료",
+        "BOARD_DEPS_INSTALL_COMPLETE": "보드 의존성 설치 완료",
+        "BOARD_DEPS_INSTALL_FAILED": "보드 의존성 설치 실패",
+        "DEPS_UNINSTALL_COMPLETE": "의존성 제거 완료",
+        "DEPS_UNINSTALL_FAILED": "의존성 제거 실패",
+        "NAME_REQUIRED": "{{type}} 이름은 비워둘 수 없습니다",
+        "TYPE_TOOL": "도구",
+        "TYPE_SDK": "SDK",
+        "TYPE_COMPILER": "컴파일러",
+        "INSTALLING_TITLE": "설치 중",
+        "INSTALL_COMPLETE_TITLE": "설치 완료",
+        "INSTALL_FAILED_TITLE": "설치 실패",
+        "UNINSTALLING_TITLE": "제거 중",
+        "UNINSTALL_COMPLETE_TITLE": "제거 완료",
+        "UNINSTALL_FAILED_TITLE": "제거 실패"
+    },
+    "BLOCKLY_EDITOR": {
+        "INSTALLING_DEPS": "의존성 설치 중",
+        "LOADING_BOARD_CONFIG": "보드 구성 로드 중",
+        "LOADING_BLOCKLY_LIB": "Blockly 라이브러리 로드 중",
+        "LOADING_LIB": "{{name}} 로드 중",
+        "LOADING_BLOCKLY_PROGRAM": "Blockly 프로그램 로드 중",
+        "PROJECT_LOAD_SUCCESS": "프로젝트 로드 완료"
+    },
+    "PLAYGROUND": {
+        "LOADING_EXAMPLE": "예제 로드 중...",
+        "EXAMPLE_LOAD_SUCCESS": "예제 로드 완료",
+        "EXAMPLE_LOAD_FAILED": "예제 로드 실패",
+        "NO_TUTORIAL_PROVIDED": "라이브러리 작성자가 튜토리얼을 제공하지 않았습니다"
+    },
+    "PROJECT": {
+        "CANNOT_OPEN_PROJECT": "프로젝트를 열 수 없습니다: ",
+        "CREATING_PROJECT": "프로젝트 생성 중...",
+        "PROJECT_CREATED": "프로젝트가 생성되었습니다",
+        "PATH_NOT_EXIST": "프로젝트 경로가 존재하지 않습니다. 다른 프로젝트를 선택하세요",
+        "SWITCHING_BOARD_CONFIG": "보드 구성 전환 중...",
+        "BOARD_SWITCH_COMPLETE": "보드 전환 완료",
+        "BOARD_SWITCH_SUCCESS": "보드 전환 성공",
+        "SWITCHING_BOARD": "보드 전환 중...",
+        "UNINSTALLING_CURRENT_BOARD": "현재 보드 제거 중...",
+        "INSTALLING_NEW_BOARD": "새 보드 설치 중...",
+        "UPDATING_PROJECT_CONFIG": "프로젝트 구성 업데이트 중...",
+        "BOARD_SWITCH_FAILED": "보드 전환 실패: "
     }
 }

@@ -2,7 +2,7 @@ import { ChangeDetectorRef, Component } from '@angular/core';
 import { LibManagerComponent } from './components/lib-manager/lib-manager.component';
 import { NotificationComponent } from '../../components/notification/notification.component';
 import { UiService } from '../../services/ui.service';
-import { TranslateModule } from '@ngx-translate/core';
+import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { ActivatedRoute } from '@angular/router';
 import { ElectronService } from '../../services/electron.service';
 import { NzMessageService } from 'ng-zorro-antd/message';
@@ -61,7 +61,8 @@ export class BlocklyEditorComponent {
     private _projectService: _ProjectService,
     private _builderService: _BuilderService,
     private _uploadService: _UploaderService,
-    private onboardingService: OnboardingService
+    private onboardingService: OnboardingService,
+    private translate: TranslateService
   ) { }
 
   ngOnInit(): void {
@@ -121,18 +122,18 @@ export class BlocklyEditorComponent {
     const nodeModulesExist = this.electronService.exists(projectPath + '/node_modules');
     if (!nodeModulesExist) {
       // 终端进入项目目录，安装项目依赖
-      this.uiService.updateFooterState({ state: 'doing', text: '正在安装依赖' });
+      this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('BLOCKLY_EDITOR.INSTALLING_DEPS') });
       await this.cmdService.runAsync(`npm install`, projectPath)
     }
     // 3. 加载开发板module中的board.json
-    this.uiService.updateFooterState({ state: 'doing', text: '正在加载开发板配置' });
+    this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('BLOCKLY_EDITOR.LOADING_BOARD_CONFIG') });
     const boardJson = await this.projectService.getBoardJson();
 
     this.projectService.currentBoardConfig = boardJson;
     this.blocklyService.boardConfig = boardJson;
     window['boardConfig'] = boardJson;
     // 4. 加载blockly library
-    this.uiService.updateFooterState({ state: 'doing', text: '正在加载blockly库' });
+    this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('BLOCKLY_EDITOR.LOADING_BLOCKLY_LIB') });
     // 获取项目目录下的所有blockly库
     let libraryModuleList = (await this.npmService.getAllInstalledLibraries(projectPath)).map(item => item.name);
 
@@ -140,16 +141,16 @@ export class BlocklyEditorComponent {
 
     for (let index = 0; index < libraryModuleList.length; index++) {
       const libPackageName = libraryModuleList[index];
-      this.uiService.updateFooterState({ state: 'doing', text: '正在加载' + libPackageName });
+      this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('BLOCKLY_EDITOR.LOADING_LIB', { name: libPackageName }) });
       await this.blocklyService.loadLibrary(libPackageName, projectPath);
     }
     // 5. 加载project.abi数据
-    this.uiService.updateFooterState({ state: 'doing', text: '正在加载blockly程序' });
+    this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('BLOCKLY_EDITOR.LOADING_BLOCKLY_PROGRAM') });
     let jsonData = JSON.parse(this.electronService.readFile(`${projectPath}/project.abi`));
     this.blocklyService.loadAbiJson(jsonData);
 
     // 6. 加载项目目录中project.abi（这是blockly格式的json文本必须要先安装库才能加载这个json，因为其中可能会用到一些库）
-    this.uiService.updateFooterState({ state: 'done', text: '项目加载成功' });
+    this.uiService.updateFooterState({ state: 'done', text: this.translate.instant('BLOCKLY_EDITOR.PROJECT_LOAD_SUCCESS') });
     this.projectService.stateSubject.next('loaded');
 
     // 检查是否需要显示新手引导

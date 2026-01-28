@@ -277,7 +277,7 @@
         "SETTINGS": "إعدادات الذكاء الاصطناعي",
         "HISTORY": "سجل المحادثة",
         "NEW_CHAT": "محادثة جديدة",
-        "SERVICE_TITLE": "aily assistant service",
+        "SERVICE_TITLE": "ai assistant service",
         "DISCLAIMER": "ردود الذكاء الاصطناعي للمرجعية فقط وقد لا تكون دقيقة. لا تمثل آراء مطوري البرامج. يجب على المستخدمين التحقق من المعلومات بأنفسهم.",
         "ADD_CONTEXT": "إضافة سياق",
         "ADD_FILE": "إضافة ملف",
@@ -338,6 +338,7 @@
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "إعدادات المشروع",
         "PINMAP": "خريطة الدبابيس",
+        "CIRCUIT": "مخطط الدائرة",
         "DOCUMENTATION": "التوثيق",
         "FEEDBACK": "ملاحظات",
         "NO_PINMAP": "خريطة الدبابيس غير متوفرة لهذه اللوحة",
@@ -473,5 +474,63 @@
         "LOGIN_SUCCESS": "تم تسجيل الدخول بنجاح",
         "LOGIN_FAILED": "فشل تسجيل الدخول",
         "LOGIN_NETWORK_ERROR": "فشل تسجيل الدخول، يرجى التحقق من الاتصال بالشبكة"
+    },
+    "COMMON": {
+        "FEATURE_COMING_SOON": "الميزة قادمة قريباً"
+    },
+    "NPM": {
+        "INSTALLING": "جاري تثبيت {{name}}...",
+        "INSTALLING_DEPENDENCY": "جاري تثبيت التبعية {{name}}...",
+        "INSTALL_TIMEOUT": "انتهاء مهلة التثبيت",
+        "INSTALL_COMPLETE": "تم تثبيت {{name}} بنجاح",
+        "INSTALL_FAILED": "فشل تثبيت {{name}}",
+        "UNINSTALLING": "جاري إلغاء تثبيت {{name}}...",
+        "UNINSTALLING_UNUSED_DEPS": "جاري إلغاء تثبيت التبعيات غير المستخدمة...",
+        "UNINSTALL_TIMEOUT": "انتهاء مهلة إلغاء التثبيت",
+        "UNINSTALL_COMPLETE": "تم إلغاء تثبيت {{name}} بنجاح",
+        "BOARD_INSTALL_COMPLETE": "تم تثبيت اللوحة بنجاح",
+        "BOARD_UNINSTALL_COMPLETE": "تم إلغاء تثبيت اللوحة بنجاح",
+        "BOARD_DEPS_INSTALL_COMPLETE": "تم تثبيت تبعيات اللوحة بنجاح",
+        "BOARD_DEPS_INSTALL_FAILED": "فشل تثبيت تبعيات اللوحة",
+        "DEPS_UNINSTALL_COMPLETE": "تم إلغاء تثبيت التبعيات بنجاح",
+        "DEPS_UNINSTALL_FAILED": "فشل إلغاء تثبيت التبعيات",
+        "NAME_REQUIRED": "لا يمكن أن يكون اسم {{type}} فارغًا",
+        "TYPE_TOOL": "أداة",
+        "TYPE_SDK": "SDK",
+        "TYPE_COMPILER": "مترجم",
+        "INSTALLING_TITLE": "جاري التثبيت",
+        "INSTALL_COMPLETE_TITLE": "اكتمل التثبيت",
+        "INSTALL_FAILED_TITLE": "فشل التثبيت",
+        "UNINSTALLING_TITLE": "جاري إلغاء التثبيت",
+        "UNINSTALL_COMPLETE_TITLE": "اكتمل إلغاء التثبيت",
+        "UNINSTALL_FAILED_TITLE": "فشل إلغاء التثبيت"
+    },
+    "BLOCKLY_EDITOR": {
+        "INSTALLING_DEPS": "جاري تثبيت التبعيات",
+        "LOADING_BOARD_CONFIG": "جاري تحميل إعدادات اللوحة",
+        "LOADING_BLOCKLY_LIB": "جاري تحميل مكتبات Blockly",
+        "LOADING_LIB": "جاري تحميل {{name}}",
+        "LOADING_BLOCKLY_PROGRAM": "جاري تحميل برنامج Blockly",
+        "PROJECT_LOAD_SUCCESS": "تم تحميل المشروع بنجاح"
+    },
+    "PLAYGROUND": {
+        "LOADING_EXAMPLE": "جاري تحميل المثال...",
+        "EXAMPLE_LOAD_SUCCESS": "تم تحميل المثال بنجاح",
+        "EXAMPLE_LOAD_FAILED": "فشل تحميل المثال",
+        "NO_TUTORIAL_PROVIDED": "لم يقدم مؤلف المكتبة أي دليل تعليمي"
+    },
+    "PROJECT": {
+        "CANNOT_OPEN_PROJECT": "تعذر فتح المشروع: ",
+        "CREATING_PROJECT": "جاري إنشاء المشروع...",
+        "PROJECT_CREATED": "تم إنشاء المشروع بنجاح",
+        "PATH_NOT_EXIST": "مسار المشروع غير موجود، يرجى اختيار مشروع آخر",
+        "SWITCHING_BOARD_CONFIG": "جاري تغيير إعدادات اللوحة...",
+        "BOARD_SWITCH_COMPLETE": "اكتمل تغيير اللوحة",
+        "BOARD_SWITCH_SUCCESS": "تم تغيير اللوحة بنجاح",
+        "SWITCHING_BOARD": "جاري تغيير اللوحة...",
+        "UNINSTALLING_CURRENT_BOARD": "جاري إلغاء تثبيت اللوحة الحالية...",
+        "INSTALLING_NEW_BOARD": "جاري تثبيت اللوحة الجديدة...",
+        "UPDATING_PROJECT_CONFIG": "جاري تحديث إعدادات المشروع...",
+        "BOARD_SWITCH_FAILED": "فشل تغيير اللوحة: "
     }
 }

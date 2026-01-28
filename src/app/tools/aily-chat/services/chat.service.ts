@@ -4,7 +4,10 @@ import { Observable, Subject } from 'rxjs';
 import { MCPTool } from './mcp.service';
 import { API } from "../../../configs/api.config";
 import { ConfigService } from '../../../services/config.service';
-import { AilyChatConfigService } from './aily-chat-config.service';
+import { AilyChatConfigService, ModelConfigOption } from './aily-chat-config.service';
+
+// 使用 ModelConfigOption 作为统一的模型配置类型，保留 ModelConfig 别名以兼容旧代码
+export type ModelConfig = ModelConfigOption;
 
 export interface ChatTextOptions {
   sender?: string;
@@ -19,18 +22,10 @@ export interface ChatTextMessage {
   timestamp?: number;
 }
 
-// 模型配置接口
-export interface ModelConfig {
-  model: string;
-  family: string;
-  name: string;
-  speed: string;
-}
-
 // 可用模型列表
 export const AVAILABLE_MODELS: ModelConfig[] = [
-  { model: 'glm-4.7', family: 'glm', name: 'GLM-4.7', speed: '1x' },
-  { model: 'glm-4.6', family: 'glm', name: 'GLM-4.6', speed: '1x' }
+  { model: 'glm-4.7', family: 'glm', name: 'GLM-4.7', speed: '1x', enabled: true },
+  { model: 'glm-4.6', family: 'glm', name: 'GLM-4.6', speed: '1x', enabled: true }
 ];
 
 @Injectable({

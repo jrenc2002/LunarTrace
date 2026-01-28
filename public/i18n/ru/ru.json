@@ -277,7 +277,7 @@
         "SETTINGS": "Настройки ИИ",
         "HISTORY": "История чата",
         "NEW_CHAT": "Новый чат",
-        "SERVICE_TITLE": "aily assistant service",
+        "SERVICE_TITLE": "ai assistant service",
         "DISCLAIMER": "Ответы ИИ предоставляются только для справки и могут быть неточными. Они не представляют мнения разработчиков программного обеспечения. Пользователи должны проверять информацию самостоятельно.",
         "ADD_CONTEXT": "Добавить контекст",
         "ADD_FILE": "Добавить файл",
@@ -338,6 +338,7 @@
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "Настройки проекта",
         "PINMAP": "Схема выводов",
+        "CIRCUIT": "Схема подключения",
         "DOCUMENTATION": "Документация",
         "FEEDBACK": "Обратная связь",
         "NO_PINMAP": "Схема выводов недоступна для этой платы",
@@ -473,5 +474,63 @@
         "LOGIN_SUCCESS": "Вход выполнен успешно",
         "LOGIN_FAILED": "Ошибка входа",
         "LOGIN_NETWORK_ERROR": "Ошибка входа, проверьте подключение к сети"
+    },
+    "COMMON": {
+        "FEATURE_COMING_SOON": "Функция скоро появится"
+    },
+    "NPM": {
+        "INSTALLING": "Установка {{name}}...",
+        "INSTALLING_DEPENDENCY": "Установка зависимости {{name}}...",
+        "INSTALL_TIMEOUT": "Тайм-аут установки",
+        "INSTALL_COMPLETE": "{{name}} успешно установлен",
+        "INSTALL_FAILED": "Ошибка установки {{name}}",
+        "UNINSTALLING": "Удаление {{name}}...",
+        "UNINSTALLING_UNUSED_DEPS": "Удаление неиспользуемых зависимостей...",
+        "UNINSTALL_TIMEOUT": "Тайм-аут удаления",
+        "UNINSTALL_COMPLETE": "{{name}} успешно удален",
+        "BOARD_INSTALL_COMPLETE": "Плата успешно установлена",
+        "BOARD_UNINSTALL_COMPLETE": "Плата успешно удалена",
+        "BOARD_DEPS_INSTALL_COMPLETE": "Зависимости платы успешно установлены",
+        "BOARD_DEPS_INSTALL_FAILED": "Ошибка установки зависимостей платы",
+        "DEPS_UNINSTALL_COMPLETE": "Зависимости успешно удалены",
+        "DEPS_UNINSTALL_FAILED": "Ошибка удаления зависимостей",
+        "NAME_REQUIRED": "Имя {{type}} не может быть пустым",
+        "TYPE_TOOL": "Инструмент",
+        "TYPE_SDK": "SDK",
+        "TYPE_COMPILER": "Компилятор",
+        "INSTALLING_TITLE": "Установка",
+        "INSTALL_COMPLETE_TITLE": "Установка завершена",
+        "INSTALL_FAILED_TITLE": "Ошибка установки",
+        "UNINSTALLING_TITLE": "Удаление",
+        "UNINSTALL_COMPLETE_TITLE": "Удаление завершено",
+        "UNINSTALL_FAILED_TITLE": "Ошибка удаления"
+    },
+    "BLOCKLY_EDITOR": {
+        "INSTALLING_DEPS": "Установка зависимостей",
+        "LOADING_BOARD_CONFIG": "Загрузка конфигурации платы",
+        "LOADING_BLOCKLY_LIB": "Загрузка библиотек Blockly",
+        "LOADING_LIB": "Загрузка {{name}}",
+        "LOADING_BLOCKLY_PROGRAM": "Загрузка программы Blockly",
+        "PROJECT_LOAD_SUCCESS": "Проект успешно загружен"
+    },
+    "PLAYGROUND": {
+        "LOADING_EXAMPLE": "Загрузка примера...",
+        "EXAMPLE_LOAD_SUCCESS": "Пример успешно загружен",
+        "EXAMPLE_LOAD_FAILED": "Ошибка загрузки примера",
+        "NO_TUTORIAL_PROVIDED": "Автор библиотеки не предоставил руководство"
+    },
+    "PROJECT": {
+        "CANNOT_OPEN_PROJECT": "Невозможно открыть проект: ",
+        "CREATING_PROJECT": "Создание проекта...",
+        "PROJECT_CREATED": "Проект успешно создан",
+        "PATH_NOT_EXIST": "Путь проекта не существует, выберите другой проект",
+        "SWITCHING_BOARD_CONFIG": "Изменение конфигурации платы...",
+        "BOARD_SWITCH_COMPLETE": "Смена платы завершена",
+        "BOARD_SWITCH_SUCCESS": "Плата успешно изменена",
+        "SWITCHING_BOARD": "Смена платы...",
+        "UNINSTALLING_CURRENT_BOARD": "Удаление текущей платы...",
+        "INSTALLING_NEW_BOARD": "Установка новой платы...",
+        "UPDATING_PROJECT_CONFIG": "Обновление конфигурации проекта...",
+        "BOARD_SWITCH_FAILED": "Ошибка смены платы: "
     }
 }

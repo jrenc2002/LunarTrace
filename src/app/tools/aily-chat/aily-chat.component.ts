@@ -11,6 +11,7 @@ import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { Subscription, skip, distinctUntilChanged } from 'rxjs';
 import { ChatService, ChatTextOptions, AVAILABLE_MODELS, ModelConfig } from './services/chat.service';
+import { ModelConfigOption } from './services/aily-chat-config.service';
 import { NzToolTipModule } from 'ng-zorro-antd/tooltip';
 import { MenuComponent } from '../../components/menu/menu.component';
 import { IMenuItem } from '../../configs/menu.config';
@@ -1493,9 +1494,15 @@ Do not create non-existent boards and libraries.
     // 获取 maxCount 配置
     const maxCount = this.ailyChatConfigService.maxCount;
 
-    // 自定义apiKey与 baseUrl
+    // 自定义apiKey与 baseUrl - 使用当前选择模型的配置
     let customllmConfig;
-    if (this.ailyChatConfigService.useCustomApiKey) {
+    if (this.currentModel && this.currentModel.baseUrl && this.currentModel.apiKey) {
+      customllmConfig = {
+        apiKey: this.currentModel.apiKey,
+        baseUrl: this.currentModel.baseUrl,
+      }
+    } else if (this.ailyChatConfigService.useCustomApiKey) {
+      // 兼容旧版本的全局配置
       customllmConfig = {
         apiKey: this.ailyChatConfigService.apiKey,
         baseUrl: this.ailyChatConfigService.baseUrl,

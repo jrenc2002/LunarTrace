@@ -277,7 +277,7 @@
         "SETTINGS": "AI設置",
         "HISTORY": "歷史會話",
         "NEW_CHAT": "新建會話",
-        "SERVICE_TITLE": "aily assistant service",
+        "SERVICE_TITLE": "ai assistant service",
         "DISCLAIMER": "AI的回覆僅能作為參考，不一定正確，也不代表本軟件開發者的意見，使用者需自行辨別",
         "ADD_CONTEXT": "添加上下文",
         "ADD_FILE": "添加文件",
@@ -338,6 +338,7 @@
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "項目設置",
         "PINMAP": "引腳圖",
+        "CIRCUIT": "電路連接",
         "DOCUMENTATION": "文檔",
         "FEEDBACK": "反饋",
         "NO_PINMAP": "該開發板沒有提供引腳圖",
@@ -473,5 +474,63 @@
         "LOGIN_SUCCESS": "登錄成功",
         "LOGIN_FAILED": "登錄失敗",
         "LOGIN_NETWORK_ERROR": "登錄失敗，請檢查網絡連接"
+    },
+    "COMMON": {
+        "FEATURE_COMING_SOON": "功能即將上線"
+    },
+    "NPM": {
+        "INSTALLING": "正在安裝{{name}}...",
+        "INSTALLING_DEPENDENCY": "正在安裝{{name}}依賴...",
+        "INSTALL_TIMEOUT": "安裝超時",
+        "INSTALL_COMPLETE": "{{name}}安裝完成",
+        "INSTALL_FAILED": "{{name}}安裝失敗",
+        "UNINSTALLING": "正在卸載{{name}}...",
+        "UNINSTALLING_UNUSED_DEPS": "正在卸載不再需要的依賴...",
+        "UNINSTALL_TIMEOUT": "卸載超時",
+        "UNINSTALL_COMPLETE": "{{name}}卸載完成",
+        "BOARD_INSTALL_COMPLETE": "開發板安裝完成",
+        "BOARD_UNINSTALL_COMPLETE": "開發板卸載完成",
+        "BOARD_DEPS_INSTALL_COMPLETE": "開發板依賴安裝完成",
+        "BOARD_DEPS_INSTALL_FAILED": "開發板依賴安裝失敗",
+        "DEPS_UNINSTALL_COMPLETE": "依賴卸載完成",
+        "DEPS_UNINSTALL_FAILED": "依賴卸載失敗",
+        "NAME_REQUIRED": "{{type}}名稱不能為空",
+        "TYPE_TOOL": "工具",
+        "TYPE_SDK": "SDK",
+        "TYPE_COMPILER": "編譯器",
+        "INSTALLING_TITLE": "正在安裝",
+        "INSTALL_COMPLETE_TITLE": "安裝完成",
+        "INSTALL_FAILED_TITLE": "安裝失敗",
+        "UNINSTALLING_TITLE": "正在卸載",
+        "UNINSTALL_COMPLETE_TITLE": "卸載完成",
+        "UNINSTALL_FAILED_TITLE": "卸載失敗"
+    },
+    "BLOCKLY_EDITOR": {
+        "INSTALLING_DEPS": "正在安裝依賴",
+        "LOADING_BOARD_CONFIG": "正在載入開發板配置",
+        "LOADING_BLOCKLY_LIB": "正在載入Blockly庫",
+        "LOADING_LIB": "正在載入{{name}}",
+        "LOADING_BLOCKLY_PROGRAM": "正在載入Blockly程式",
+        "PROJECT_LOAD_SUCCESS": "專案載入成功"
+    },
+    "PLAYGROUND": {
+        "LOADING_EXAMPLE": "正在載入範例...",
+        "EXAMPLE_LOAD_SUCCESS": "範例載入完成",
+        "EXAMPLE_LOAD_FAILED": "範例載入失敗",
+        "NO_TUTORIAL_PROVIDED": "庫作者未提供教程"
+    },
+    "PROJECT": {
+        "CANNOT_OPEN_PROJECT": "無法開啟專案: ",
+        "CREATING_PROJECT": "正在建立專案...",
+        "PROJECT_CREATED": "專案建立成功",
+        "PATH_NOT_EXIST": "專案路徑不存在，請重新選擇專案",
+        "SWITCHING_BOARD_CONFIG": "正在切換開發板配置...",
+        "BOARD_SWITCH_COMPLETE": "開發板切換完成",
+        "BOARD_SWITCH_SUCCESS": "開發板切換成功",
+        "SWITCHING_BOARD": "正在切換開發板...",
+        "UNINSTALLING_CURRENT_BOARD": "正在卸載當前開發板...",
+        "INSTALLING_NEW_BOARD": "正在安裝新開發板...",
+        "UPDATING_PROJECT_CONFIG": "正在更新專案配置...",
+        "BOARD_SWITCH_FAILED": "開發板切換失敗: "
     }
 }

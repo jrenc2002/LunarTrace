@@ -15,6 +15,7 @@ import { ActionService } from './action.service';
 import { PlatformService } from './platform.service';
 import { NewProjectData } from '../pages/project-new/project-new.component';
 import { WorkflowService } from './workflow.service';
+import { TranslateService } from '@ngx-translate/core';
 
 const { pt } = (window as any)['electronAPI'].platform;
 
@@ -73,7 +74,8 @@ export class ProjectService {
     private configService: ConfigService,
     private actionService: ActionService,
     private platformService: PlatformService,
-    private workflowService: WorkflowService
+    private workflowService: WorkflowService,
+    private translate: TranslateService
   ) {
   }
 
@@ -104,7 +106,7 @@ export class ProjectService {
           console.log('Successfully opened project from file association');
         } catch (error) {
           console.error('Error opening project from file association:', error);
-          this.message.error('无法打开项目: ' + error.message);
+          this.message.error(this.translate.instant('PROJECT.CANNOT_OPEN_PROJECT') + error.message);
         }
       });
 
@@ -129,7 +131,7 @@ export class ProjectService {
     const projectPath = window['path'].join(newProjectData.path, newProjectData.name.replace(/\s/g, '_'));
     const boardPackage = newProjectData.board.name + '@' + newProjectData.board.version;
 
-    this.uiService.updateFooterState({ state: 'doing', text: '正在创建项目...' });
+    this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('PROJECT.CREATING_PROJECT') });
     await this.cmdService.runAsync(`npm install ${boardPackage} --prefix "${appDataPath}"`);
     const templatePath = `${appDataPath}${pt}node_modules${pt}${newProjectData.board.name}${pt}template`;
     // 创建项目目录
@@ -152,7 +154,7 @@ export class ProjectService {
 
     window['fs'].writeFileSync(`${projectPath}/package.json`, JSON.stringify(packageJson, null, 2));
 
-    this.uiService.updateFooterState({ state: 'done', text: '项目创建成功' });
+    this.uiService.updateFooterState({ state: 'done', text: this.translate.instant('PROJECT.PROJECT_CREATED') });
     // 此后就是打开项目(projectOpen)的逻辑，理论可复用，由于此时在新建项目窗口，因此要告知主窗口，进行打开项目操作
     await window['iWindow'].send({ to: 'main', data: { action: 'open-project', path: projectPath } });
 
@@ -168,7 +170,7 @@ export class ProjectService {
     // 判断路径是否存在
     if (!this.electronService.exists(projectPath)) {
       this.removeRecentlyProject({ path: projectPath })
-      return this.message.error('项目路径不存在，请重新选择项目');
+      return this.message.error(this.translate.instant('PROJECT.PATH_NOT_EXIST'));
     }
     this.stateSubject.next('loading');
 
@@ -515,7 +517,7 @@ export class ProjectService {
 
     // 保存当前项目
     this.save();
-    this.message.loading('正在切换开发板配置...', { nzDuration: 5000 });
+    this.message.loading(this.translate.instant('PROJECT.SWITCHING_BOARD_CONFIG'), { nzDuration: 5000 });
 
     const boardJson = JSON.parse(this.electronService.readFile(boardJsonPath));
     Object.assign(boardJson, data);
@@ -527,8 +529,8 @@ export class ProjectService {
 
     // 通知开发板变更
     this.boardChangeSubject.next();
-    this.uiService.updateFooterState({ state: 'done', text: '开发板切换完成' });
-    this.message.success('开发板切换成功', { nzDuration: 3000 });
+    this.uiService.updateFooterState({ state: 'done', text: this.translate.instant('PROJECT.BOARD_SWITCH_COMPLETE') });
+    this.message.success(this.translate.instant('PROJECT.BOARD_SWITCH_SUCCESS'), { nzDuration: 3000 });
   }
 
   // 获取开发板package路径
@@ -1329,7 +1331,7 @@ export class ProjectService {
       }
       // 0. 保存当前项目
       this.save();
-      this.message.loading('正在切换开发板...', { nzDuration: 5000 });
+      this.message.loading(this.translate.instant('PROJECT.SWITCHING_BOARD'), { nzDuration: 5000 });
 
       // 记录开发板使用次数
       this.configService.recordBoardUsage(boardInfo.name);
@@ -1338,18 +1340,18 @@ export class ProjectService {
       const currentBoardModule = await this.getBoardModule();
       if (currentBoardModule) {
         console.log('卸载当前开发板模块:', currentBoardModule);
-        this.uiService.updateFooterState({ state: 'doing', text: '正在卸载当前开发板...' });
+        this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('PROJECT.UNINSTALLING_CURRENT_BOARD') });
         await this.cmdService.runAsync(`npm uninstall ${currentBoardModule}`, this.currentProjectPath);
       }
       // 2. npm install 安装boardInfo.name@boardInfo.version
       const newBoardPackage = `${boardInfo.name}@${boardInfo.version}`;
       console.log('安装新开发板模块:', newBoardPackage);
-      this.uiService.updateFooterState({ state: 'doing', text: '正在安装新开发板...' });
+      this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('PROJECT.INSTALLING_NEW_BOARD') });
       await this.cmdService.runAsync(`npm install ${newBoardPackage}`, this.currentProjectPath);
 
       // 2.5. 获取新开发板的模板并更新package.json
       console.log('更新项目配置文件...');
-      this.uiService.updateFooterState({ state: 'doing', text: '正在更新项目配置...' });
+      this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('PROJECT.UPDATING_PROJECT_CONFIG') });
       
       // 读取当前package.json保留项目基本信息
       const currentPackageJson = await this.getPackageJson();
@@ -1398,11 +1400,11 @@ export class ProjectService {
       // 触发开发板变更事件
       this.boardChangeSubject.next();
 
-      this.uiService.updateFooterState({ state: 'done', text: '开发板切换完成' });
-      this.message.success('开发板切换成功', { nzDuration: 3000 });
+      this.uiService.updateFooterState({ state: 'done', text: this.translate.instant('PROJECT.BOARD_SWITCH_COMPLETE') });
+      this.message.success(this.translate.instant('PROJECT.BOARD_SWITCH_SUCCESS'), { nzDuration: 3000 });
     } catch (error) {
       console.error('切换开发板失败:', error);
-      this.message.error('开发板切换失败: ' + error.message);
+      this.message.error(this.translate.instant('PROJECT.BOARD_SWITCH_FAILED') + error.message);
     }
   }
 

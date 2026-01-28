@@ -31,7 +31,9 @@ export interface ModelConfigOption {
     speed: string;          // 速度标识
     enabled: boolean;       // 是否在列表中显示
     isCustom?: boolean;     // 是否是自定义模型
-    apiKeyId?: string;      // 关联的API配置ID（可选，为空时使用全局配置）
+    baseUrl?: string;       // API Base URL
+    apiKey?: string;        // API Key
+    apiKeyId?: string;      // 关联的API配置ID（兼容旧版本）
 }
 
 /**
@@ -524,6 +526,19 @@ export class AilyChatConfigService {
                     apiKey: this.config.apiKey
                 });
             }
+        }
+
+        // 迁移旧版本的 apiKeyId 关联到新的直接配置
+        if (this.config.models && this.config.apiKeys) {
+            this.config.models.forEach(model => {
+                if (model.apiKeyId && !model.baseUrl && !model.apiKey) {
+                    const apiKey = this.config.apiKeys?.find(k => k.id === model.apiKeyId);
+                    if (apiKey) {
+                        model.baseUrl = apiKey.baseUrl;
+                        model.apiKey = apiKey.apiKey;
+                    }
+                }
+            });
         }
     }
 }

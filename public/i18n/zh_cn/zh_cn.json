@@ -329,7 +329,7 @@
         "SETTINGS": "AI设置",
         "HISTORY": "历史会话",
         "NEW_CHAT": "新建会话",
-        "SERVICE_TITLE": "aily assistant service",
+        "SERVICE_TITLE": "ai assistant service",
         "DISCLAIMER": "AI的回复仅能作为参考，不一定正确，也不代表本软件开发者的意见，使用者需自行辨别",
         "ADD_CONTEXT": "添加上下文",
         "ADD_FILE": "添加文件",
@@ -390,6 +390,7 @@
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "项目设置",
         "PINMAP": "引脚图",
+        "CIRCUIT": "电路连接",
         "DOCUMENTATION": "文档",
         "FEEDBACK": "反馈",
         "NO_PINMAP": "该开发板没有提供引脚图",
@@ -527,11 +528,67 @@
         "LOGIN_NETWORK_ERROR": "登录失败，请检查网络连接"
     },
     "COMMON": {
+        "FEATURE_COMING_SOON": "功能即将上线",
         "ONBOARDING": {
             "SKIP": "跳过",
             "PREV": "上一步",
             "NEXT": "下一步",
             "DONE": "完成"
         }
+    },
+    "NPM": {
+        "INSTALLING": "正在安装{{name}}...",
+        "INSTALLING_DEPENDENCY": "正在安装{{name}}依赖...",
+        "INSTALL_TIMEOUT": "安装超时",
+        "INSTALL_COMPLETE": "{{name}}安装完成",
+        "INSTALL_FAILED": "{{name}}安装失败",
+        "UNINSTALLING": "正在卸载{{name}}...",
+        "UNINSTALLING_UNUSED_DEPS": "正在卸载不再需要的依赖...",
+        "UNINSTALL_TIMEOUT": "卸载超时",
+        "UNINSTALL_COMPLETE": "{{name}}卸载完成",
+        "BOARD_INSTALL_COMPLETE": "开发板安装完成",
+        "BOARD_UNINSTALL_COMPLETE": "开发板卸载完成",
+        "BOARD_DEPS_INSTALL_COMPLETE": "开发板依赖安装完成",
+        "BOARD_DEPS_INSTALL_FAILED": "开发板依赖安装失败",
+        "DEPS_UNINSTALL_COMPLETE": "依赖卸载完成",
+        "DEPS_UNINSTALL_FAILED": "依赖卸载失败",
+        "NAME_REQUIRED": "{{type}}名称不能为空",
+        "TYPE_TOOL": "工具",
+        "TYPE_SDK": "SDK",
+        "TYPE_COMPILER": "编译器",
+        "INSTALLING_TITLE": "正在安装",
+        "INSTALL_COMPLETE_TITLE": "安装完成",
+        "INSTALL_FAILED_TITLE": "安装失败",
+        "UNINSTALLING_TITLE": "正在卸载",
+        "UNINSTALL_COMPLETE_TITLE": "卸载完成",
+        "UNINSTALL_FAILED_TITLE": "卸载失败"
+    },
+    "BLOCKLY_EDITOR": {
+        "INSTALLING_DEPS": "正在安装依赖",
+        "LOADING_BOARD_CONFIG": "正在加载开发板配置",
+        "LOADING_BLOCKLY_LIB": "正在加载Blockly库",
+        "LOADING_LIB": "正在加载{{name}}",
+        "LOADING_BLOCKLY_PROGRAM": "正在加载Blockly程序",
+        "PROJECT_LOAD_SUCCESS": "项目加载成功"
+    },
+    "PLAYGROUND": {
+        "LOADING_EXAMPLE": "正在加载示例...",
+        "EXAMPLE_LOAD_SUCCESS": "示例加载完成",
+        "EXAMPLE_LOAD_FAILED": "示例加载失败",
+        "NO_TUTORIAL_PROVIDED": "库作者未提供教程"
+    },
+    "PROJECT": {
+        "CANNOT_OPEN_PROJECT": "无法打开项目: ",
+        "CREATING_PROJECT": "正在创建项目...",
+        "PROJECT_CREATED": "项目创建成功",
+        "PATH_NOT_EXIST": "项目路径不存在，请重新选择项目",
+        "SWITCHING_BOARD_CONFIG": "正在切换开发板配置...",
+        "BOARD_SWITCH_COMPLETE": "开发板切换完成",
+        "BOARD_SWITCH_SUCCESS": "开发板切换成功",
+        "SWITCHING_BOARD": "正在切换开发板...",
+        "UNINSTALLING_CURRENT_BOARD": "正在卸载当前开发板...",
+        "INSTALLING_NEW_BOARD": "正在安装新开发板...",
+        "UPDATING_PROJECT_CONFIG": "正在更新项目配置...",
+        "BOARD_SWITCH_FAILED": "开发板切换失败: "
     }
 }
