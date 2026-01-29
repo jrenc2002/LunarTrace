@@ -24,7 +24,7 @@ import { AltchaComponent } from './altcha/altcha.component';
     AltchaComponent,
   ],
   templateUrl: './login.component.html',
-  styleUrl: './login.component.scss'
+  styleUrl: './login.component.scss',
 })
 export class LoginComponent {
   private destroy$ = new Subject<void>();
@@ -37,7 +37,7 @@ export class LoginComponent {
   isWaiting = false;
   inputUsername = '';
   inputPassword = '';
-  
+
   // 邮箱登录相关
   inputEmail = '';
   inputCode = '';
@@ -49,12 +49,12 @@ export class LoginComponent {
     private authService: AuthService,
     private message: NzMessageService,
     private electronService: ElectronService,
-    private translate: TranslateService
+    private translate: TranslateService,
   ) {
     // 监听登录状态
     this.authService.isLoggedIn$
       .pipe(takeUntil(this.destroy$))
-      .subscribe(isLoggedIn => {
+      .subscribe((isLoggedIn) => {
         // 如果登录成功且当前在GitHub登录等待状态，关闭弹窗
         if (isLoggedIn) {
           // this.message.success('登录成功');
@@ -95,7 +95,10 @@ export class LoginComponent {
       return token;
     } catch (error) {
       console.error('Altcha 验证失败:', error);
-      this.message.error(this.translate.instant('LOGIN.VERIFICATION_FAILED') || '验证失败，请重试');
+      this.message.error(
+        this.translate.instant('LOGIN.VERIFICATION_FAILED') ||
+          '验证失败，请重试',
+      );
       return null;
     }
   }
@@ -116,17 +119,23 @@ export class LoginComponent {
           // 使用 ElectronService 在系统浏览器中打开授权页面
           if (this.electronService.isElectron) {
             this.electronService.openUrl(response.authorization_url);
-            this.message.info(this.translate.instant('LOGIN.REDIRECTING_GITHUB'));
+            this.message.info(
+              this.translate.instant('LOGIN.REDIRECTING_GITHUB'),
+            );
           } else {
             // 如果不在 Electron 环境中，使用 window.open 作为降级方案
             window.open(response.authorization_url, '_blank');
-            this.message.info(this.translate.instant('LOGIN.REDIRECTING_GITHUB'));
+            this.message.info(
+              this.translate.instant('LOGIN.REDIRECTING_GITHUB'),
+            );
           }
         },
         error: (error) => {
           console.error('启动 GitHub OAuth 失败:', error);
-          this.message.error(this.translate.instant('LOGIN.GITHUB_LOGIN_FAILED'));
-        }
+          this.message.error(
+            this.translate.instant('LOGIN.GITHUB_LOGIN_FAILED'),
+          );
+        },
       });
     } catch (error) {
       console.error('GitHub 登录出错:', error);
@@ -151,7 +160,7 @@ export class LoginComponent {
       const loginData = {
         username: this.inputUsername,
         password: sha256(this.inputPassword).toString(),
-        altcha: altchaToken
+        altcha: altchaToken,
       };
 
       this.authService.login(loginData).subscribe({
@@ -159,16 +168,20 @@ export class LoginComponent {
           if (response.status === 200 && response.data) {
             this.message.success(this.translate.instant('LOGIN.LOGIN_SUCCESS'));
           } else {
-            this.message.error(response.message || this.translate.instant('LOGIN.LOGIN_FAILED'));
+            this.message.error(
+              response.message || this.translate.instant('LOGIN.LOGIN_FAILED'),
+            );
           }
         },
         error: (error) => {
           console.error('登录错误:', error);
-          this.message.error(this.translate.instant('LOGIN.LOGIN_NETWORK_ERROR'));
+          this.message.error(
+            this.translate.instant('LOGIN.LOGIN_NETWORK_ERROR'),
+          );
         },
         complete: () => {
           this.isWaiting = false;
-        }
+        },
       });
     } catch (error) {
       console.error('登录过程中出错:', error);
@@ -176,6 +189,9 @@ export class LoginComponent {
       this.isWaiting = false;
     }
   }
+
+  // 保存发送验证码后返回的token
+  private verificationToken = '';
 
   /**
    * 发送邮箱验证码
@@ -204,10 +220,14 @@ export class LoginComponent {
       this.authService.sendEmailCode(this.inputEmail, altchaToken).subscribe({
         next: (response) => {
           if (response.status === 200) {
+            this.verificationToken = response.data.token;
             this.message.success(this.translate.instant('LOGIN.CODE_SENT'));
             this.startCountdown();
           } else {
-            this.message.error(response.message || this.translate.instant('LOGIN.CODE_SEND_FAILED'));
+            this.message.error(
+              response.message ||
+                this.translate.instant('LOGIN.CODE_SEND_FAILED'),
+            );
           }
         },
         error: (error) => {
@@ -216,7 +236,7 @@ export class LoginComponent {
         },
         complete: () => {
           this.isSendingCode = false;
-        }
+        },
       });
     } catch (error) {
       console.error('发送验证码过程中出错:', error);
@@ -256,21 +276,25 @@ export class LoginComponent {
     this.isWaiting = true;
 
     try {
-      this.authService.loginByEmail(this.inputEmail, this.inputCode).subscribe({
+      this.authService.loginByEmail(this.inputEmail, this.inputCode, this.verificationToken).subscribe({
         next: (response) => {
           if (response.status === 200 && response.data) {
             this.message.success(this.translate.instant('LOGIN.LOGIN_SUCCESS'));
           } else {
-            this.message.error(response.message || this.translate.instant('LOGIN.LOGIN_FAILED'));
+            this.message.error(
+              response.message || this.translate.instant('LOGIN.LOGIN_FAILED'),
+            );
           }
         },
         error: (error) => {
           console.error('邮箱登录错误:', error);
-          this.message.error(this.translate.instant('LOGIN.LOGIN_NETWORK_ERROR'));
+          this.message.error(
+            this.translate.instant('LOGIN.LOGIN_NETWORK_ERROR'),
+          );
         },
         complete: () => {
           this.isWaiting = false;
-        }
+        },
       });
     } catch (error) {
       console.error('邮箱登录过程中出错:', error);

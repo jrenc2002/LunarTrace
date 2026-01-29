@@ -154,8 +154,8 @@ export class AuthService {
   /**
    * 邮箱验证码登录
    */
-  loginByEmail(email: string, code: string): Observable<LoginResponse> {
-    return this.http.post<LoginResponse>(API.loginByEmail, { email, code, device_id: 'pc' }).pipe(
+  loginByEmail(email: string, code: string, token: string): Observable<LoginResponse> {
+    return this.http.post<LoginResponse>(API.loginByEmail, { email, code, token, device_id: 'pc' }).pipe(
       map((response) => {
         if (response.status === 200 && response.data) {
           this.saveToken2(response.data.access_token);
