@@ -43,7 +43,7 @@ jobs:
         env:
           NODE_ENV: production
 
-      # ================== SignPath 集成开始 ==================
+      # ================== SignPath 签名流程 ==================
       
       - name: Upload Unsigned Installer for Signing
         id: upload_unsigned
@@ -63,7 +63,53 @@ jobs:
           wait-for-completion: true
           output-artifact-directory: 'dist/aily-blockly'
 
-      # ================== SignPath 集成结束 ==================
+      # 重新生成 latest.yml（使用签名后的 exe hash）
+      - name: Regenerate latest.yml with signed exe hash
+        run: |
+          cd dist/aily-blockly
+          
+          # 获取签名后的 exe 文件信息
+          $exeFile = Get-ChildItem -Filter "*.exe" | Select-Object -First 1
+          $exeSize = $exeFile.Length
+          $exeName = $exeFile.Name
+          
+          Write-Host "✓ Signed exe: $exeName ($exeSize bytes)"
+          
+          # 计算签名后的 SHA512 hash（base64格式）
+          $hash = Get-FileHash -Path $exeName -Algorithm SHA512
+          $hashBytes = [System.Convert]::FromHexString($hash.Hash)
+          $sha512Base64 = [System.Convert]::ToBase64String($hashBytes)
+          
+          Write-Host "✓ SHA512: $sha512Base64"
+          
+          # 从 package.json 读取版本号
+          $packageJson = Get-Content "../../package.json" -Raw | ConvertFrom-Json
+          $version = $packageJson.version
+          
+          # 获取发布日期（ISO 8601格式）
+          $releaseDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+          
+          # 生成新的 latest.yml 文件
+          $latestYml = @"
+          version: $version
+          files:
+            - url: $exeName
+              sha512: $sha512Base64
+              size: $exeSize
+          path: $exeName
+          sha512: $sha512Base64
+          releaseDate: '$releaseDate'
+          "@
+          
+          # 覆盖原有的 latest.yml
+          $latestYml | Out-File -FilePath "latest.yml" -Encoding UTF8 -NoNewline
+          
+          Write-Host "✓ latest.yml regenerated with signed exe hash"
+          Write-Host ""
+          Write-Host "Content:"
+          Get-Content "latest.yml"
+
+      # ================== SignPath 签名流程结束 ==================
 
       - name: Archive Windows Artifact
         uses: actions/upload-artifact@v4
