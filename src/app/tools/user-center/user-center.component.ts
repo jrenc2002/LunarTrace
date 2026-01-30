@@ -37,6 +37,7 @@ export class UserCenterComponent {
   private destroy$ = new Subject<void>();
   private message = inject(NzMessageService);
   private authService = inject(AuthService);
+  private electronService = inject(ElectronService);
 
   userInfo = {
     username: '',
@@ -302,5 +303,47 @@ export class UserCenterComponent {
     this.quotaUsagePercent = Math.max(0, Math.min(100, Number(percent.toFixed(2))));
     console.log('计算得到的使用百分比:', this.quotaUsagePercent, '(used/total*100 =', used, '/', total, '*100)');
     console.log('=== 计算完成 ===');
+  }
+
+  /**
+   * 点击头像时触发 SSO 跳转
+   */
+  async onAvatarClick(): Promise<void> {
+    // 检查是否已登录
+    if (!this.isLoggedIn) {
+      this.message.warning('请先登录');
+      return;
+    }
+
+    try {
+      // 显示加载提示
+      const loadingMessage = this.message.loading('正在生成登录链接...', { nzDuration: 0 });
+      
+      // 生成 SSO Token
+      this.authService.generateSSOToken().subscribe({
+        next: (response) => {
+          loadingMessage.messageId && this.message.remove(loadingMessage.messageId);
+          
+          // 使用 Electron 打开浏览器
+          this.electronService.openUrl(response.target_url);
+          this.message.success('已打开浏览器，正在跳转...');
+        },
+        error: (error) => {
+          loadingMessage.messageId && this.message.remove(loadingMessage.messageId);
+          console.error('生成 SSO Token 失败:', error);
+          
+          if (error.status === 401) {
+            this.message.error('登录已过期，请重新登录');
+          } else if (error.status === 500) {
+            this.message.error('服务器错误，无法生成登录链接');
+          } else {
+            this.message.error('网络连接失败，无法自动跳转');
+          }
+        }
+      });
+    } catch (error) {
+      console.error('SSO 跳转失败:', error);
+      this.message.error('跳转失败，请稍后重试');
+    }
   }
 }

@@ -756,6 +756,9 @@ export class HeaderComponent implements OnDestroy {
         this.projectService.compareStm32PinConfig(newPinConfig)
       }
     }
+
+    // 触发预编译操作：配置变更后自动触发预编译
+    this.builderService.triggerPreprocess('config-changed');
   }
 
   showUser = false;

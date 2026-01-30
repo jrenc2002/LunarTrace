@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { BehaviorSubject, Observable, throwError } from 'rxjs';
-import { catchError, map } from 'rxjs/operators';
+import { BehaviorSubject, Observable, throwError, from } from 'rxjs';
+import { catchError, map, switchMap } from 'rxjs/operators';
 import { API } from '../configs/api.config';
 import { ElectronService } from './electron.service';
 
@@ -38,6 +38,12 @@ export interface RegisterRequest {
   username: string;
   password: string;
   email: string;
+}
+
+export interface SSOTokenResponse {
+  sso_token: string;
+  expires_in: number;
+  target_url: string | null;
 }
 
 @Injectable({
@@ -926,6 +932,47 @@ export class AuthService {
       console.error('处理 GitHub OAuth 成功数据失败:', error);
       throw error;
     }
+  }
+
+  /**
+   * 生成 SSO Token（用于桌面端跳转 Web 端免登）
+   * @param targetUrl 可选，目标跳转 URL
+   * @returns Observable<SSOTokenResponse>
+   */
+  generateSSOToken(targetUrl?: string): Observable<SSOTokenResponse> {
+    return from(this.getToken2()).pipe(
+      switchMap(token => {
+        if (!token) {
+          return throwError(() => new Error('用户未登录'));
+        }
+
+        const requestBody: any = {
+          target_type: 'console',
+        };
+        if (targetUrl) {
+          requestBody.target_url = targetUrl;
+        }
+
+        return this.http.post<CommonResponse>(API.ssoGenerate, requestBody, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).pipe(
+          map((response) => {
+            if (response.status === 200 && response.data) {
+              return {
+                sso_token: response.data.sso_token,
+                expires_in: response.data.expires_in,
+                target_url: response.data.target_url
+              };
+            }
+            throw new Error(response.message || '生成 SSO Token 失败');
+          }),
+          catchError((error) => {
+            console.error('生成 SSO Token 失败:', error);
+            return throwError(() => error);
+          })
+        );
+      })
+    );
   }
 
   /**

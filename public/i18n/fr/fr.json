@@ -493,6 +493,7 @@
         "BOARD_UNINSTALL_COMPLETE": "Carte désinstallée avec succès",
         "BOARD_DEPS_INSTALL_COMPLETE": "Dépendances de la carte installées avec succès",
         "BOARD_DEPS_INSTALL_FAILED": "Échec de l'installation des dépendances de la carte",
+        "DEPS_INSTALL_COMPLETE": "Dépendances installées avec succès",
         "DEPS_UNINSTALL_COMPLETE": "Dépendances désinstallées avec succès",
         "DEPS_UNINSTALL_FAILED": "Échec de la désinstallation des dépendances",
         "NAME_REQUIRED": "Le nom de {{type}} ne peut pas être vide",

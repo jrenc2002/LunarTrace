@@ -493,6 +493,7 @@
         "BOARD_UNINSTALL_COMPLETE": "Board erfolgreich deinstalliert",
         "BOARD_DEPS_INSTALL_COMPLETE": "Board-Abhängigkeiten erfolgreich installiert",
         "BOARD_DEPS_INSTALL_FAILED": "Board-Abhängigkeiten Installation fehlgeschlagen",
+        "DEPS_INSTALL_COMPLETE": "Abhängigkeiten erfolgreich installiert",
         "DEPS_UNINSTALL_COMPLETE": "Abhängigkeiten erfolgreich deinstalliert",
         "DEPS_UNINSTALL_FAILED": "Abhängigkeiten Deinstallation fehlgeschlagen",
         "NAME_REQUIRED": "{{type}}-Name darf nicht leer sein",

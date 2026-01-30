@@ -64,6 +64,8 @@ export const API = {
   // github oauth
   get githubBrowserAuthorize() { return `${getServerUrl()}/api/v1/oauth/github/browser-authorize`; },
   get githubTokenExchange() { return `${getServerUrl()}/api/v1/oauth/github/token-exchange`; },
+  // sso
+  get ssoGenerate() { return `${getServerUrl()}/api/v1/auth/sso/generate`; },
   // ai
   get startSession() { return `${getServerUrl()}/api/v1/start_session`; },
   get closeSession() { return `${getServerUrl()}/api/v1/close_session`; },

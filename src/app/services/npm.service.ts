@@ -151,10 +151,14 @@ export class NpmService {
     await this.installBoardDependencies(boardPackageJson);
   }
 
+  boardDependenciesChanged = false;
+
   // 安装开发板依赖
   async installBoardDependencies(packageJson: any) {
     try {
       this.isInstalling = true;
+      this.boardDependenciesChanged = false;
+
       this.workflowService.startInstall();
       console.log('开始安装开发板依赖...');
       // const appDataPath = this.configService.data.appdata_path[this.configService.data.platform].replace('%HOMEPATH%', window['path'].getUserHome());
@@ -171,7 +175,7 @@ export class NpmService {
           const depPackageJson = JSON.parse(window['fs'].readFileSync(depPathPackageJson));
           // 检查版本是否一致
           if (depPackageJson.version === version) {
-            // console.log(`依赖 ${key} 已安装，版本一致`);
+            console.log(`依赖 ${key} 已安装，版本一致`);
             continue;
           } else {
             // console.log(`依赖 ${key} 已安装，但版本不一致，当前版本: ${depPackageJson.version}, 需要版本: ${version}`);
@@ -184,6 +188,8 @@ export class NpmService {
         //   console.log(`依赖 ${key} 已安装`);
         //   continue;
         // }
+
+        this.boardDependenciesChanged = true;
 
         // this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('NPM.INSTALLING_DEPENDENCY', { name: key }), timeout: 300000 });
         this.noticeService.update({ 
@@ -213,13 +219,15 @@ export class NpmService {
         }
       }
 
-      // this.uiService.updateFooterState({ state: 'done', text: this.translate.instant('NPM.BOARD_DEPS_INSTALL_COMPLETE') });
-      this.noticeService.update({ 
-        title: this.translate.instant('NPM.INSTALL_COMPLETE_TITLE'), 
-        text: this.translate.instant('NPM.BOARD_DEPS_INSTALL_COMPLETE'), 
-        state: 'done',
-        setTimeout: 3000
-      });
+      if (this.boardDependenciesChanged) {
+        // this.uiService.updateFooterState({ state: 'done', text: this.translate.instant('NPM.BOARD_DEPS_INSTALL_COMPLETE') });
+        this.noticeService.update({ 
+          title: this.translate.instant('NPM.INSTALL_COMPLETE_TITLE'), 
+          text: this.translate.instant('NPM.BOARD_DEPS_INSTALL_COMPLETE'), 
+          state: 'done',
+          setTimeout: 3000
+        });
+      }
       this.workflowService.finishInstall(true);
     } catch (error) {
       console.error('安装开发板依赖时出错:', error);

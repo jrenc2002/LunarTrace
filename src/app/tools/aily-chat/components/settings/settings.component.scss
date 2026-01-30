@@ -10,6 +10,16 @@
     overflow-y: auto;
     overflow-x: hidden;
 
+    .test{
+        position: absolute;
+        left: 0;
+        top: 0;
+        background: rgba(0, 0, 0, 0.6);
+        z-index: 999;
+        height: 100%;
+        width: 100%;
+    }
+
 
     .content {
         max-height: calc(100% - 50px);
@@ -217,6 +227,10 @@
             border: 1px solid #444;
             margin-bottom: 0;
             color: rgba(255, 255, 255, 0.7) !important;
+
+            &[type="password"] {
+                letter-spacing: -5px;
+            }
 
             &:focus {
                 border-color: #1890ff;

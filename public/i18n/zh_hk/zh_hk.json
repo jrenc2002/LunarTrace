@@ -493,6 +493,7 @@
         "BOARD_UNINSTALL_COMPLETE": "開發板卸載完成",
         "BOARD_DEPS_INSTALL_COMPLETE": "開發板依賴安裝完成",
         "BOARD_DEPS_INSTALL_FAILED": "開發板依賴安裝失敗",
+        "DEPS_INSTALL_COMPLETE": "依賴安裝完成",
         "DEPS_UNINSTALL_COMPLETE": "依賴卸載完成",
         "DEPS_UNINSTALL_FAILED": "依賴卸載失敗",
         "NAME_REQUIRED": "{{type}}名稱不能為空",

@@ -493,6 +493,7 @@
         "BOARD_UNINSTALL_COMPLETE": "Placa desinstalada correctamente",
         "BOARD_DEPS_INSTALL_COMPLETE": "Dependencias de la placa instaladas correctamente",
         "BOARD_DEPS_INSTALL_FAILED": "Error al instalar las dependencias de la placa",
+        "DEPS_INSTALL_COMPLETE": "Dependencias instaladas correctamente",
         "DEPS_UNINSTALL_COMPLETE": "Dependencias desinstaladas correctamente",
         "DEPS_UNINSTALL_FAILED": "Error al desinstalar las dependencias",
         "NAME_REQUIRED": "El nombre de {{type}} no puede estar vacío",

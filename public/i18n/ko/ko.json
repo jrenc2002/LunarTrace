@@ -489,6 +489,7 @@
         "BOARD_UNINSTALL_COMPLETE": "보드 제거 완료",
         "BOARD_DEPS_INSTALL_COMPLETE": "보드 의존성 설치 완료",
         "BOARD_DEPS_INSTALL_FAILED": "보드 의존성 설치 실패",
+        "DEPS_INSTALL_COMPLETE": "의존성 설치 완료",
         "DEPS_UNINSTALL_COMPLETE": "의존성 제거 완료",
         "DEPS_UNINSTALL_FAILED": "의존성 제거 실패",
         "NAME_REQUIRED": "{{type}} 이름은 비워둘 수 없습니다",

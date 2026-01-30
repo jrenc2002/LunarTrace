@@ -493,6 +493,7 @@
         "BOARD_UNINSTALL_COMPLETE": "تم إلغاء تثبيت اللوحة بنجاح",
         "BOARD_DEPS_INSTALL_COMPLETE": "تم تثبيت تبعيات اللوحة بنجاح",
         "BOARD_DEPS_INSTALL_FAILED": "فشل تثبيت تبعيات اللوحة",
+        "DEPS_INSTALL_COMPLETE": "تم تثبيت التبعيات بنجاح",
         "DEPS_UNINSTALL_COMPLETE": "تم إلغاء تثبيت التبعيات بنجاح",
         "DEPS_UNINSTALL_FAILED": "فشل إلغاء تثبيت التبعيات",
         "NAME_REQUIRED": "لا يمكن أن يكون اسم {{type}} فارغًا",

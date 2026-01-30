@@ -20,6 +20,7 @@ import { DevToolComponent } from './components/dev-tool/dev-tool.component';
 import { HistoryService } from './services/history.service';
 import { OnboardingService } from '../../services/onboarding.service';
 import { BLOCKLY_ONBOARDING_CONFIG } from '../../configs/onboarding.config';
+import { NoticeService } from '../../services/notice.service';
 
 @Component({
   selector: 'app-blockly-editor',
@@ -62,7 +63,8 @@ export class BlocklyEditorComponent {
     private _builderService: _BuilderService,
     private _uploadService: _UploaderService,
     private onboardingService: OnboardingService,
-    private translate: TranslateService
+    private translate: TranslateService,
+    private noticeService: NoticeService
   ) { }
 
   ngOnInit(): void {
@@ -122,8 +124,25 @@ export class BlocklyEditorComponent {
     const nodeModulesExist = this.electronService.exists(projectPath + '/node_modules');
     if (!nodeModulesExist) {
       // 终端进入项目目录，安装项目依赖
-      this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('BLOCKLY_EDITOR.INSTALLING_DEPS') });
-      await this.cmdService.runAsync(`npm install`, projectPath)
+      // this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('BLOCKLY_EDITOR.INSTALLING_DEPS') });
+      setTimeout(() => {
+        this.noticeService.update({
+          title: this.translate.instant('NPM.INSTALLING_TITLE'),
+          text: this.translate.instant('BLOCKLY_EDITOR.INSTALLING_DEPS'),
+          state: 'doing',
+          showProgress: false,
+        });
+      }, 0);
+      await this.cmdService.runAsync(`npm install`, projectPath);
+      setTimeout(() => {
+        this.noticeService.update({
+          title: this.translate.instant('NPM.INSTALL_COMPLETE_TITLE'), 
+          text: this.translate.instant('NPM.DEPS_INSTALL_COMPLETE'), 
+          state: 'done',
+          showProgress: false,
+          setTimeout: 3000
+        });
+      }, 1000);
     }
     // 3. 加载开发板module中的board.json
     this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('BLOCKLY_EDITOR.LOADING_BOARD_CONFIG') });

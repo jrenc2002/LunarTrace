@@ -561,6 +561,7 @@
         "BOARD_UNINSTALL_COMPLETE": "Board uninstalled successfully",
         "BOARD_DEPS_INSTALL_COMPLETE": "Board dependencies installed successfully",
         "BOARD_DEPS_INSTALL_FAILED": "Board dependencies installation failed",
+        "DEPS_INSTALL_COMPLETE": "Dependencies installed successfully",
         "DEPS_UNINSTALL_COMPLETE": "Dependencies uninstalled successfully",
         "DEPS_UNINSTALL_FAILED": "Dependencies uninstallation failed",
         "NAME_REQUIRED": "{{type}} name cannot be empty",

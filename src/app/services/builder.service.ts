@@ -75,6 +75,22 @@ export class BuilderService {
   }
 
   /**
+   * 触发预编译操作
+   * 用于配置变更后触发自动预编译
+   * @param reason 触发原因，用于日志记录
+   */
+  triggerPreprocess(reason: string = 'manual') {
+    console.log(`触发预编译操作，原因: ${reason}`);
+    this.actionService.dispatch('preprocess-trigger', { reason }, result => {
+      if (result.success) {
+        console.log('预编译触发成功');
+      } else {
+        console.warn('预编译触发失败:', result);
+      }
+    });
+  }
+
+  /**
    * 清除缓存
    */
   async clearCache(projectPath: string) {

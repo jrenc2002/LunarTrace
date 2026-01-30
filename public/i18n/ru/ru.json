@@ -493,6 +493,7 @@
         "BOARD_UNINSTALL_COMPLETE": "Плата успешно удалена",
         "BOARD_DEPS_INSTALL_COMPLETE": "Зависимости платы успешно установлены",
         "BOARD_DEPS_INSTALL_FAILED": "Ошибка установки зависимостей платы",
+        "DEPS_INSTALL_COMPLETE": "Зависимости успешно установлены",
         "DEPS_UNINSTALL_COMPLETE": "Зависимости успешно удалены",
         "DEPS_UNINSTALL_FAILED": "Ошибка удаления зависимостей",
         "NAME_REQUIRED": "Имя {{type}} не может быть пустым",

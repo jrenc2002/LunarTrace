@@ -493,6 +493,7 @@
         "BOARD_UNINSTALL_COMPLETE": "ボードのアンインストールが完了しました",
         "BOARD_DEPS_INSTALL_COMPLETE": "ボードの依存関係のインストールが完了しました",
         "BOARD_DEPS_INSTALL_FAILED": "ボードの依存関係のインストールに失敗しました",
+        "DEPS_INSTALL_COMPLETE": "依存関係のインストールが完了しました",
         "DEPS_UNINSTALL_COMPLETE": "依存関係のアンインストールが完了しました",
         "DEPS_UNINSTALL_FAILED": "依存関係のアンインストールに失敗しました",
         "NAME_REQUIRED": "{{type}}名は空にできません",
