@@ -11,11 +11,13 @@ import { generateDateString } from '../func/func';
 import { ConfigService } from './config.service';
 import { ESP32_CONFIG_MENU } from '../configs/esp32.config';
 import { STM32_CONFIG_MENU } from '../configs/stm32.config';
+import { NRF5_CONFIG_MENU } from '../configs/nrf5.config';
 import { ActionService } from './action.service';
 import { PlatformService } from './platform.service';
 import { NewProjectData } from '../pages/project-new/project-new.component';
 import { WorkflowService } from './workflow.service';
 import { TranslateService } from '@ngx-translate/core';
+import { NoticeService } from './notice.service';
 
 const { pt } = (window as any)['electronAPI'].platform;
 
@@ -75,7 +77,8 @@ export class ProjectService {
     private actionService: ActionService,
     private platformService: PlatformService,
     private workflowService: WorkflowService,
-    private translate: TranslateService
+    private translate: TranslateService,
+    private noticeService: NoticeService
   ) {
   }
 
@@ -1071,6 +1074,361 @@ export class ProjectService {
     } catch (error) {
       console.error('更新STM32配置菜单失败:', error);
       return null;
+    }
+  }
+
+  // 解析boards.txt并获取nRF5配置信息
+  async getNrf5BoardConfig(boardName: string) {
+    try {
+      const sdkPath = await this.getSdkPath();
+      if (!sdkPath) {
+        throw new Error('未找到 SDK 路径');
+      }
+
+      const boardsFilePath = `${sdkPath}/boards.txt`;
+      if (!window['fs'].existsSync(boardsFilePath)) {
+        throw new Error('boards.txt 文件不存在: ' + boardsFilePath);
+      }
+
+      const boardsContent = window['fs'].readFileSync(boardsFilePath, 'utf8');
+      const lines = boardsContent.split('\n');
+
+      // 查找指定开发板的配置
+      const boardConfig = this.parseBoardsConfig(lines, boardName);
+
+      if (!boardConfig) {
+        throw new Error(`未找到开发板 "${boardName}" 的配置`);
+      }
+
+      // 提取nRF5需要的配置项
+      const nrf5Config = {
+        softdevice: this.extractMenuOptions(boardConfig, 'softdevice'),
+      };
+
+      return nrf5Config;
+    } catch (error) {
+      console.error('获取nRF5开发板配置失败:', error);
+      return null;
+    }
+  }
+
+  // 更新nRF5配置菜单项
+  async updateNrf5ConfigMenu(boardName: string) {
+    try {
+      const boardConfig = await this.getNrf5BoardConfig(boardName);
+
+      if (!boardConfig) {
+        console.warn(`无法获取开发板 "${boardName}" 的配置`);
+        return null;
+      }
+
+      // 读取当前项目的package.json配置
+      let currentProjectConfig: any = {};
+      try {
+        const packageJson = await this.getPackageJson();
+        currentProjectConfig = packageJson.projectConfig || {};
+      } catch (error) {
+        console.warn('无法读取项目配置:', error);
+      }
+
+      let NRF5_CONFIG_MENU_TEMP = JSON.parse(JSON.stringify(NRF5_CONFIG_MENU));
+
+      // 更新菜单项
+      NRF5_CONFIG_MENU_TEMP.forEach(menuItem => {
+        if (menuItem.name === 'NRF5.SOFTDEVICE' && boardConfig.softdevice) {
+          menuItem.children = boardConfig.softdevice;
+          // 根据当前项目配置设置check状态
+          if (currentProjectConfig.softdevice) {
+            menuItem.children.forEach((child: any) => {
+              child.check = false;
+              if (this.compareConfigs(child.data, currentProjectConfig.softdevice)) {
+                child.check = true;
+              }
+            });
+          }
+        }
+      });
+
+      return NRF5_CONFIG_MENU_TEMP;
+    } catch (error) {
+      console.error('更新nRF5配置菜单失败:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 获取 softdevice hex 文件路径
+   * 路径格式: {appDataPath}/sdk/nrf5_{version}/cores/nRF5/SDK/components/softdevice/{softdevice}/hex/{softdevice}_nrf51_2.0.0_softdevice.hex
+   * @param softdeviceName softdevice 名称，如 "s110" 或 "none"
+   * @returns softdevice hex 文件路径，如果不存在则返回 null
+   */
+  async getSoftdeviceHexPath(softdeviceName: string): Promise<string | null> {
+    try {
+      // 获取 SDK 路径
+      const sdkPath = await this.getSdkPath();
+      if (!sdkPath) {
+        console.error('未找到 SDK 路径');
+        return null;
+      }
+
+      // 构建 softdevice 目录路径
+      // 路径: sdk/nrf5_x.x.x/cores/nRF5/SDK/components/softdevice/{softdevice}/hex/
+      const softdeviceDir = window['path'].join(
+        sdkPath,
+        'cores',
+        'nRF5',
+        'SDK',
+        'components',
+        'softdevice',
+        softdeviceName,
+        'hex'
+      );
+
+      console.log('Softdevice 目录路径:', softdeviceDir);
+
+      if (!window['fs'].existsSync(softdeviceDir)) {
+        console.error('Softdevice 目录不存在:', softdeviceDir);
+        return null;
+      }
+
+      // 查找 hex 文件
+      const files = window['fs'].readdirSync(softdeviceDir);
+      const hexFile = files.find((file: string) => file.endsWith('.hex'));
+
+      if (!hexFile) {
+        console.error('未找到 hex 文件:', softdeviceDir);
+        return null;
+      }
+
+      const hexPath = window['path'].join(softdeviceDir, hexFile);
+      console.log('Softdevice hex 文件路径:', hexPath);
+      return hexPath;
+    } catch (error) {
+      console.error('获取 softdevice hex 路径失败:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 烧录 softdevice 到 nRF5 设备
+   * 使用 upload.js 脚本进行烧录，与正常上传流程一致
+   * @param softdeviceName softdevice 名称，如 "s110" 或 "none"
+   * @param serialPort 串口名称
+   * @returns Promise 表示烧录结果
+   */
+  async flashSoftdevice(softdeviceName: string, serialPort: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // 获取 softdevice hex 文件路径
+      const hexPath = await this.getSoftdeviceHexPath(softdeviceName);
+      if (!hexPath) {
+        return { success: false, message: `未找到 ${softdeviceName} 的 hex 文件` };
+      }
+
+      // 获取 board.json 配置
+      const boardJson = await this.getBoardJson();
+      if (!boardJson || !boardJson.uploadParam) {
+        return { success: false, message: '未找到上传参数配置' };
+      }
+
+      // 获取上传参数模板并替换 hex 文件路径
+      let uploadParam = boardJson.uploadParam;
+      // 替换 ${'*.hex'} 为实际的 hex 文件路径（不加引号，因为外层可能已有{{}}）
+      uploadParam = uploadParam.replace(/\$\{['"]?\*\.hex['"]?\}/g, hexPath);
+      uploadParam = uploadParam.replace(/\$\{'\*\.hex'\}/g, hexPath);
+
+      console.log('Softdevice 上传参数:', uploadParam);
+
+      // 准备上传配置 - 使用与 upload.js 相同的配置格式
+      const boardModule = await this.getBoardModule();
+      const appDataPath = window['path'].getAppDataPath();
+
+      // 创建一个临时的 buildPath，用于存放 softdevice hex 文件
+      const tempBuildPath = window['path'].join(this.currentProjectPath, '.temp', 'softdevice');
+      if (!window['fs'].existsSync(tempBuildPath)) {
+        window['fs'].mkdirSync(tempBuildPath, { recursive: true });
+      }
+
+      // 复制 hex 文件到临时目录
+      const hexFileName = window['path'].basename(hexPath);
+      const tempHexPath = window['path'].join(tempBuildPath, hexFileName);
+      window['fs'].copySync(hexPath, tempHexPath);
+
+      const uploadConfig = {
+        currentProjectPath: this.currentProjectPath,
+        buildPath: tempBuildPath,
+        boardModule,
+        appDataPath,
+        serialPort,
+        uploadParam,
+        use_1200bps_touch: false,
+        wait_for_upload: false
+      };
+
+      // 写入配置文件
+      const tempPath = window['path'].join(this.currentProjectPath, '.temp');
+      if (!window['fs'].existsSync(tempPath)) {
+        window['fs'].mkdirSync(tempPath, { recursive: true });
+      }
+      const configFilePath = window['path'].join(tempPath, 'softdevice-upload-config.json');
+      window['fs'].writeFileSync(configFilePath, JSON.stringify(uploadConfig, null, 2));
+
+      // 运行上传脚本
+      const uploadScriptPath = window['path'].join(window['path'].getAilyChildPath(), 'scripts', 'upload.js');
+      const uploadCmd = `node "${uploadScriptPath}" "${configFilePath}"`;
+
+      console.log('Softdevice 上传命令:', uploadCmd);
+
+      const title = this.translate.instant('NRF5.FLASHING_SOFTDEVICE') || '正在烧录 SoftDevice...';
+      const completeTitle = this.translate.instant('NRF5.FLASH_SUCCESS') || 'SoftDevice 烧录成功';
+      const errorTitle = this.translate.instant('NRF5.FLASH_FAILED') || 'SoftDevice 烧录失败';
+
+      // 显示烧录中通知
+      this.noticeService.update({
+        title: title,
+        text: `正在初始化...`,
+        state: 'doing',
+        progress: 0,
+        setTimeout: 0
+      });
+
+      // 执行上传命令
+      return new Promise((resolve) => {
+        let hasError = false;
+        let errorMessage = '';
+        let uploadCompleted = false;
+        let lastProgress = 0;
+        let currentStage = '';
+
+        this.cmdService.run(uploadCmd, null, false).subscribe({
+          next: (output: any) => {
+            if (output.data) {
+              console.log('Softdevice 烧录输出:', output.data);
+              const data = output.data;
+
+              // 检查是否有错误信息
+              if (data.includes('[ERROR]') || data.includes('Error:') || data.includes('error:')) {
+                hasError = true;
+                errorMessage = data;
+              }
+
+              // 解析 OpenOCD 烧录进度
+              // 初始化阶段 (0-10%)
+              if (data.includes('CMSIS-DAP: Interface ready') || data.includes('clock speed')) {
+                lastProgress = 5;
+                currentStage = '连接设备...';
+              }
+              if (data.includes('SWD IDCODE') || data.includes('nrf51.cpu')) {
+                lastProgress = 10;
+                currentStage = '检测到设备';
+              }
+
+              // 编程阶段 (10-60%)
+              if (data.includes('** Programming Started **')) {
+                lastProgress = 15;
+                currentStage = '开始写入...';
+              }
+              if (data.includes('auto erase enabled')) {
+                lastProgress = 20;
+                currentStage = '擦除中...';
+              }
+              if (data.includes('Padding image section')) {
+                lastProgress = 25;
+                currentStage = '准备数据...';
+              }
+              if (data.includes('using fast async flash loader')) {
+                lastProgress = 30;
+                currentStage = '快速写入模式';
+              }
+              // 写入完成时解析进度
+              const writeMatch = data.match(/wrote (\d+) bytes.*in ([\d.]+)s/);
+              if (writeMatch) {
+                lastProgress = 55;
+                currentStage = `已写入 ${Math.round(parseInt(writeMatch[1]) / 1024)} KB`;
+              }
+              if (data.includes('** Programming Finished **')) {
+                lastProgress = 60;
+                currentStage = '写入完成';
+              }
+
+              // 验证阶段 (60-90%)
+              if (data.includes('** Verify Started **')) {
+                lastProgress = 65;
+                currentStage = '开始验证...';
+              }
+              const verifyMatch = data.match(/verified (\d+) bytes/);
+              if (verifyMatch) {
+                lastProgress = 85;
+                currentStage = `已验证 ${Math.round(parseInt(verifyMatch[1]) / 1024)} KB`;
+              }
+              if (data.includes('** Verified OK **')) {
+                lastProgress = 90;
+                currentStage = '验证成功';
+              }
+
+              // 完成阶段 (90-100%)
+              if (data.includes('** Resetting Target **')) {
+                lastProgress = 95;
+                currentStage = '重置设备...';
+              }
+              if (data.includes('shutdown command invoked')) {
+                lastProgress = 100;
+                currentStage = '烧录完成';
+                uploadCompleted = true;
+              }
+
+              // 更新进度显示
+              if (lastProgress > 0) {
+                this.noticeService.update({
+                  title: title,
+                  text: currentStage || `正在烧录 ${softdeviceName} SoftDevice...`,
+                  state: 'doing',
+                  progress: lastProgress,
+                  setTimeout: 0
+                });
+              }
+            }
+          },
+          error: (error: any) => {
+            console.error('Softdevice 烧录错误:', error);
+            this.noticeService.update({
+              title: errorTitle,
+              text: `烧录失败: ${error.message || error}`,
+              state: 'error',
+              setTimeout: 60000
+            });
+            resolve({ success: false, message: `烧录失败: ${error.message || error}` });
+          },
+          complete: () => {
+            console.log('Softdevice 烧录命令执行完成, hasError:', hasError, 'uploadCompleted:', uploadCompleted);
+            if (hasError) {
+              this.noticeService.update({
+                title: errorTitle,
+                text: errorMessage || 'SoftDevice 烧录失败',
+                state: 'error',
+                setTimeout: 60000
+              });
+              resolve({ success: false, message: errorMessage || 'Softdevice 烧录失败' });
+            } else {
+              this.noticeService.update({
+                title: completeTitle,
+                text: `${softdeviceName} SoftDevice 烧录成功`,
+                state: 'done',
+                setTimeout: 5000
+              });
+              resolve({ success: true, message: 'Softdevice 烧录成功' });
+            }
+          }
+        });
+      });
+    } catch (error: any) {
+      console.error('烧录 softdevice 失败:', error);
+      this.noticeService.update({
+        title: this.translate.instant('NRF5.FLASH_FAILED') || 'SoftDevice 烧录失败',
+        text: `烧录失败: ${error.message || error}`,
+        state: 'error',
+        setTimeout: 60000
+      });
+      return { success: false, message: `烧录失败: ${error.message || error}` };
     }
   }
 

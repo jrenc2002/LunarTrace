@@ -47,6 +47,15 @@
         "USB": "Настройки USB",
         "UPLOAD_METHOD": "Метод загрузки"
     },
+    "NRF5": {
+        "SOFTDEVICE": "SoftDevice",
+        "FLASH_SOFTDEVICE_TITLE": "Прошить SoftDevice",
+        "FLASH_SOFTDEVICE_CONFIRM": "Вы хотите прошить {{softdevice}} SoftDevice на устройство?",
+        "SELECT_PORT_FIRST": "Сначала выберите порт",
+        "FLASHING_SOFTDEVICE": "Прошивка SoftDevice...",
+        "FLASH_SUCCESS": "SoftDevice успешно прошит",
+        "FLASH_FAILED": "Не удалось прошить SoftDevice"
+    },
     "GUIDE": {
         "START": "Начать",
         "RECENTLY": "Недавние",

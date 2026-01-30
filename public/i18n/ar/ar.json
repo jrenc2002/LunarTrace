@@ -47,6 +47,15 @@
         "USB": "إعدادات USB",
         "UPLOAD_METHOD": "طريقة الرفع"
     },
+    "NRF5": {
+        "SOFTDEVICE": "SoftDevice",
+        "FLASH_SOFTDEVICE_TITLE": "برمجة SoftDevice",
+        "FLASH_SOFTDEVICE_CONFIRM": "هل تريد برمجة {{softdevice}} SoftDevice على الجهاز؟",
+        "SELECT_PORT_FIRST": "يرجى اختيار منفذ أولاً",
+        "FLASHING_SOFTDEVICE": "جاري برمجة SoftDevice...",
+        "FLASH_SUCCESS": "تم برمجة SoftDevice بنجاح",
+        "FLASH_FAILED": "فشل في برمجة SoftDevice"
+    },
     "GUIDE": {
         "START": "البدء",
         "RECENTLY": "مؤخرًا",

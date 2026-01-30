@@ -47,6 +47,15 @@
         "USB": "USB配置",
         "UPLOAD_METHOD": "燒錄方式"
     },
+    "NRF5": {
+        "SOFTDEVICE": "SoftDevice",
+        "FLASH_SOFTDEVICE_TITLE": "燒錄 SoftDevice",
+        "FLASH_SOFTDEVICE_CONFIRM": "是否要燒錄 {{softdevice}} SoftDevice 到設備？",
+        "SELECT_PORT_FIRST": "請先選擇串口",
+        "FLASHING_SOFTDEVICE": "正在燒錄 SoftDevice...",
+        "FLASH_SUCCESS": "SoftDevice 燒錄成功",
+        "FLASH_FAILED": "SoftDevice 燒錄失敗"
+    },
     "GUIDE": {
         "START": "開始",
         "RECENTLY": "最近",

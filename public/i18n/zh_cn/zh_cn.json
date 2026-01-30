@@ -82,6 +82,15 @@
         "BOARD": "开发板型号选择",
         "USB": "USB配置"
     },
+    "NRF5": {
+        "SOFTDEVICE": "SoftDevice",
+        "FLASH_SOFTDEVICE_TITLE": "烧录 SoftDevice",
+        "FLASH_SOFTDEVICE_CONFIRM": "是否要烧录 {{softdevice}} SoftDevice 到设备？",
+        "SELECT_PORT_FIRST": "请先选择串口",
+        "FLASHING_SOFTDEVICE": "正在烧录 SoftDevice...",
+        "FLASH_SUCCESS": "SoftDevice 烧录成功",
+        "FLASH_FAILED": "SoftDevice 烧录失败"
+    },
     "GUIDE": {
         "START": "开始",
         "RECENTLY": "最近",
