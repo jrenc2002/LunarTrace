@@ -10,7 +10,7 @@ import { SettingsService } from '../../services/settings.service';
 import { TranslationService } from '../../services/translation.service';
 import { ConfigService } from '../../services/config.service';
 import { SimplebarAngularModule } from 'simplebar-angular';
-import { TranslateModule } from '@ngx-translate/core';
+import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { NzSwitchModule } from 'ng-zorro-antd/switch';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { AuthService } from '../../services/auth.service';
@@ -153,10 +153,10 @@ export class SettingsComponent {
     if (this.authService.isAuthenticated) {
       // 显示确认弹窗
       this.modal.confirm({
-        nzTitle: '切换区域',
-        nzContent: '切换区域后需要重新登录，是否继续？',
-        nzOkText: '确认',
-        nzCancelText: '取消',
+        nzTitle: this.translateService.instant('SETTINGS.FIELDS.REGION_TITLE'),
+        nzContent: this.translateService.instant('SETTINGS.FIELDS.REGION_DESC'),
+        nzOkText: this.translateService.instant('SETTINGS.FIELDS.REGION_CONFIRM'),
+        nzCancelText: this.translateService.instant('SETTINGS.FIELDS.REGION_CANCEL'),
         nzBodyStyle: { background: '#2b2d30' },
         nzOnOk: async () => {
           // 用户确认后，更新区域值
@@ -215,6 +215,7 @@ export class SettingsComponent {
     private configService: ConfigService,
     private authService: AuthService,
     private modal: NzModalService,
+    private translateService: TranslateService,
   ) {
   }
 
