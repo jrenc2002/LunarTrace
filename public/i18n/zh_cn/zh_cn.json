@@ -82,6 +82,15 @@
         "BOARD": "开发板型号选择",
         "USB": "USB配置"
     },
+    "NRF5": {
+        "SOFTDEVICE": "SoftDevice",
+        "FLASH_SOFTDEVICE_TITLE": "烧录 SoftDevice",
+        "FLASH_SOFTDEVICE_CONFIRM": "是否要烧录 {{softdevice}} SoftDevice 到设备？",
+        "SELECT_PORT_FIRST": "请先选择串口",
+        "FLASHING_SOFTDEVICE": "正在烧录 SoftDevice...",
+        "FLASH_SUCCESS": "SoftDevice 烧录成功",
+        "FLASH_FAILED": "SoftDevice 烧录失败"
+    },
     "GUIDE": {
         "START": "开始",
         "RECENTLY": "最近",
@@ -122,6 +131,10 @@
         }
     },
     "BLOCKLY": {
+        "CROSS_TAB_COPY": "复制到指定位置",
+        "CONTROLS_SWITCH_CASE": "情况",
+        "CONTROLS_SWITCH_DO": "执行",
+        "CONTROLS_SWITCH_DEFAULT": "默认执行",
         "ONBOARDING": {
             "TOOLBOX_TITLE": "积木工具箱",
             "TOOLBOX_DESC": "这里是积木分类区域，点击不同的分类可以找到各种功能积木块，拖拽到右边工作区使用。",

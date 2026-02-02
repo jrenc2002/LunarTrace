@@ -47,6 +47,15 @@
         "USB": "USB配置",
         "UPLOAD_METHOD": "燒錄方式"
     },
+    "NRF5": {
+        "SOFTDEVICE": "SoftDevice",
+        "FLASH_SOFTDEVICE_TITLE": "燒錄 SoftDevice",
+        "FLASH_SOFTDEVICE_CONFIRM": "是否要燒錄 {{softdevice}} SoftDevice 到設備？",
+        "SELECT_PORT_FIRST": "請先選擇串口",
+        "FLASHING_SOFTDEVICE": "正在燒錄 SoftDevice...",
+        "FLASH_SUCCESS": "SoftDevice 燒錄成功",
+        "FLASH_FAILED": "SoftDevice 燒錄失敗"
+    },
     "GUIDE": {
         "START": "開始",
         "RECENTLY": "最近",
@@ -85,6 +94,12 @@
             "STEP7_TITLE": "加入用戶社群",
             "STEP7_DESC": "遇到問題？想分享作品？加入我們的用戶社群，與其他開發者一起交流學習！"
         }
+    },
+    "BLOCKLY": {
+        "CROSS_TAB_COPY": "複製到指定位置",
+        "CONTROLS_SWITCH_CASE": "情況",
+        "CONTROLS_SWITCH_DO": "執行",
+        "CONTROLS_SWITCH_DEFAULT": "預設執行"
     },
     "APP_STORE": {
         "HEADER_INFO": "前 {{count}} 個應用會顯示在頂部工具欄",

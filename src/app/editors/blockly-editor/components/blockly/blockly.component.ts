@@ -2,7 +2,37 @@ import { Component, ElementRef, Input, ViewChild, DoCheck, OnDestroy } from '@an
 import * as Blockly from 'blockly';
 import { Subject } from 'rxjs';
 import { debounceTime, takeUntil } from 'rxjs/operators';
+import { TranslateService } from '@ngx-translate/core';
+
+// Blockly 多语言包
 import * as zhHans from 'blockly/msg/zh-hans';
+import * as zhHant from 'blockly/msg/zh-hant';
+import * as en from 'blockly/msg/en';
+import * as ja from 'blockly/msg/ja';
+import * as ko from 'blockly/msg/ko';
+import * as de from 'blockly/msg/de';
+import * as fr from 'blockly/msg/fr';
+import * as es from 'blockly/msg/es';
+import * as pt from 'blockly/msg/pt';
+import * as ru from 'blockly/msg/ru';
+import * as ar from 'blockly/msg/ar';
+
+// 语言代码到 Blockly 语言包的映射
+const BLOCKLY_LOCALES: { [key: string]: any } = {
+  'zh_cn': zhHans,
+  'zh_hk': zhHant,
+  'zh-hans': zhHans,
+  'zh-hant': zhHant,
+  'en': en,
+  'ja': ja,
+  'ko': ko,
+  'de': de,
+  'fr': fr,
+  'es': es,
+  'pt': pt,
+  'ru': ru,
+  'ar': ar,
+};
 // import {
 //   ContinuousToolbox,
 //   ContinuousFlyout,
@@ -216,11 +246,19 @@ export class BlocklyComponent implements DoCheck, OnDestroy {
     private modal: NzModalService,
     private configService: ConfigService,
     private bitmapUploadService: BitmapUploadService,
-    private noticeService: NoticeService
+    private noticeService: NoticeService,
+    private translateService: TranslateService
   ) {
     // Initialize GlobalServiceManager with BitmapUploadService
     const globalServiceManager = GlobalServiceManager.getInstance();
     globalServiceManager.setBitmapUploadService(this.bitmapUploadService);
+
+    // 订阅语言变化事件
+    this.translateService.onLangChange
+      .pipe(takeUntil(this.destroy$))
+      .subscribe((event) => {
+        this.updateBlocklyLocale(event.lang);
+      });
   }
 
   ngOnInit(): void {
@@ -348,7 +386,11 @@ export class BlocklyComponent implements DoCheck, OnDestroy {
         };
       })(console.error);
 
-      Blockly.setLocale(<any>zhHans);
+      // 根据当前语言设置 Blockly locale
+      const currentLang = this.translateService.currentLang || 'zh_cn';
+      const locale = BLOCKLY_LOCALES[currentLang] || BLOCKLY_LOCALES['en'] || zhHans;
+      Blockly.setLocale(locale);
+      
       // 在工作区创建前设置 block registry 拦截
       this.setupBlockRegistryInterception();
       // 获取当前blockly渲染器
@@ -465,7 +507,48 @@ export class BlocklyComponent implements DoCheck, OnDestroy {
   }
 
   initLanguage() {
-    Blockly.Msg["CROSS_TAB_COPY"] = "复制到指定位置";
+    // 根据当前语言设置 Blockly locale
+    const currentLang = this.translateService.currentLang || 'zh_cn';
+    this.updateBlocklyLocale(currentLang);
+  }
+
+  /**
+   * 更新 Blockly 的语言设置
+   * @param lang 语言代码，如 'zh_cn', 'en' 等
+   */
+  updateBlocklyLocale(lang: string) {
+    // 获取对应的 Blockly 语言包
+    const locale = BLOCKLY_LOCALES[lang] || BLOCKLY_LOCALES['en'] || zhHans;
+    
+    // 设置 Blockly locale
+    Blockly.setLocale(locale);
+    
+    // 设置自定义消息（覆盖或补充）
+    Blockly.Msg["CROSS_TAB_COPY"] = this.translateService.instant('BLOCKLY.CROSS_TAB_COPY') || "复制到指定位置";
+    
+    // 自定义扩展的多语言消息（switch-case 等）
+    Blockly.Msg["CONTROLS_SWITCH_CASE"] = this.translateService.instant('BLOCKLY.CONTROLS_SWITCH_CASE') || (lang.startsWith('zh') ? "情况" : "case");
+    Blockly.Msg["CONTROLS_SWITCH_DO"] = this.translateService.instant('BLOCKLY.CONTROLS_SWITCH_DO') || (lang.startsWith('zh') ? "执行" : "do");
+    Blockly.Msg["CONTROLS_SWITCH_DEFAULT"] = this.translateService.instant('BLOCKLY.CONTROLS_SWITCH_DEFAULT') || (lang.startsWith('zh') ? "默认执行" : "default");
+    
+    // 如果工作区已存在，刷新工具箱以应用新语言
+    if (this.workspace) {
+      try {
+        // 刷新工具箱
+        this.workspace.refreshToolboxSelection();
+        
+        // 重新渲染所有块以更新显示文本
+        const blocks = this.workspace.getAllBlocks(false);
+        blocks.forEach((block: any) => {
+          if (block.rendered) {
+            block.initSvg();
+            block.render();
+          }
+        });
+      } catch (e) {
+        console.warn('刷新 Blockly 工作区语言时出错:', e);
+      }
+    }
   }
 
   setupBlockRegistryInterception(): void {

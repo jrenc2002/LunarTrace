@@ -47,6 +47,15 @@
         "USB": "Configurações USB",
         "UPLOAD_METHOD": "Método de Upload"
     },
+    "NRF5": {
+        "SOFTDEVICE": "SoftDevice",
+        "FLASH_SOFTDEVICE_TITLE": "Gravar SoftDevice",
+        "FLASH_SOFTDEVICE_CONFIRM": "Deseja gravar {{softdevice}} SoftDevice no dispositivo?",
+        "SELECT_PORT_FIRST": "Por favor, selecione uma porta primeiro",
+        "FLASHING_SOFTDEVICE": "Gravando SoftDevice...",
+        "FLASH_SUCCESS": "SoftDevice gravado com sucesso",
+        "FLASH_FAILED": "Falha ao gravar SoftDevice"
+    },
     "GUIDE": {
         "START": "Iniciar",
         "RECENTLY": "Recentes",
@@ -85,6 +94,12 @@
             "STEP7_TITLE": "Junte-se à Comunidade",
             "STEP7_DESC": "Tem perguntas? Quer compartilhar seu trabalho? Junte-se à nossa comunidade de usuários para conectar e aprender com outros makers!"
         }
+    },
+    "BLOCKLY": {
+        "CROSS_TAB_COPY": "Copiar para local especificado",
+        "CONTROLS_SWITCH_CASE": "caso",
+        "CONTROLS_SWITCH_DO": "fazer",
+        "CONTROLS_SWITCH_DEFAULT": "padrão"
     },
     "APP_STORE": {
         "HEADER_INFO": "Os primeiros {{count}} aplicativos serão mostrados na barra de ferramentas",

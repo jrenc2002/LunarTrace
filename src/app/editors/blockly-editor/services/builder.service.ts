@@ -87,6 +87,14 @@ export class _BuilderService {
       return { success: true };
     }, 'builder-preprocess-stop');
 
+    this.actionService.listen('preprocess-trigger', async (action) => {
+      // 手动触发预编译
+      const reason = action.payload?.reason || 'manual';
+      console.log(`收到预编译触发请求，原因: ${reason}`);
+      this.blocklyService.dependencySubject.next(reason);
+      return { success: true };
+    }, 'builder-preprocess-trigger');
+
     // 保存订阅引用以便后续取消
     this.dependencySubscription = this.blocklyService.dependencySubject.subscribe(async (data) => {
       // 检查项目加载状态，如果正在加载中则跳过预处理
@@ -293,7 +301,9 @@ export class _BuilderService {
   destroy() {
     this.actionService.unlisten('builder-compile-begin');
     this.actionService.unlisten('builder-compile-cancel');
+    this.actionService.unlisten('builder-compile-reset');
     this.actionService.unlisten('builder-preprocess-stop');
+    this.actionService.unlisten('builder-preprocess-trigger');
     this.clearProgressTimer(); // 清理定时器
     
     // 终止正在运行的预处理进程

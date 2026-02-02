@@ -47,6 +47,15 @@
         "USB": "Configuración USB",
         "UPLOAD_METHOD": "Método de subida"
     },
+    "NRF5": {
+        "SOFTDEVICE": "SoftDevice",
+        "FLASH_SOFTDEVICE_TITLE": "Flashear SoftDevice",
+        "FLASH_SOFTDEVICE_CONFIRM": "¿Desea flashear {{softdevice}} SoftDevice en el dispositivo?",
+        "SELECT_PORT_FIRST": "Por favor, seleccione un puerto primero",
+        "FLASHING_SOFTDEVICE": "Flasheando SoftDevice...",
+        "FLASH_SUCCESS": "SoftDevice flasheado con éxito",
+        "FLASH_FAILED": "Error al flashear SoftDevice"
+    },
     "GUIDE": {
         "START": "Inicio",
         "RECENTLY": "Reciente",
@@ -85,6 +94,12 @@
             "STEP7_TITLE": "Únase a la Comunidad",
             "STEP7_DESC": "¿Tiene preguntas? ¿Quiere compartir su trabajo? ¡Únase a nuestra comunidad de usuarios para conectar y aprender con otros makers!"
         }
+    },
+    "BLOCKLY": {
+        "CROSS_TAB_COPY": "Copiar a ubicación especificada",
+        "CONTROLS_SWITCH_CASE": "caso",
+        "CONTROLS_SWITCH_DO": "hacer",
+        "CONTROLS_SWITCH_DEFAULT": "predeterminado"
     },
     "APP_STORE": {
         "HEADER_INFO": "Las primeras {{count}} aplicaciones se mostrarán en la barra de herramientas",

@@ -83,6 +83,15 @@
         "USB": "USB Configuration",
         "UPLOAD_METHOD": "Upload Method"
     },
+    "NRF5": {
+        "SOFTDEVICE": "SoftDevice",
+        "FLASH_SOFTDEVICE_TITLE": "Flash SoftDevice",
+        "FLASH_SOFTDEVICE_CONFIRM": "Do you want to flash {{softdevice}} SoftDevice to the device?",
+        "SELECT_PORT_FIRST": "Please select a port first",
+        "FLASHING_SOFTDEVICE": "Flashing SoftDevice...",
+        "FLASH_SUCCESS": "SoftDevice flashed successfully",
+        "FLASH_FAILED": "Failed to flash SoftDevice"
+    },
     "GUIDE": {
         "START": "Start",
         "RECENTLY": "Recent",
@@ -123,6 +132,10 @@
         }
     },
     "BLOCKLY": {
+        "CROSS_TAB_COPY": "Copy to specified location",
+        "CONTROLS_SWITCH_CASE": "case",
+        "CONTROLS_SWITCH_DO": "do",
+        "CONTROLS_SWITCH_DEFAULT": "default",
         "ONBOARDING": {
             "TOOLBOX_TITLE": "Block Toolbox",
             "TOOLBOX_DESC": "Find all available blocks here. Drag and drop blocks to the workspace to build your program.",

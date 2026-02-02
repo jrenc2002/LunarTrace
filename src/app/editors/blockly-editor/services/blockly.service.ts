@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
 import * as Blockly from 'blockly';
-import { processI18n, processJsonVar, processStaticFilePath } from '../components/blockly/abf';
+import { processI18n, processJsonVar, processStaticFilePath, processToolboxI18n } from '../components/blockly/abf';
 import { TranslateService } from '@ngx-translate/core';
 import { ElectronService } from '../../../services/electron.service';
 
@@ -113,6 +113,9 @@ export class BlocklyService {
         if (this.electronService.exists(i18nFilePath)) {
           i18nData = JSON.parse(this.electronService.readFile(i18nFilePath));
           blocks = processI18n(blocks, i18nData);
+          // 将 i18n 数据按库名存储到全局，供动态扩展使用
+          (window as any).__BLOCKLY_LIB_I18N__ = (window as any).__BLOCKLY_LIB_I18N__ || {};
+          (window as any).__BLOCKLY_LIB_I18N__[libPackageName] = i18nData;
         }
         // 替换block中静态图片路径
         const staticFileIsExist = this.electronService.exists(this.electronService.pathJoin(libPackagePath, 'static'));
@@ -121,8 +124,9 @@ export class BlocklyService {
         const toolboxFileIsExist = this.electronService.exists(this.electronService.pathJoin(libPackagePath, 'toolbox.json'));
         if (toolboxFileIsExist) {
           let toolbox = JSON.parse(this.electronService.readFile(this.electronService.pathJoin(libPackagePath, 'toolbox.json')));
+          // 处理 toolbox 多语言（包括 name 和 labels）
           if (i18nData) {
-            toolbox.name = i18nData.toolbox_name;
+            toolbox = processToolboxI18n(toolbox, i18nData);
           }
           this.loadLibToolbox(toolbox);
         }

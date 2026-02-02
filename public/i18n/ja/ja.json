@@ -47,6 +47,15 @@
         "USB": "USB設定",
         "UPLOAD_METHOD": "書き込み方法"
     },
+    "NRF5": {
+        "SOFTDEVICE": "SoftDevice",
+        "FLASH_SOFTDEVICE_TITLE": "SoftDeviceを書き込む",
+        "FLASH_SOFTDEVICE_CONFIRM": "{{softdevice}} SoftDeviceをデバイスに書き込みますか？",
+        "SELECT_PORT_FIRST": "先にポートを選択してください",
+        "FLASHING_SOFTDEVICE": "SoftDeviceを書き込み中...",
+        "FLASH_SUCCESS": "SoftDeviceの書き込みに成功しました",
+        "FLASH_FAILED": "SoftDeviceの書き込みに失敗しました"
+    },
     "GUIDE": {
         "START": "スタート",
         "RECENTLY": "最近",
@@ -85,6 +94,12 @@
             "STEP7_TITLE": "コミュニティに参加",
             "STEP7_DESC": "質問がありますか？作品を共有したいですか？ユーザーコミュニティに参加して、他のメーカーと交流・学習しましょう！"
         }
+    },
+    "BLOCKLY": {
+        "CROSS_TAB_COPY": "指定の場所にコピー",
+        "CONTROLS_SWITCH_CASE": "ケース",
+        "CONTROLS_SWITCH_DO": "実行",
+        "CONTROLS_SWITCH_DEFAULT": "デフォルト"
     },
     "APP_STORE": {
         "HEADER_INFO": "最初の {{count}} 個のアプリがツールバーに表示されます",

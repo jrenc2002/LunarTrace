@@ -3239,6 +3239,7 @@ ${JSON.stringify(errData)}
 - 最小改动：精确修复，保持结构稳定
   · 逻辑错误 → 调整块位置和连接
   · 缺块 → 精确创建所需块
+  · 块参数错误 → 使用configure_block_tool修正参数
   · 块错误 → 重新创建正确块，替换错误块
   · 连接错误 → 使用connect_blocks_tool重新连接
 - 分级处理：

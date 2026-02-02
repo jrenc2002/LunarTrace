@@ -88,12 +88,24 @@ export class _UploaderService {
     this.actionService.listen('upload-cancel', (action) => {
       this.cancel();
     }, 'uploader-upload-cancel');
+    
+    // 监听 softdevice 烧录请求
+    this.actionService.listen('flash-softdevice', async (action) => {
+      try {
+        const { softdeviceName, serialPort } = action.payload;
+        const result = await this.flashSoftdevice(softdeviceName, serialPort);
+        return { success: result.success, result };
+      } catch (error: any) {
+        return { success: false, result: { success: false, message: error.message || '烧录失败' } };
+      }
+    }, 'uploader-flash-softdevice');
   }
 
   destroy() {
     console.log("_UploaderService destroy");
     this.actionService.unlisten('uploader-upload-begin');
     this.actionService.unlisten('uploader-upload-cancel');
+    this.actionService.unlisten('uploader-flash-softdevice');
     this.initialized = false; // 重置初始化状态
   }
 
@@ -671,6 +683,230 @@ export class _UploaderService {
     if (this.uploadPromiseReject) {
       this.uploadPromiseReject({ state: 'warn', text: '上传已取消' });
       this.uploadPromiseReject = null;
+    }
+  }
+
+  /**
+   * 烧录 softdevice 到 nRF5 设备
+   * 使用 upload.js 脚本进行烧录，与正常上传流程一致
+   * @param softdeviceName softdevice 名称，如 "s110" 或 "none"
+   * @param serialPort 串口名称
+   * @returns Promise 表示烧录结果
+   */
+  async flashSoftdevice(softdeviceName: string, serialPort: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // 获取 softdevice hex 文件路径
+      const hexPath = await this.projectService.getSoftdeviceHexPath(softdeviceName);
+      if (!hexPath) {
+        return { success: false, message: `未找到 ${softdeviceName} 的 hex 文件` };
+      }
+
+      // 获取 board.json 配置
+      const boardJson = await this.projectService.getBoardJson();
+      if (!boardJson || !boardJson.uploadParam) {
+        return { success: false, message: '未找到上传参数配置' };
+      }
+
+      // 获取上传参数模板并替换 hex 文件路径
+      let uploadParam = boardJson.uploadParam;
+      // 替换 ${'*.hex'} 为实际的 hex 文件路径（不加引号，因为外层可能已有{{}}）
+      uploadParam = uploadParam.replace(/\$\{['"]?\*\.hex['"]?\}/g, hexPath);
+      uploadParam = uploadParam.replace(/\$\{'\*\.hex'\}/g, hexPath);
+
+      console.log('Softdevice 上传参数:', uploadParam);
+
+      // 准备上传配置 - 使用与 upload.js 相同的配置格式
+      const boardModule = await this.projectService.getBoardModule();
+      const appDataPath = window['path'].getAppDataPath();
+      const currentProjectPath = this.projectService.currentProjectPath;
+
+      // 创建一个临时的 buildPath，用于存放 softdevice hex 文件
+      const tempBuildPath = window['path'].join(currentProjectPath, '.temp', 'softdevice');
+      if (!window['fs'].existsSync(tempBuildPath)) {
+        window['fs'].mkdirSync(tempBuildPath, { recursive: true });
+      }
+
+      // 复制 hex 文件到临时目录
+      const hexFileName = window['path'].basename(hexPath);
+      const tempHexPath = window['path'].join(tempBuildPath, hexFileName);
+      window['fs'].copySync(hexPath, tempHexPath);
+
+      const uploadConfig = {
+        currentProjectPath,
+        buildPath: tempBuildPath,
+        boardModule,
+        appDataPath,
+        serialPort,
+        uploadParam,
+        use_1200bps_touch: false,
+        wait_for_upload: false
+      };
+
+      // 写入配置文件
+      const tempPath = window['path'].join(currentProjectPath, '.temp');
+      if (!window['fs'].existsSync(tempPath)) {
+        window['fs'].mkdirSync(tempPath, { recursive: true });
+      }
+      const configFilePath = window['path'].join(tempPath, 'softdevice-upload-config.json');
+      window['fs'].writeFileSync(configFilePath, JSON.stringify(uploadConfig, null, 2));
+
+      // 运行上传脚本
+      const uploadScriptPath = window['path'].join(window['path'].getAilyChildPath(), 'scripts', 'upload.js');
+      const uploadCmd = `node "${uploadScriptPath}" "${configFilePath}"`;
+
+      console.log('Softdevice 上传命令:', uploadCmd);
+
+      const title = '正在烧录 SoftDevice...';
+      const completeTitle = 'SoftDevice 烧录成功';
+      const errorTitle = 'SoftDevice 烧录失败';
+
+      // 显示烧录中通知
+      this.noticeService.update({
+        title: title,
+        text: `正在初始化...`,
+        state: 'doing',
+        progress: 0,
+        setTimeout: 0
+      });
+
+      // 执行上传命令
+      return new Promise((resolve) => {
+        let hasError = false;
+        let errorMessage = '';
+        let uploadCompleted = false;
+        let lastProgress = 0;
+        let currentStage = '';
+
+        this.cmdService.run(uploadCmd, null, false).subscribe({
+          next: (output: CmdOutput) => {
+            if (output.data) {
+              console.log('Softdevice 烧录输出:', output.data);
+              const data = output.data;
+
+              // 检查是否有错误信息
+              if (data.includes('[ERROR]') || data.includes('Error:') || data.includes('error:')) {
+                hasError = true;
+                errorMessage = data;
+              }
+
+              // 解析 OpenOCD 烧录进度
+              // 初始化阶段 (0-10%)
+              if (data.includes('CMSIS-DAP: Interface ready') || data.includes('clock speed')) {
+                lastProgress = 5;
+                currentStage = '连接设备...';
+              }
+              if (data.includes('SWD IDCODE') || data.includes('nrf51.cpu')) {
+                lastProgress = 10;
+                currentStage = '检测到设备';
+              }
+
+              // 编程阶段 (10-60%)
+              if (data.includes('** Programming Started **')) {
+                lastProgress = 15;
+                currentStage = '开始写入...';
+              }
+              if (data.includes('auto erase enabled')) {
+                lastProgress = 20;
+                currentStage = '擦除中...';
+              }
+              if (data.includes('Padding image section')) {
+                lastProgress = 25;
+                currentStage = '准备数据...';
+              }
+              if (data.includes('using fast async flash loader')) {
+                lastProgress = 30;
+                currentStage = '快速写入模式';
+              }
+              // 写入完成时解析进度
+              const writeMatch = data.match(/wrote (\d+) bytes.*in ([\d.]+)s/);
+              if (writeMatch) {
+                lastProgress = 55;
+                currentStage = `已写入 ${Math.round(parseInt(writeMatch[1]) / 1024)} KB`;
+              }
+              if (data.includes('** Programming Finished **')) {
+                lastProgress = 60;
+                currentStage = '写入完成';
+              }
+
+              // 验证阶段 (60-90%)
+              if (data.includes('** Verify Started **')) {
+                lastProgress = 65;
+                currentStage = '开始验证...';
+              }
+              const verifyMatch = data.match(/verified (\d+) bytes/);
+              if (verifyMatch) {
+                lastProgress = 85;
+                currentStage = `已验证 ${Math.round(parseInt(verifyMatch[1]) / 1024)} KB`;
+              }
+              if (data.includes('** Verified OK **')) {
+                lastProgress = 90;
+                currentStage = '验证成功';
+              }
+
+              // 完成阶段 (90-100%)
+              if (data.includes('** Resetting Target **')) {
+                lastProgress = 95;
+                currentStage = '重置设备...';
+              }
+              if (data.includes('shutdown command invoked')) {
+                lastProgress = 100;
+                currentStage = '烧录完成';
+                uploadCompleted = true;
+              }
+
+              // 更新进度显示
+              if (lastProgress > 0) {
+                this.noticeService.update({
+                  title: title,
+                  text: currentStage || `正在烧录 ${softdeviceName} SoftDevice...`,
+                  state: 'doing',
+                  progress: lastProgress,
+                  setTimeout: 0
+                });
+              }
+            }
+          },
+          error: (error: any) => {
+            console.error('Softdevice 烧录错误:', error);
+            this.noticeService.update({
+              title: errorTitle,
+              text: `烧录失败: ${error.message || error}`,
+              state: 'error',
+              setTimeout: 60000
+            });
+            resolve({ success: false, message: `烧录失败: ${error.message || error}` });
+          },
+          complete: () => {
+            console.log('Softdevice 烧录命令执行完成, hasError:', hasError, 'uploadCompleted:', uploadCompleted);
+            if (hasError) {
+              this.noticeService.update({
+                title: errorTitle,
+                text: errorMessage || 'SoftDevice 烧录失败',
+                state: 'error',
+                setTimeout: 60000
+              });
+              resolve({ success: false, message: errorMessage || 'Softdevice 烧录失败' });
+            } else {
+              this.noticeService.update({
+                title: completeTitle,
+                text: `${softdeviceName} SoftDevice 烧录成功`,
+                state: 'done',
+                setTimeout: 5000
+              });
+              resolve({ success: true, message: 'Softdevice 烧录成功' });
+            }
+          }
+        });
+      });
+    } catch (error: any) {
+      console.error('烧录 softdevice 失败:', error);
+      this.noticeService.update({
+        title: 'SoftDevice 烧录失败',
+        text: `烧录失败: ${error.message || error}`,
+        state: 'error',
+        setTimeout: 60000
+      });
+      return { success: false, message: `烧录失败: ${error.message || error}` };
     }
   }
 }

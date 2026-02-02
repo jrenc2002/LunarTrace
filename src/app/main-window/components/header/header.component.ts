@@ -279,6 +279,18 @@ export class HeaderComponent implements OnDestroy {
       // console.log('STM32配置选项:', stm32config);
     }
 
+    // 添加nRF5相关配置选项
+    if (this.projectService.currentBoardConfig['core'].indexOf('nRF5') > -1) {
+      let temp = this.projectService.currentBoardConfig['type'].split(':');
+      let board = temp[temp.length - 1];
+      // console.log('nRF5开发板标识:', board);
+      let nrf5config = await this.projectService.updateNrf5ConfigMenu(board);
+      if (nrf5config) {
+        portList0 = portList0.concat(nrf5config)
+      }
+      // console.log('nRF5配置选项:', nrf5config);
+    }
+
     // 添加切换开发板功能
     portList0.push({ sep: true });
     portList0.push({
@@ -756,6 +768,22 @@ export class HeaderComponent implements OnDestroy {
         this.projectService.compareStm32PinConfig(newPinConfig)
       }
     }
+
+    // 判断是否是nRF5的softdevice选择，如果是则直接烧录softdevice
+    if (this.projectService.currentBoardConfig['core']?.indexOf('nRF5') > -1 &&
+      subItem.key === 'softdevice') {
+      // 检查串口是否已选择
+      if (!this.serialService.currentPort) {
+        this.message.warning(this.translate.instant('NRF5.SELECT_PORT_FIRST') || '请先选择串口');
+        return;
+      }
+
+      // 通过 UploaderService 调用烧录方法（使用 ActionService 分发到 _UploaderService）
+      await this.uploaderService.flashSoftdevice(subItem.data, this.serialService.currentPort);
+    }
+
+    // 触发预编译操作：配置变更后自动触发预编译
+    this.builderService.triggerPreprocess('config-changed');
   }
 
   showUser = false;

@@ -47,6 +47,15 @@
         "USB": "Paramètres USB",
         "UPLOAD_METHOD": "Méthode de Téléversement"
     },
+    "NRF5": {
+        "SOFTDEVICE": "SoftDevice",
+        "FLASH_SOFTDEVICE_TITLE": "Flasher SoftDevice",
+        "FLASH_SOFTDEVICE_CONFIRM": "Voulez-vous flasher {{softdevice}} SoftDevice sur l'appareil ?",
+        "SELECT_PORT_FIRST": "Veuillez d'abord sélectionner un port",
+        "FLASHING_SOFTDEVICE": "Flashage du SoftDevice en cours...",
+        "FLASH_SUCCESS": "SoftDevice flashé avec succès",
+        "FLASH_FAILED": "Échec du flashage du SoftDevice"
+    },
     "GUIDE": {
         "START": "Démarrer",
         "RECENTLY": "Récent",
@@ -85,6 +94,12 @@
             "STEP7_TITLE": "Rejoindre la Communauté",
             "STEP7_DESC": "Des questions ? Envie de partager votre travail ? Rejoignez notre communauté d'utilisateurs pour échanger et apprendre avec d'autres makers !"
         }
+    },
+    "BLOCKLY": {
+        "CROSS_TAB_COPY": "Copier à l'emplacement spécifié",
+        "CONTROLS_SWITCH_CASE": "cas",
+        "CONTROLS_SWITCH_DO": "faire",
+        "CONTROLS_SWITCH_DEFAULT": "par défaut"
     },
     "APP_STORE": {
         "HEADER_INFO": "Les {{count}} premières applications seront affichées dans la barre d'outils",

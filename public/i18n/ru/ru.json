@@ -47,6 +47,15 @@
         "USB": "Настройки USB",
         "UPLOAD_METHOD": "Метод загрузки"
     },
+    "NRF5": {
+        "SOFTDEVICE": "SoftDevice",
+        "FLASH_SOFTDEVICE_TITLE": "Прошить SoftDevice",
+        "FLASH_SOFTDEVICE_CONFIRM": "Вы хотите прошить {{softdevice}} SoftDevice на устройство?",
+        "SELECT_PORT_FIRST": "Сначала выберите порт",
+        "FLASHING_SOFTDEVICE": "Прошивка SoftDevice...",
+        "FLASH_SUCCESS": "SoftDevice успешно прошит",
+        "FLASH_FAILED": "Не удалось прошить SoftDevice"
+    },
     "GUIDE": {
         "START": "Начать",
         "RECENTLY": "Недавние",
@@ -85,6 +94,12 @@
             "STEP7_TITLE": "Присоединяйтесь к сообществу",
             "STEP7_DESC": "Есть вопросы? Хотите поделиться своей работой? Присоединяйтесь к нашему сообществу пользователей, чтобы общаться и учиться вместе с другими мейкерами!"
         }
+    },
+    "BLOCKLY": {
+        "CROSS_TAB_COPY": "Копировать в указанное место",
+        "CONTROLS_SWITCH_CASE": "случай",
+        "CONTROLS_SWITCH_DO": "выполнить",
+        "CONTROLS_SWITCH_DEFAULT": "по умолчанию"
     },
     "APP_STORE": {
         "HEADER_INFO": "Первые {{count}} приложения будут отображаться на панели инструментов",

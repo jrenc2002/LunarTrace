@@ -47,6 +47,15 @@
         "USB": "USB 설정",
         "UPLOAD_METHOD": "업로드 방법"
     },
+    "NRF5": {
+        "SOFTDEVICE": "SoftDevice",
+        "FLASH_SOFTDEVICE_TITLE": "SoftDevice 플래시",
+        "FLASH_SOFTDEVICE_CONFIRM": "{{softdevice}} SoftDevice를 장치에 플래시하시겠습니까?",
+        "SELECT_PORT_FIRST": "먼저 포트를 선택해주세요",
+        "FLASHING_SOFTDEVICE": "SoftDevice 플래시 중...",
+        "FLASH_SUCCESS": "SoftDevice 플래시 성공",
+        "FLASH_FAILED": "SoftDevice 플래시 실패"
+    },
     "GUIDE": {
         "START": "시작",
         "RECENTLY": "최근",
@@ -85,6 +94,12 @@
             "STEP7_TITLE": "커뮤니티 가입",
             "STEP7_DESC": "질문이 있으신가요? 작품을 공유하고 싶으신가요? 사용자 커뮤니티에 가입하여 다른 메이커들과 교류하고 배우세요!"
         }
+    },
+    "BLOCKLY": {
+        "CROSS_TAB_COPY": "지정된 위치에 복사",
+        "CONTROLS_SWITCH_CASE": "조건",
+        "CONTROLS_SWITCH_DO": "실행",
+        "CONTROLS_SWITCH_DEFAULT": "기본"
     },
     "APP_STORE": {
         "HEADER_INFO": "처음 {{count}}개의 앱이 도구 모음에 표시됩니다",

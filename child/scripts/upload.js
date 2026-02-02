@@ -409,7 +409,10 @@ async function processUploadParams(uploadParam, buildPath, toolsPath, sdkPath, b
             }
 
             if (findRes) {
-                paramList[i] = param.replace(`\$\{\'${fileName}\'\}`, `"${findRes}"`);
+                // 检查参数是否已经在引号内，如果是则不再添加引号
+                const paramHasQuotes = param.startsWith('"') || param.includes('"');
+                const replacement = paramHasQuotes ? findRes : `"${findRes}"`;
+                paramList[i] = param.replace(`\$\{\'${fileName}\'\}`, replacement);
             } else {
                 logger.warn(`无法找到文件: ${fileName}`);
             }
@@ -431,7 +434,7 @@ function parseArgs(str) {
         const char = str[i];
         if (char === '"') {
             inQuote = !inQuote;
-            // current += char; // 保留引号? 通常spawn不需要引号包裹参数，除非是参数内容的一部分
+            current += char; // 保留引号，因为使用 shell: true 时需要引号来保护带空格的参数
         } else if (char === ' ' && !inQuote) {
             if (current) {
                 args.push(current);
