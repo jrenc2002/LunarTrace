@@ -769,9 +769,6 @@ export class HeaderComponent implements OnDestroy {
       }
     }
 
-    // 触发预编译操作：配置变更后自动触发预编译
-    this.builderService.triggerPreprocess('config-changed');
-
     // 判断是否是nRF5的softdevice选择，如果是则直接烧录softdevice
     if (this.projectService.currentBoardConfig['core']?.indexOf('nRF5') > -1 &&
       subItem.key === 'softdevice') {
@@ -784,6 +781,9 @@ export class HeaderComponent implements OnDestroy {
       // 通过 UploaderService 调用烧录方法（使用 ActionService 分发到 _UploaderService）
       await this.uploaderService.flashSoftdevice(subItem.data, this.serialService.currentPort);
     }
+
+    // 触发预编译操作：配置变更后自动触发预编译
+    this.builderService.triggerPreprocess('config-changed');
   }
 
   showUser = false;
