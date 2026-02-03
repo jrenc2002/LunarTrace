@@ -411,6 +411,7 @@
         "DOCUMENTATION": "文档",
         "FEEDBACK": "反馈",
         "NO_PINMAP": "该开发板没有提供引脚图",
+        "PINMAP_PARSE_ERROR": "引脚图解析失败",
         "NO_DOCUMENTATION": "该开发板没有提供文档链接"
     },
     "SERIAL": {
