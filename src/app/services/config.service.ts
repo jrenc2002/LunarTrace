@@ -113,14 +113,14 @@ export class ConfigService {
     this.data["platform"] = window['platform'].type;
     this.data["lang"] = this.get_lang_filename(window['platform'].lang);
 
-    // 并行加载缓存的boards.json和libraries.json
+    // 并行加载缓存的boards.json和libraries.json（旧格式，用于基础功能）
     // await Promise.all([
     this.loadAndCacheBoardList(configFilePath);
     this.loadAndCacheLibraryList(configFilePath);
-
-    this.loadAndCacheBoardIndex(configFilePath);
-    this.loadAndCacheLibraryIndex(configFilePath);
     // ]);
+
+    // 注意：boardIndex 和 libraryIndex（新格式索引）延迟到 AI 组件加载时再加载
+    // 以减轻软件启动耗时，参见 loadHardwareIndexForAI()
 
     // 延迟后再次尝试加载，确保最优节点检测完成后能成功下载最新数据
     if (this.electronService.isElectron) {
@@ -317,6 +317,38 @@ export class ConfigService {
   // ==================== 新格式索引（结构化数据）====================
   boardIndex: any[] = [];  // 新格式开发板索引
   libraryIndex: any[] = [];  // 新格式库索引
+  private _hardwareIndexLoaded = false;  // 标记索引是否已加载
+
+  /**
+   * 为 AI 工具加载硬件索引数据（boardIndex 和 libraryIndex）
+   * 延迟加载以减轻软件启动耗时
+   * @returns Promise<void>
+   */
+  async loadHardwareIndexForAI(): Promise<void> {
+    // 避免重复加载
+    if (this._hardwareIndexLoaded) {
+      console.log('[ConfigService] 硬件索引已加载，跳过');
+      return;
+    }
+
+    console.log('[ConfigService] 开始加载 AI 硬件索引...');
+    const configFilePath = window['path'].getAppDataPath();
+    
+    await Promise.all([
+      this.loadAndCacheBoardIndex(configFilePath),
+      this.loadAndCacheLibraryIndex(configFilePath)
+    ]);
+    
+    this._hardwareIndexLoaded = true;
+    console.log('[ConfigService] AI 硬件索引加载完成, boardIndex:', this.boardIndex?.length, 'libraryIndex:', this.libraryIndex?.length);
+  }
+
+  /**
+   * 检查硬件索引是否已加载
+   */
+  get isHardwareIndexLoaded(): boolean {
+    return this._hardwareIndexLoaded;
+  }
 
   private async loadAndCacheBoardIndex(configFilePath: string): Promise<void> {
     try {
@@ -412,7 +444,7 @@ export class ConfigService {
   async loadBoardIndex(): Promise<any[]> {
     try {
       let response: any = await lastValueFrom(
-        this.http.get(this.data.resource[0] + '/boards-index.json', {
+        this.http.get(this.getCurrentResourceUrl() + '/boards-index.json', {
           responseType: 'json',
         }),
       );
@@ -432,7 +464,7 @@ export class ConfigService {
   async loadLibraryIndex(): Promise<any[]> {
     try {
       let response: any = await lastValueFrom(
-        this.http.get(this.data.resource[0] + '/libraries-index.json', {
+        this.http.get(this.getCurrentResourceUrl() + '/libraries-index.json', {
           responseType: 'json',
         }),
       );

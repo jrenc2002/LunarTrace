@@ -50,6 +50,8 @@ export interface AilyChatConfig {
     maxCount?: number;
     /** 启用的工具列表 */
     enabledTools?: string[];
+    /** 禁用的工具列表（用于区分新工具和被用户禁用的工具） */
+    disabledTools?: string[];
     /** 安全工作区配置 */
     securityWorkspaces?: {
         /** 是否允许访问项目文件 */
@@ -79,6 +81,7 @@ const DEFAULT_API_KEYS: ApiKeyConfig[] = [];
 const DEFAULT_CONFIG: AilyChatConfig = {
     maxCount: 100,
     enabledTools: [],
+    disabledTools: [],
     securityWorkspaces: {
         project: true,
         library: true
@@ -254,6 +257,17 @@ export class AilyChatConfigService {
 
     set enabledTools(value: string[]) {
         this.config.enabledTools = value;
+    }
+
+    /**
+     * 获取禁用的工具列表
+     */
+    get disabledTools(): string[] {
+        return this.config.disabledTools ?? [];
+    }
+
+    set disabledTools(value: string[]) {
+        this.config.disabledTools = value;
     }
 
     /**
