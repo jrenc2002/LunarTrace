@@ -20,7 +20,7 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { NzImageModule } from 'ng-zorro-antd/image';
 import { FormsModule } from '@angular/forms';
 import { AilyDynamicComponentDirective } from '../../directives/aily-dynamic-component.directive';
-import { MarkdownPipe } from '../../pipes/markdown.pipe';
+import { MarkdownPipe, safeBase64Decode } from '../../pipes/markdown.pipe';
 import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '../../../../services/config.service';
 
@@ -470,6 +470,80 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
       return;
     }
 
+    // 检查是否包含 think 组件
+    const hasThinkInLast = lastSegment.content.includes('aily-think');
+    const hasThinkInModified = modifiedSegment.content.includes('aily-think');
+
+    // 如果最后一个段落和新段落都包含 think 组件，尝试更新现有组件而不是替换DOM
+    if (hasThinkInLast && hasThinkInModified) {
+      // 查找现有的 think 组件实例（组件创建后，占位符会被替换成组件）
+      const thinkComponents = container.querySelectorAll('app-aily-think-viewer');
+      if (thinkComponents.length > 0) {
+        // 找到最后一个 think 组件（应该对应最后一个段落）
+        const lastThinkComponent = thinkComponents[thinkComponents.length - 1];
+        
+        // 创建临时容器来解析新的HTML，提取 think 占位符数据
+        const newTempDiv = document.createElement('div');
+        newTempDiv.innerHTML = modifiedSegment.html;
+        
+        // 查找新HTML中的 think 占位符
+        const newPlaceholder = newTempDiv.querySelector('.aily-code-block-placeholder[data-aily-type="aily-think"]') as HTMLElement;
+        
+        if (newPlaceholder) {
+          const encodedData = newPlaceholder.getAttribute('data-aily-data');
+          if (encodedData) {
+            try {
+              // 使用与指令相同的解码方法
+              // 先解码 base64，然后解析 JSON
+              const decodedData = safeBase64Decode(encodedData);
+              const jsonData = JSON.parse(decodedData);
+              
+              // 如果 content 是编码的，需要进一步解码（与 markdown pipe 的逻辑一致）
+              let thinkContent = jsonData.content || jsonData.text || '';
+              if (jsonData.encoded && typeof thinkContent === 'string') {
+                try {
+                  thinkContent = decodeURIComponent(atob(thinkContent));
+                } catch (e) {
+                  console.warn('Failed to decode think content:', e);
+                }
+              }
+              
+              // 构建组件数据（与 markdown pipe 的输出格式一致）
+              const componentData = {
+                type: 'aily-think',
+                content: String(thinkContent),
+                isComplete: jsonData.isComplete !== false,
+                metadata: jsonData.metadata || {}
+              };
+              
+              // 通过自定义事件通知组件更新
+              const updateEvent = new CustomEvent('think-data-update', { 
+                detail: componentData,
+                bubbles: true 
+              });
+              lastThinkComponent.dispatchEvent(updateEvent);
+              
+              // 同时尝试直接设置 data 属性（如果组件支持）
+              // 注意：这需要组件暴露 data 属性为 @Input() 或 public
+              if ((lastThinkComponent as any).__ngContext__) {
+                // Angular 组件，尝试通过上下文访问实例
+                const componentInstance = (lastThinkComponent as any).__ngContext__?.[8];
+                if (componentInstance && typeof componentInstance.setData === 'function') {
+                  componentInstance.setData(componentData);
+                }
+              }
+              
+              // 不替换DOM，直接返回
+              return;
+            } catch (error) {
+              console.warn('Failed to update think component directly:', error);
+              // 如果直接更新失败，继续执行替换操作
+            }
+          }
+        }
+      }
+    }
+
     // 创建临时容器来解析新的HTML
     const newTempDiv = document.createElement('div');
     newTempDiv.innerHTML = modifiedSegment.html;
@@ -785,6 +859,7 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
 
     return content;
   }
+
 
   test() {
     console.log('原始内容:', this.content);
