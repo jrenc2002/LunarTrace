@@ -151,9 +151,7 @@
     <aily-chat-settings (close)="showSettings = false" (saved)="onSettingsSaved()"></aily-chat-settings>
     }
   </div>
-  @if(!isLoggedIn){
   <app-login></app-login>
-  }
 </ng-template>
 
 @if (showHistoryList) {
