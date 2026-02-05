@@ -526,6 +526,16 @@ export class NpmService {
     return installedPackageList;
   }
 
+  // 检查npm依赖是否安装正常
+  async installedOk(path) {
+    try {
+      await window['npm'].run({ cmd: `npm list --depth=0 --json --prefix "${path}"` })
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
   /**
    * 库列表
    * @param data
