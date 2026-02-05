@@ -232,7 +232,7 @@ async function importFromAbs(
     // 这些变量不需要预先创建，让 Blockly 扩展自动创建带正确类型的变量
     const autoCreatedVars = collectAutoCreatedVariables(parseResult.rootBlocks);
     if (autoCreatedVars.size > 0) {
-      console.log(`📋 检测到初始化块自动创建的变量: ${Array.from(autoCreatedVars).join(', ')}`);
+      // console.log(`📋 检测到初始化块自动创建的变量: ${Array.from(autoCreatedVars).join(', ')}`);
     }
     
     // 1. 从显式 @var 声明中收集（如果有）
@@ -246,9 +246,9 @@ async function importFromAbs(
     for (const varName of inferredVars) {
       if (!allVariables.has(varName) && !autoCreatedVars.has(varName)) {
         allVariables.set(varName, ''); // 类型未知，使用默认
-        console.log(`🔍 自动推断变量: "${varName}" (从 $${varName} 引用)`);
+        // console.log(`🔍 自动推断变量: "${varName}" (从 $${varName} 引用)`);
       } else if (autoCreatedVars.has(varName)) {
-        console.log(`⏭️ 跳过变量: "${varName}" (将由初始化块自动创建)`);
+        // console.log(`⏭️ 跳过变量: "${varName}" (将由初始化块自动创建)`);
       }
     }
     
@@ -263,7 +263,7 @@ async function importFromAbs(
         const variable = workspace.createVariable(name, type || undefined);
         variableNameToId.set(name, variable.getId());
         newVarCount++;
-        console.log(`✅ 创建变量: "${name}" (类型: ${type || '默认'}) → ID: ${variable.getId()}`);
+        // console.log(`✅ 创建变量: "${name}" (类型: ${type || '默认'}) → ID: ${variable.getId()}`);
       } else {
         // 变量已存在，获取其 ID
         const existing = existingVars.find((v: any) => v.name === name);
@@ -272,7 +272,7 @@ async function importFromAbs(
         }
       }
     }
-    console.log(`📋 新建 ${newVarCount} 个变量，复用 ${allVariables.size - newVarCount} 个已有变量`);
+    // console.log(`📋 新建 ${newVarCount} 个变量，复用 ${allVariables.size - newVarCount} 个已有变量`);
     
     // 🆕 尝试增量更新
     const hasExistingBlocks = workspace.getTopBlocks(false).length > 0;
@@ -280,7 +280,7 @@ async function importFromAbs(
     let useIncrementalUpdate = hasExistingBlocks;
     
     if (useIncrementalUpdate) {
-      console.log('🔄 尝试增量更新...');
+      // console.log('🔄 尝试增量更新...');
       try {
         updateResult = await incrementalUpdate(
           workspace,
@@ -288,7 +288,7 @@ async function importFromAbs(
           variableNameToId,
           preprocessVariableReferences
         );
-        console.log(`📊 增量更新完成: +${updateResult.added}, -${updateResult.removed}, =${updateResult.unchanged}`);
+        // console.log(`📊 增量更新完成: +${updateResult.added}, -${updateResult.removed}, =${updateResult.unchanged}`);
       } catch (e) {
         console.warn('⚠️ 增量更新失败，回退到全量更新:', e);
         useIncrementalUpdate = false;
@@ -300,7 +300,7 @@ async function importFromAbs(
     const failedBlocks: Array<{ blockType: string; error: string; suggestion?: string }> = [];
     
     if (!useIncrementalUpdate) {
-      console.log('🔄 执行全量更新（清空并重建）...');
+      // console.log('🔄 执行全量更新（清空并重建）...');
       // 清空当前工作区
       workspace.clear();
       
@@ -726,6 +726,28 @@ function normalizeFieldValue(value: any): string {
 }
 
 /**
+ * 找到块配置中的第一个子块（用于调试对比）
+ */
+function findFirstChildBlock(blockConfig: any): any {
+  if (!blockConfig) return null;
+  
+  // 优先从 inputs 中找
+  if (blockConfig.inputs) {
+    for (const [inputName, inputValue] of Object.entries(blockConfig.inputs) as [string, any][]) {
+      if (inputValue.block) return inputValue.block;
+      if (inputValue.shadow) return inputValue.shadow;
+    }
+  }
+  
+  // 然后从 next 中找
+  if (blockConfig.next?.block) {
+    return blockConfig.next.block;
+  }
+  
+  return null;
+}
+
+/**
  * 计算块链的签名（用于比较是否相同）
  * 签名包含：块类型、字段值、输入连接、next 连接
  * 注意：不包含位置信息和块 ID
@@ -745,21 +767,41 @@ function computeBlockChainSignature(block: any): string {
     return false;
   };
   
-  // 字段名规范化映射（处理 INPUT0/PIN 等不一致）
-  const normalizeFieldName = (name: string): string => {
-    // INPUT0, INPUT1 等 -> PIN（某些块用 INPUT0 表示 PIN）
-    if (/^INPUT\d+$/.test(name)) return `PIN`;
-    return name;
-  };
+  // 标准字段名列表（这些字段名在签名中保留原名）
+  const standardFieldNames = new Set(['VAR', 'TYPE', 'NAME', 'TEXT', 'NUM', 'VALUE', 'OP', 'MODE', 'BOOL', 'ITEM']);
   
   // 字段值（排序后连接，跳过空值和 UI 字段）
+  // EXTRA_N 字段和非标准字段只按值参与签名，使用 _DYN_VAL:value 格式
   if (block.fields) {
-    const fieldPairs = Object.entries(block.fields)
+    const normalFields: string[] = [];
+    const dynamicValues: string[] = [];
+    
+    const sortedEntries = Object.entries(block.fields)
       .filter(([k, v]) => !isUIField(k) && v !== null && v !== undefined && v !== '')
-      .sort(([a], [b]) => normalizeFieldName(a).localeCompare(normalizeFieldName(b)))
-      .map(([k, v]) => `${normalizeFieldName(k)}=${normalizeFieldValue(v)}`);
-    if (fieldPairs.length > 0) {
-      parts.push(`F:{${fieldPairs.join(',')}}`);
+      .sort(([a], [b]) => a.localeCompare(b));
+    
+    for (const [k, v] of sortedEntries) {
+      // EXTRA_N 字段：只保留值，按索引顺序
+      if (/^EXTRA_\d+$/.test(k)) {
+        dynamicValues.push(normalizeFieldValue(v));
+      }
+      // 标准字段：保留字段名
+      else if (standardFieldNames.has(k)) {
+        normalFields.push(`${k}=${normalizeFieldValue(v)}`);
+      }
+      // 其他字段（可能是动态创建的如 PIN）：也只保留值
+      else {
+        dynamicValues.push(normalizeFieldValue(v));
+      }
+    }
+    
+    // 标准字段部分
+    if (normalFields.length > 0) {
+      parts.push(`F:{${normalFields.join(',')}}`);
+    }
+    // 动态字段值部分（只值不含名，排序后）
+    if (dynamicValues.length > 0) {
+      parts.push(`D:[${dynamicValues.sort().join(',')}]`);
     }
   }
   
@@ -934,6 +976,8 @@ function updateBlockFields(block: any, newFields: any, variableNameToId: Map<str
  * 4. 根据新配置重建所有子块
  * 
  * 优点：简单稳定，避免 connectionDB 问题
+ * 
+ * @returns 包含失败块信息的对象
  */
 async function rebuildBlockChildren(
   workspace: any,
@@ -941,8 +985,9 @@ async function rebuildBlockChildren(
   newConfig: any,
   variableNameToId: Map<string, string>,
   preprocessVariableReferences: (config: any, mapping: Map<string, string>) => void
-): Promise<void> {
-  console.log(`    🔧 开始重建子树: ${existingBlock.type}`);
+): Promise<{ failedBlocks: Array<{ blockType: string; error: string }> }> {
+  const failedBlocks: Array<{ blockType: string; error: string }> = [];
+  // console.log(`    🔧 开始重建子树: ${existingBlock.type}`);
   
   // 1. 更新根块的字段值
   if (newConfig.fields) {
@@ -968,7 +1013,7 @@ async function rebuildBlockChildren(
   
   // 3. 禁用事件，清空所有子块
   if (blocksToDelete.length > 0) {
-    console.log(`    🗑️ 清空 ${blocksToDelete.length} 个子块`);
+    // console.log(`    🗑️ 清空 ${blocksToDelete.length} 个子块`);
     Blockly.Events.disable();
     try {
       // 先断开所有输入连接
@@ -999,14 +1044,14 @@ async function rebuildBlockChildren(
     for (const [inputName, inputValue] of Object.entries(newConfig.inputs) as [string, any][]) {
       const input = existingBlock.getInput(inputName);
       if (!input || !input.connection) {
-        console.log(`    ⚠️ 输入 ${inputName} 不存在`);
+        // console.log(`    ⚠️ 输入 ${inputName} 不存在`);
         continue;
       }
       
       const childConfig = inputValue.block || inputValue.shadow;
       if (!childConfig) continue;
       
-      console.log(`    ➕ 重建输入 ${inputName}: ${childConfig.type}`);
+      // console.log(`    ➕ 重建输入 ${inputName}: ${childConfig.type}`);
       
       // 预处理变量引用
       preprocessVariableReferences(childConfig, variableNameToId);
@@ -1019,13 +1064,22 @@ async function rebuildBlockChildren(
             input.connection.connect(targetConnection);
           }
         }
+        // 收集嵌套块创建失败信息
+        if (result.failedBlocks && result.failedBlocks.length > 0) {
+          failedBlocks.push(...result.failedBlocks);
+        }
       } catch (e) {
         console.warn(`    ⚠️ 重建子块失败: ${childConfig.type}`, e);
+        failedBlocks.push({
+          blockType: childConfig.type,
+          error: e instanceof Error ? e.message : String(e)
+        });
       }
     }
   }
   
-  console.log(`    ✅ 子树重建完成: ${existingBlock.type}`);
+  // console.log(`    ✅ 子树重建完成: ${existingBlock.type}`);
+  return { failedBlocks };
 }
 
 /**
@@ -1053,12 +1107,12 @@ async function incrementalUpdate(
   
   // 获取当前工作区的根块
   const currentRootBlocks = getWorkspaceRootBlocks(workspace);
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`📊 增量更新开始`);
-  console.log(`${'='.repeat(60)}`);
-  console.log(`📋 当前工作区有 ${currentRootBlocks.length} 个根块:`);
+  // console.log(`\n${'='.repeat(60)}`);
+  // console.log(`📊 增量更新开始`);
+  // console.log(`${'='.repeat(60)}`);
+  // console.log(`📋 当前工作区有 ${currentRootBlocks.length} 个根块:`);
   for (const item of currentRootBlocks) {
-    console.log(`   📦 ${item.serialized.type} (ID: ${item.block.id})`);
+    // console.log(`   📦 ${item.serialized.type} (ID: ${item.block.id})`);
   }
   
   // 为新块计算签名并创建索引映射
@@ -1068,11 +1122,11 @@ async function incrementalUpdate(
     signature: computeBlockChainSignature(config),
     type: config.type
   }));
-  console.log(`� 新 ABS 有 ${newBlocksWithInfo.length} 个根块:`);
+  // console.log(`� 新 ABS 有 ${newBlocksWithInfo.length} 个根块:`);
   for (const item of newBlocksWithInfo) {
-    console.log(`   📄 ${item.type} (索引: ${item.index})`);
+    // console.log(`   📄 ${item.type} (索引: ${item.index})`);
   }
-  console.log(`${'─'.repeat(60)}`);
+  // console.log(`${'─'.repeat(60)}`);
   
   // 跟踪统计
   let addedCount = 0;
@@ -1086,15 +1140,15 @@ async function incrementalUpdate(
   
   // ============ 阶段 1：精确签名匹配 ============
   // 签名完全相同的块直接保留，无需任何操作
-  console.log(`🔍 阶段 1: 精确签名匹配`);
+  // console.log(`🔍 阶段 1: 精确签名匹配`);
   
   // 输出签名对比信息
-  console.log(`  📝 签名对比:`);
+  // console.log(`  📝 签名对比:`);
   for (const currentItem of currentRootBlocks) {
     const matchingByType = newBlocksWithInfo.find(n => n.type === currentItem.serialized.type);
     if (matchingByType) {
       const sigMatch = currentItem.signature === matchingByType.signature;
-      console.log(`  ${sigMatch ? '✅' : '❌'} ${currentItem.serialized.type}:`);
+      // console.log(`  ${sigMatch ? '✅' : '❌'} ${currentItem.serialized.type}:`);
       if (!sigMatch) {
         // 找出签名差异位置
         const currentSig = currentItem.signature;
@@ -1106,9 +1160,18 @@ async function incrementalUpdate(
             break;
           }
         }
-        console.log(`     差异位置: ${diffPos}`);
-        console.log(`     当前 [${diffPos}-${diffPos+100}]: ...${currentSig.substring(diffPos, diffPos + 100)}...`);
-        console.log(`     新块 [${diffPos}-${diffPos+100}]: ...${newSig.substring(diffPos, diffPos + 100)}...`);
+        // console.log(`     差异位置: ${diffPos}`);
+        // console.log(`     当前 [${diffPos}-${diffPos+100}]: ...${currentSig.substring(diffPos, diffPos + 100)}...`);
+        // console.log(`     新块 [${diffPos}-${diffPos+100}]: ...${newSig.substring(diffPos, diffPos + 100)}...`);
+        
+        // 🆕 详细输出第一个子块的字段对比，帮助调试
+        const currentFirstChild = findFirstChildBlock(currentItem.serialized);
+        const newFirstChild = findFirstChildBlock(matchingByType.config);
+        if (currentFirstChild || newFirstChild) {
+          // console.log(`     🔍 第一个子块字段对比:`);
+          // console.log(`        工作区: type=${currentFirstChild?.type}, fields=${JSON.stringify(currentFirstChild?.fields)}`);
+          // console.log(`        ABS文件: type=${newFirstChild?.type}, fields=${JSON.stringify(newFirstChild?.fields)}`);
+        }
       }
     }
   }
@@ -1122,7 +1185,7 @@ async function incrementalUpdate(
     );
     
     if (matchingNewBlock) {
-      console.log(`  ✅ 精确匹配: ${currentItem.serialized.type} (${currentItem.block.id})`);
+      // console.log(`  ✅ 精确匹配: ${currentItem.serialized.type} (${currentItem.block.id})`);
       processedExistingBlocks.add(currentItem.block.id);
       processedNewBlocks.add(matchingNewBlock.index);
       unchangedCount++;
@@ -1131,7 +1194,7 @@ async function incrementalUpdate(
   
   // ============ 阶段 2：按类型匹配并重建子树 ============
   // 对于签名不同但类型相同的块，保留根块，重建内部子树
-  console.log(`🔍 阶段 2: 类型匹配并重建子树`);
+  // console.log(`🔍 阶段 2: 类型匹配并重建子树`);
   
   for (const currentItem of currentRootBlocks) {
     if (processedExistingBlocks.has(currentItem.block.id)) continue;
@@ -1144,18 +1207,22 @@ async function incrementalUpdate(
     );
     
     if (matchingNewBlock) {
-      console.log(`  🔄 类型匹配，重建子树: ${currentType}`);
+      // console.log(`  🔄 类型匹配，重建子树: ${currentType}`);
       
       try {
         // 简化方案：保留根块，清空并重建所有子树
-        await rebuildBlockChildren(
+        const rebuildResult = await rebuildBlockChildren(
           workspace,
           currentItem.block,
           matchingNewBlock.config,
           variableNameToId,
           preprocessVariableReferences
         );
-        console.log(`    ✅ 子树重建成功: ${currentType}`);
+        // 收集子树重建过程中的失败信息
+        if (rebuildResult.failedBlocks && rebuildResult.failedBlocks.length > 0) {
+          failedBlocks.push(...rebuildResult.failedBlocks);
+        }
+        // console.log(`    ✅ 子树重建成功: ${currentType}`);
       } catch (error) {
         console.warn(`子树重建失败: ${currentType}`, error);
         failedBlocks.push({
@@ -1171,30 +1238,30 @@ async function incrementalUpdate(
   }
   
   // 输出匹配后的状态
-  console.log(`${'─'.repeat(60)}`);
-  console.log(`📊 匹配结果:`);
-  console.log(`   已匹配的工作区块: ${[...processedExistingBlocks].join(', ') || '无'}`);
-  console.log(`   已匹配的新块索引: ${[...processedNewBlocks].join(', ') || '无'}`);
-  console.log(`   未匹配的工作区块:`);
+  // console.log(`${'─'.repeat(60)}`);
+  // console.log(`📊 匹配结果:`);
+  // console.log(`   已匹配的工作区块: ${[...processedExistingBlocks].join(', ') || '无'}`);
+  // console.log(`   已匹配的新块索引: ${[...processedNewBlocks].join(', ') || '无'}`);
+  // console.log(`   未匹配的工作区块:`);
   for (const item of currentRootBlocks) {
     if (!processedExistingBlocks.has(item.block.id)) {
-      console.log(`      ⚠️ ${item.serialized.type} (ID: ${item.block.id})`);
+      // console.log(`      ⚠️ ${item.serialized.type} (ID: ${item.block.id})`);
     }
   }
-  console.log(`   未匹配的新块:`);
+  // console.log(`   未匹配的新块:`);
   for (const item of newBlocksWithInfo) {
     if (!processedNewBlocks.has(item.index)) {
-      console.log(`      ⚠️ ${item.type} (索引: ${item.index})`);
+      // console.log(`      ⚠️ ${item.type} (索引: ${item.index})`);
     }
   }
-  console.log(`${'─'.repeat(60)}`);
+  // console.log(`${'─'.repeat(60)}`);
   
   // ============ 阶段 3：删除无匹配的旧块 ============
-  console.log(`🔍 阶段 3: 清理无匹配的旧块`);
+  // console.log(`🔍 阶段 3: 清理无匹配的旧块`);
   
   for (const item of currentRootBlocks) {
     if (!processedExistingBlocks.has(item.block.id)) {
-      console.log(`  🗑️ 删除无匹配块: ${item.serialized.type} (ID: ${item.block.id})`);
+      // console.log(`  🗑️ 删除无匹配块: ${item.serialized.type} (ID: ${item.block.id})`);
       Blockly.Events.disable();
       try {
         item.block.dispose(true);
@@ -1208,7 +1275,7 @@ async function incrementalUpdate(
   }
   
   // ============ 阶段 4：添加无匹配的新块 ============
-  console.log(`🔍 阶段 4: 添加无匹配的新块`);
+  // console.log(`🔍 阶段 4: 添加无匹配的新块`);
   
   let yPosition = 30;
   const existingBlocks = workspace.getTopBlocks(false);
@@ -1222,7 +1289,7 @@ async function incrementalUpdate(
   for (const newItem of newBlocksWithInfo) {
     if (!processedNewBlocks.has(newItem.index)) {
       const config = newItem.config;
-      console.log(`  ➕ 添加新块: ${config.type}`);
+      // console.log(`  ➕ 添加新块: ${config.type}`);
       
       const configWithPosition = {
         ...config,
@@ -1255,7 +1322,7 @@ async function incrementalUpdate(
     }
   }
   
-  console.log(`📊 增量更新完成: 精确匹配 ${unchangedCount}, 递归更新 ${updatedCount}, 删除 ${removedCount}, 添加 ${addedCount}`);
+  // console.log(`📊 增量更新完成: 精确匹配 ${unchangedCount}, 递归更新 ${updatedCount}, 删除 ${removedCount}, 添加 ${addedCount}`);
   
   // 强制重新渲染工作区，确保视觉状态正确
   try {
@@ -1272,7 +1339,7 @@ async function incrementalUpdate(
         }
       }
     }
-    console.log(`🎨 工作区渲染刷新完成`);
+    // console.log(`🎨 工作区渲染刷新完成`);
   } catch (e) {
     console.warn(`渲染刷新失败:`, e);
   }

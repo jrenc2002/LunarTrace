@@ -62,7 +62,7 @@ export function convertAbiToAbs(abiJson: any, options: AbiToAbsOptions = {}): st
         context.registerVariable(variable.id, variable.name, variable.type || 'int');
       }
       // 输出为注释，供参考但不影响导入
-      lines.push('# Global variables can be defined using variable_define blocks, eg:');
+      lines.push('# Global definitions can be created as standalone blocks or within arduino_global blocks, eg:');
       lines.push('# arduino_global()');
       lines.push('#    variable_define("variable", int, math_number(0))');
       lines.push('');

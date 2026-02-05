@@ -105,7 +105,7 @@ export function loadProjectBlockDefinitions(projectPath: string): void {
     
     const metas = loadBlockDefinitionsFromPath(projectPath, electronAPI);
     setGlobalBlockMetas(metas);
-    console.log(`[absParser] 已从项目加载 ${metas.size} 个块定义`);
+    // console.log(`[absParser] 已从项目加载 ${metas.size} 个块定义`);
   } catch (e) {
     console.warn('[absParser] 加载项目块定义失败:', e);
   }
@@ -117,14 +117,26 @@ export function loadProjectBlockDefinitions(projectPath: string): void {
 function getBlockMeta(blockType: string): Partial<BlockMeta> | undefined {
   // 优先从动态加载的块定义获取
   const dynamicMetas = getGlobalBlockMetas();
+  const fallback = FALLBACK_BLOCKS[blockType];
+  
   if (dynamicMetas) {
     const dynamicMeta = dynamicMetas.get(blockType);
     if (dynamicMeta) {
       const converted = convertDynamicMeta(dynamicMeta);
       
+      // 🆕 合并 FALLBACK_BLOCKS 中的 fieldNames（用于动态创建的字段，如 dht_init 的 PIN）
+      if (fallback?.fieldNames) {
+        const existingFields = new Set(converted.fieldNames || []);
+        for (const fieldName of fallback.fieldNames) {
+          if (!existingFields.has(fieldName)) {
+            converted.fieldNames = converted.fieldNames || [];
+            converted.fieldNames.push(fieldName);
+          }
+        }
+      }
+      
       // 对于动态输入块（如 text_join），如果动态定义的 valueInputNames 为空，
       // 使用回退定义中的默认输入名称
-      const fallback = FALLBACK_BLOCKS[blockType];
       if (fallback?.valueInputNames && (!converted.valueInputNames || converted.valueInputNames.length === 0)) {
         converted.valueInputNames = fallback.valueInputNames;
       }
@@ -134,7 +146,7 @@ function getBlockMeta(blockType: string): Partial<BlockMeta> | undefined {
   }
   
   // 回退到内置定义
-  return FALLBACK_BLOCKS[blockType];
+  return fallback;
 }
 
 /**
@@ -237,7 +249,9 @@ const FALLBACK_BLOCKS: Record<string, Partial<BlockMeta>> = {
   'variables_set': { fieldNames: ['VAR'], valueInputNames: ['VALUE'] },
   
   // DHT 传感器（常用）
-  'dht_init': { fieldNames: ['VAR', 'TYPE'] },  // PIN 是动态添加的
+  // 注意：PIN 是通过 updateShape_ 动态添加的字段，但 ABS 解析时需要知道这个字段名
+  // 'dht_init': { fieldNames: ['VAR', 'TYPE', 'PIN'] },
+  'dht_init': { fieldNames: ['VAR', 'TYPE'] },
   'dht_read_temperature': { fieldNames: ['VAR'] },
   'dht_read_humidity': { fieldNames: ['VAR'] },
   'dht_read_success': { fieldNames: ['VAR'] },
@@ -815,38 +829,26 @@ export class BlocklyAbsParser {
         }
       }
       
-      // 处理剩余的位置参数（可能是动态扩展添加的输入）
-      // 使用动态检测确定输入名模式（如 ADD2, ADD3... 或 INPUT0, INPUT1...）
-      let extraInputIndex = meta.valueInputNames?.length || 0;  // 从已有输入数量开始
+      // 处理剩余的位置参数（可能是动态扩展添加的输入或字段）
+      // 使用 EXTRA_N 模式，后续由 remapExtraFieldsToActualFields 映射到实际名称
+      let extraIndex = 0;
       
       while (argIndex < positionalArgs.length) {
         const arg = positionalArgs[argIndex];
         
-        // 根据块类型决定输入名 - 使用动态检测
-        let inputName: string;
-        const coreConfig = CORE_DYNAMIC_BLOCKS[blockType];
-        if (coreConfig) {
-          // 核心动态块：使用已知的输入模式
-          const patternStr = coreConfig.inputPattern.source;
-          const prefixMatch = patternStr.match(/^\^?\(?([A-Z]+)/);
-          const prefix = prefixMatch ? prefixMatch[1] : 'INPUT';
-          inputName = `${prefix}${extraInputIndex}`;
-        } else {
-          // 尝试使用 INPUT 作为默认前缀（适用于 dynamic-inputs 插件）
-          // 如果不匹配，后续的 EXTRA_N 映射会处理
-          inputName = `INPUT${extraInputIndex}`;
-        }
+        // 🔑 使用 EXTRA_N 模式：统一由 editBlockTool 的映射函数处理
+        const extraName = `EXTRA_${extraIndex}`;
         
         if (!this.isComplexExpression(arg)) {
-          fields[inputName] = this.parseFieldValue(arg);
+          fields[extraName] = this.parseFieldValue(arg);
         } else {
           const valueNode = this.parseInlineValue(arg);
           if (valueNode) {
-            inlineInputs[inputName] = valueNode;
+            inlineInputs[extraName] = valueNode;
           }
         }
         argIndex++;
-        extraInputIndex++;
+        extraIndex++;
       }
     } else {
       // 未知块类型，尝试智能分配
