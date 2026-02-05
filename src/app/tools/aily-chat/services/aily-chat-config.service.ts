@@ -69,6 +69,18 @@ export interface AilyChatConfig {
 const DEFAULT_MODELS: ModelConfigOption[] = [];
 
 /**
+ * Auto 自动模型选项（由服务端决定使用哪个模型）
+ */
+const AUTO_MODEL: ModelConfigOption = {
+    model: 'auto',
+    name: 'Auto',
+    family: 'auto',
+    speed: '1x',
+    enabled: true,
+    isCustom: false
+};
+
+/**
  * 默认API配置（空列表）
  */
 const DEFAULT_API_KEYS: ApiKeyConfig[] = [];
@@ -180,13 +192,16 @@ export class AilyChatConfigService {
 
     /**
      * 获取是否使用自定义 API Key (兼容旧版本)
-     * 如果有API配置列表且非空，则认为使用自定义API
+     * 如果有API配置列表且非空，或者有自定义模型，则认为使用自定义API
      */
     get useCustomApiKey(): boolean {
         // 兼容旧版本：如果旧配置存在且有值，返回true
         if (this.config.useCustomApiKey) return true;
         // 新版本：如果有API配置，返回true
-        return (this.config.apiKeys?.length ?? 0) > 0;
+        if ((this.config.apiKeys?.length ?? 0) > 0) return true;
+        // 检查是否有自定义模型（带有apiKey和baseUrl）
+        const hasCustomModels = this.config.models?.some(m => m.isCustom && m.apiKey && m.baseUrl) ?? false;
+        return hasCustomModels;
     }
 
     set useCustomApiKey(value: boolean) {
@@ -345,16 +360,21 @@ export class AilyChatConfigService {
     /**
      * 获取已启用的模型列表
      * 规则：如果未启用自定义API KEY，则只返回内置模型
+     * 始终在列表最前面添加 Auto 选项
      */
     getEnabledModels(): ModelConfigOption[] {
         const enabledModels = this.models.filter(m => m.enabled);
         
         // 如果未启用自定义API KEY，过滤掉自定义模型
+        let resultModels: ModelConfigOption[];
         if (!this.useCustomApiKey) {
-            return enabledModels.filter(m => !m.isCustom);
+            resultModels = enabledModels.filter(m => !m.isCustom);
+        } else {
+            resultModels = enabledModels;
         }
         
-        return enabledModels;
+        // 始终在列表最前面添加 Auto 选项
+        return [AUTO_MODEL, ...resultModels];
     }
 
     /**

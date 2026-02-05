@@ -261,7 +261,7 @@ export class ChatService {
     }
   }
 
-  startSession(mode: string, tools: MCPTool[] | null = null, maxCount?: number, customllmConfig?: any, customModel?: any): Observable<any> {
+  startSession(mode: string, tools: MCPTool[] | null = null, maxCount?: number, customllmConfig?: any, selectModel?: string): Observable<any> {
     const payload: any = { 
       session_id: this.currentSessionId, 
       tools: tools || [], 
@@ -278,9 +278,9 @@ export class ChatService {
       payload.llm_config = customllmConfig;
     }
 
-    // 如果提供了自定义模型，添加到请求中
-    if (customModel) {
-      payload.custom_model = customModel;
+    // 如果提供了选择的模型名称，添加到请求中
+    if (selectModel) {
+      payload.select_model = selectModel;
     }
     
     return this.http.post(API.startSession, payload);

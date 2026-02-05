@@ -1511,15 +1511,12 @@ Do not create non-existent boards and libraries.
       customllmConfig = null;
     }
 
-    // 使用当前选择的模型
-    const customModel = this.currentModel ? {
-      model: this.currentModel.model,
-      family: this.currentModel.family
-    } : null;
+    // 使用当前选择的模型名称（服务端会根据 baseUrl 自动推断 family）
+    const selectModel = this.currentModel?.model || null;
 
 
     return new Promise<void>((resolve, reject) => {
-      this.chatService.startSession(this.currentMode, tools, maxCount, customllmConfig, customModel).subscribe({
+      this.chatService.startSession(this.currentMode, tools, maxCount, customllmConfig, selectModel).subscribe({
         next: (res: any) => {
           if (res.status === 'success') {
             if (res.data != this.sessionId) {
