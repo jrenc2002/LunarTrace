@@ -34,7 +34,7 @@ export { newProjectTool } from './createProjectTool';
 export { executeCommandTool } from './executeCommandTool';
 export { askApprovalTool } from './askApprovalTool';
 export { getContextTool } from './getContextTool';
-// export { getProjectInfoTool } from './getProjectInfoTool';
+export { getProjectInfoTool } from './getProjectInfoTool';
 export { fetchTool, FetchToolService } from './fetchTool';
 export { todoWriteTool } from './todoWriteTool';
 export { syncAbsFileHandler } from './syncAbsFileTool';

@@ -58,21 +58,21 @@ export const TOOLS = [
             required: ['info_type']
         }
     },
-    // {
-    //     name: "get_project_info",
-    //     description: `获取当前项目信息。如果项目已创建，返回当前项目使用的开发板及已安装的库列表。如果库中包含 readme_ai.md 文档，则同时输出该文件的路径。可用于了解项目配置、查找库文档等。`,
-    //     input_schema: {
-    //         type: 'object',
-    //         properties: {
-    //             include_readme: {
-    //                 type: 'boolean',
-    //                 description: '是否检查并返回库的 readme_ai.md 文件路径',
-    //                 default: true
-    //             }
-    //         },
-    //         required: []
-    //     }
-    // },
+    {
+        name: "get_project_info",
+        description: `获取当前项目信息。如果项目已创建，返回当前项目使用的开发板及已安装的库列表。如果库中包含 readme_ai.md 文档，则同时输出该文件的路径。可用于了解项目配置、查找库文档等。`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                include_readme: {
+                    type: 'boolean',
+                    description: '是否检查并返回库的 readme_ai.md 文件路径',
+                    default: true
+                }
+            },
+            required: []
+        }
+    },
     // {
     //     name: "list_directory",
     //     description: `列出指定目录的内容，包括文件和文件夹信息。返回每个项目的名称、类型、大小和修改时间。`,

@@ -24,7 +24,7 @@ import { newProjectTool } from './tools/createProjectTool';
 import { executeCommandTool } from './tools/executeCommandTool';
 import { askApprovalTool } from './tools/askApprovalTool';
 import { getContextTool } from './tools/getContextTool';
-// import { getProjectInfoTool } from './tools/getProjectInfoTool';
+import { getProjectInfoTool } from './tools/getProjectInfoTool';
 import { listDirectoryTool } from './tools/listDirectoryTool';
 import { readFileTool } from './tools/readFileTool';
 import { createFileTool } from './tools/createFileTool';
@@ -456,8 +456,8 @@ export class AilyChatComponent implements OnDestroy {
         return this.formatCommandDisplay(args.command || 'unknown');
       case 'get_context':
         return "获取上下文信息...";
-      // case 'get_project_info':
-      //   return "获取项目信息...";
+      case 'get_project_info':
+        return "获取项目信息...";
       case 'list_directory':
         const distFolderName = args.path ? this.getLastFolderName(args.path) : 'unknown';
         return `获取${distFolderName}目录内容`;
@@ -586,8 +586,8 @@ export class AilyChatComponent implements OnDestroy {
         return `${cmdDisplay} ✓`;
       case 'get_context':
         return "上下文信息获取成功";
-      // case 'get_project_info':
-      //   return "项目信息获取成功";
+      case 'get_project_info':
+        return "项目信息获取成功";
       case 'list_directory':
         const distFolderName = args?.path ? this.getLastFolderName(args.path) : 'unknown';
         return `获取${distFolderName}目录内容成功`;
@@ -1907,7 +1907,7 @@ ${JSON.stringify(errData)}
             let resultState = "done";
             let resultText = '';
 
-            // console.log("工具调用请求: ", data.tool_name, toolArgs);
+            console.log("工具调用请求: ", data.tool_name, toolArgs);
 
             // 定义 block 工具列表
             const blockTools = [
@@ -2107,26 +2107,26 @@ ${JSON.stringify(errData)}
                     break;
                   case 'get_context':
                     // console.log('[获取上下文信息工具被调用]', toolArgs);
-                    this.startToolCall(toolCallId, data.tool_name, "获取上下文信息...", toolArgs);
+                    this.startToolCall(toolCallId, data.tool_name, "获取 上下文信息...", toolArgs);
                     toolResult = await getContextTool(this.projectService, toolArgs);
                     if (toolResult?.is_error) {
                       resultState = "warn";
-                      resultText = '获取上下文信息异常, 即将重试';
+                      resultText = '获取 上下文信息 异常, 即将重试';
                     } else {
-                      resultText = `上下文信息获取成功`;
+                      resultText = `获取 上下文信息 成功`;
                     }
                     break;
-                  // case 'get_project_info':
-                  //   // console.log('[获取项目信息工具被调用]', toolArgs);
-                  //   this.startToolCall(toolCallId, data.tool_name, "获取项目信息...", toolArgs);
-                  //   toolResult = await getProjectInfoTool(this.projectService, toolArgs);
-                  //   if (toolResult?.is_error) {
-                  //     resultState = "warn";
-                  //     resultText = '获取项目信息异常, 即将重试';
-                  //   } else {
-                  //     resultText = `项目信息获取成功`;
-                  //   }
-                  //   break;
+                  case 'get_project_info':
+                    // console.log('[获取项目信息工具被调用]', toolArgs);
+                    this.startToolCall(toolCallId, data.tool_name, "获取 项目信息...", toolArgs);
+                    toolResult = await getProjectInfoTool(this.projectService, toolArgs);
+                    if (toolResult?.is_error) {
+                      resultState = "warn";
+                      resultText = '获取 项目信息 异常, 即将重试';
+                    } else {
+                      resultText = `获取 项目信息 成功`;
+                    }
+                    break;
                   case 'list_directory':
                     // console.log('[列出目录工具被调用]', toolArgs);
                     const distFolderName = this.getLastFolderName(toolArgs.path);
@@ -3321,7 +3321,7 @@ ${JSON.stringify(errData)}
               const shouldIncludeKeyInfo = needsPathInfo || toolResult?.is_error || resultState === 'warn';
 
               if (needsRules || newConnect || newProject) {
-                console.log('包含规则提示');
+                console.log('======================================包含规则提示======================================');
                 newConnect = false;
                 newProject = false;
                 // Blockly 工具失败时：同时包含 keyInfo 和 rules
@@ -3350,7 +3350,7 @@ ${JSON.stringify(errData)}
 2. 使用sync_abs_file工具的export操作获取当前代码
 3. 编辑ABS代码：添加新块、修改参数、调整结构
 4. 使用sync_abs_file工具的import操作导入修改后的ABS
-5. 检查工具反馈，根据错误信息修复ABS语法问题
+5. 检查工具反馈，读取使用库的readme_ai.md获取正确语法
 6. 重复步骤2-5直至完成
 
 【修复原则】
@@ -3397,7 +3397,7 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
               this.completeToolCall(data.tool_id, data.tool_name, finalState, resultText);
             }
 
-            // console.log(`工具调用结果: `, toolResult, resultText);
+            console.log(`工具调用结果: `, toolResult, resultText);
 
             this.send("tool", JSON.stringify({
               "type": "tool",
