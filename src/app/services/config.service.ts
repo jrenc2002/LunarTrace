@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { lastValueFrom } from 'rxjs';
 import { ElectronService } from './electron.service';
-import { API, setServerUrl, setRegistryUrl } from '../configs/api.config';
+import { API, setServerUrl, setRegistryUrl, setToolWebUrl } from '../configs/api.config';
 
 @Injectable({
   providedIn: 'root',
@@ -258,6 +258,7 @@ export class ConfigService {
       // 更新 API 配置模块的缓存
       setRegistryUrl(regionConfig.npm_registry);
       setServerUrl(regionConfig.api_server);
+      setToolWebUrl(regionConfig.tool_web);
       
       // 更新环境变量
       if (window['process']?.env) {
@@ -265,6 +266,7 @@ export class ConfigService {
         window['process'].env['AILY_NPM_REGISTRY'] = regionConfig.npm_registry;
         window['process'].env['AILY_ZIP_URL'] = regionConfig.resource;
         window['process'].env['AILY_API_SERVER'] = regionConfig.api_server;
+        window['process'].env['AILY_TOOL_WEB'] = regionConfig.tool_web;
       }
       
       // 通过 ipcRenderer 通知主进程更新环境变量（等待所有更新完成）
@@ -273,7 +275,8 @@ export class ConfigService {
           window['ipcRenderer'].invoke('env-set', { key: 'AILY_REGION', value: regionKey }),
           window['ipcRenderer'].invoke('env-set', { key: 'AILY_NPM_REGISTRY', value: regionConfig.npm_registry }),
           window['ipcRenderer'].invoke('env-set', { key: 'AILY_ZIP_URL', value: regionConfig.resource }),
-          window['ipcRenderer'].invoke('env-set', { key: 'AILY_API_SERVER', value: regionConfig.api_server })
+          window['ipcRenderer'].invoke('env-set', { key: 'AILY_API_SERVER', value: regionConfig.api_server }),
+          window['ipcRenderer'].invoke('env-set', { key: 'AILY_TOOL_WEB', value: regionConfig.tool_web })
         ]);
       }
       
@@ -760,6 +763,7 @@ interface AppConfig {
     [key: string]: {
       name: string;
       api_server: string;
+      tool_web: string;
       npm_registry: string;
       resource: string;
       updater: string;

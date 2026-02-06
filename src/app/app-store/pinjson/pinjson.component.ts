@@ -4,6 +4,7 @@ import { NZ_MODAL_DATA } from 'ng-zorro-antd/modal';
 import { ActivatedRoute } from '@angular/router';
 import { ElectronService } from '../../services/electron.service';
 import { SubWindowComponent } from '../../components/sub-window/sub-window.component';
+import { getToolWebUrl } from '../../configs/api.config';
 
 export interface PinjsonModalData {
   /** pinjson.json 解析后的数据 */
@@ -38,7 +39,7 @@ export class PinjsonComponent implements OnInit, OnDestroy {
     @Optional() @Inject(NZ_MODAL_DATA) public data: PinjsonModalData | null,
     private sanitizer: DomSanitizer,
     private route: ActivatedRoute,
-    private electronService: ElectronService
+    private electronService: ElectronService,
   ) {
     // 如果是从 modal 打开，使用 modal data
     if (this.data) {
@@ -46,7 +47,7 @@ export class PinjsonComponent implements OnInit, OnDestroy {
     }
     // 否则等待 ngOnInit 中从 URL 参数读取文件路径并加载数据
 
-    const baseUrl = this.data?.iframeBaseUrl || 'http://localhost:4202/component-viewer';
+    const baseUrl = this.data?.iframeBaseUrl || (getToolWebUrl() + '/component-viewer');
     const id = this.data?.componentId || `component_${Date.now()}`;
     const url = `${baseUrl}?id=${encodeURIComponent(id)}&type=json`;
     this.iframeSrc = this.sanitizer.bypassSecurityTrustResourceUrl(url);
