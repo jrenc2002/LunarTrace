@@ -252,27 +252,31 @@ async function importFromAbs(
       }
     }
     
-    // 同步变量到工作区（只创建不存在的变量）
-    const variableNameToId = new Map<string, string>();
+    // 清理不再需要的旧变量，保留 ABS 中会用到的变量
+    // 变量库及部分库的块在加载时会自动注册变量（如 registerVariableToBlockly / addVariableToToolbox）
+    // 所以只删除既不在 ABS 声明/引用中、也不会被初始化块自动创建的变量
+    // 使用 VariableMap 直接操作，避免 workspace.deleteVariableById 弹出确认对话框
+    const variableMap = workspace.getVariableMap();
     const existingVars = workspace.getAllVariables();
-    const existingVarNames = new Set(existingVars.map((v: any) => v.name));
-    
-    let newVarCount = 0;
-    for (const [name, type] of allVariables) {
-      if (!existingVarNames.has(name)) {
-        const variable = workspace.createVariable(name, type || undefined);
-        variableNameToId.set(name, variable.getId());
-        newVarCount++;
-        // console.log(`✅ 创建变量: "${name}" (类型: ${type || '默认'}) → ID: ${variable.getId()}`);
-      } else {
-        // 变量已存在，获取其 ID
-        const existing = existingVars.find((v: any) => v.name === name);
-        if (existing) {
-          variableNameToId.set(name, existing.getId());
+    if (variableMap && existingVars.length > 0) {
+      for (const oldVar of existingVars) {
+        if (!allVariables.has(oldVar.name) && !autoCreatedVars.has(oldVar.name)) {
+          variableMap.deleteVariable(oldVar);
         }
       }
     }
-    // console.log(`📋 新建 ${newVarCount} 个变量，复用 ${allVariables.size - newVarCount} 个已有变量`);
+    
+    // 同步 ABS 中声明的变量到工作区（只创建不存在的，保留已有的）
+    const variableNameToId = new Map<string, string>();
+    
+    for (const [name, type] of allVariables) {
+      let variable = workspace.getVariable(name);
+      if (!variable) {
+        variable = workspace.createVariable(name, type || undefined);
+      }
+      variableNameToId.set(name, variable.getId());
+    }
+    // console.log(`📋 同步 ${allVariables.size} 个变量`);
     
     // 🆕 尝试增量更新
     const hasExistingBlocks = workspace.getTopBlocks(false).length > 0;

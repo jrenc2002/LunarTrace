@@ -1277,6 +1277,15 @@ Do not create non-existent boards and libraries.
     // console.log('接收到外部文本:', text, '选项:', options);
 
     if (options?.type === 'button') {
+      // 拦截特殊按钮动作
+      if (text === '重试') {
+        this.retryLastAction();
+        return;
+      }
+      if (text === '新建会话') {
+        this.newChat();
+        return;
+      }
       this.send("user", text, false);
       return;
     }
@@ -1803,7 +1812,13 @@ ${JSON.stringify(errData)}
   "message": "${errorMessage}",
   "status": ${error.status || 'unknown'}
 }
-\`\`\`\n\n`);
+\`\`\`
+
+\`\`\`aily-button
+[{"text":"重试","action":"retry","type":"primary"}]
+\`\`\`
+
+`);
         }
       }
     });
@@ -1848,7 +1863,7 @@ ${JSON.stringify(errData)}
           return; // 如果不在等待状态，直接返回
         }
 
-        console.log("Recv: ", data);
+        // console.log("Recv: ", data);
 
         try {
           if (data.type === 'ModelClientStreamingChunkEvent') {
@@ -1905,14 +1920,17 @@ ${JSON.stringify(errData)}
               this.list[this.list.length - 1].state = 'done';
             }
             this.appendMessage('error', `
-
 \`\`\`aily-error
 {
-  "message": "${data.message || '未知错误'}"
+  "message": "${this.makeJsonSafe(data.message || '未知错误')}"
 }
-\`\`\`\n\n
+\`\`\`
 
-          `);
+\`\`\`aily-button
+[{"text":"重试","action":"retry","type":"primary"}]
+\`\`\`
+
+`);
             this.isWaiting = false;
           } else if (data.type === 'tool_call_request') {
             let toolArgs;
@@ -1966,7 +1984,7 @@ ${JSON.stringify(errData)}
             let resultState = "done";
             let resultText = '';
 
-            console.log("工具调用请求: ", data.tool_name, toolArgs);
+            // console.log("工具调用请求: ", data.tool_name, toolArgs);
 
             // 定义 block 工具列表
             const blockTools = [
@@ -2235,14 +2253,20 @@ ${JSON.stringify(errData)}
                     toolResult = await readFileTool(toolArgs, this.securityContext);
                     if (toolResult?.is_error) {
                       resultState = "warn";
-                      resultText = `读取异常, 即将重试`;
+                      if (readFileName === 'project.abs') {
+                        resultText = `读取 项目文件 异常, 即将重试`;
+                      } else if (libNickName) {
+                        resultText = `了解 ${libNickName} 使用方法异常, 即将重试`;
+                      } else {
+                        resultText = `读取 文件 异常, 即将重试`;
+                      }
                     } else {
                       if (readFileName === 'project.abs') {
                         resultText = `读取 项目文件 成功`;
                       } else if (libNickName) {
                         resultText = `了解 ${libNickName} 使用方法成功`;
                       } else {
-                        resultText = `读取${readFileName}文件成功`;
+                        resultText = `读取 ${readFileName} 文件成功`;
                       }
                     }
                     // } else {
@@ -2262,6 +2286,9 @@ ${JSON.stringify(errData)}
                   case 'create_file':
                     // console.log('[创建文件工具被调用]', toolArgs);
                     let createFileName = this.getFileName(toolArgs.path);
+                    if (createFileName === 'project.abs') {
+                      createFileName = '项目文件';
+                    }
                     this.startToolCall(toolCallId, data.tool_name, `创建: ${createFileName}`, toolArgs);
                     toolResult = await createFileTool(toolArgs, this.securityContext);
                     if (toolResult?.is_error) {
@@ -2286,26 +2313,24 @@ ${JSON.stringify(errData)}
                   case 'edit_file':
                     // console.log('[编辑文件工具被调用]', toolArgs);
                     let editFileName = this.getFileName(toolArgs.path);
+                    if (editFileName === 'project.abs') {
+                      editFileName = '项目文件';
+                    }
                     this.startToolCall(toolCallId, data.tool_name, `编辑: ${editFileName}`, toolArgs);
                     toolResult = await editFileTool(toolArgs);
                     if (toolResult?.is_error) {
                       resultState = "warn";
-                      if (editFileName === 'project.abs') {
-                        resultText = `编辑 项目文件 异常, 即将重试`;
-                      } else {
-                        resultText = `编辑${editFileName}文件异常, 即将重试`;
-                      }
+                      resultText = `编辑 ${editFileName} 文件异常, 即将重试`;
                     } else {
-                      if (editFileName === 'project.abs') {
-                        resultText = `编辑 项目文件 成功`;
-                      } else {
-                        resultText = `编辑 ${editFileName} 文件成功`;
-                      }
+                      resultText = `编辑 ${editFileName} 文件成功`;
                     }
                     break;
                   case 'delete_file':
                     // console.log('[删除文件工具被调用]', toolArgs);
                     let deleteFileName = this.getFileName(toolArgs.path);
+                    if (editFileName === 'project.abs') {
+                      editFileName = '项目文件';
+                    }
                     this.startToolCall(toolCallId, data.tool_name, `删除: ${deleteFileName}`, toolArgs);
                     toolResult = await deleteFileTool(toolArgs, this.securityContext);
                     if (toolResult?.is_error) {
@@ -3456,7 +3481,7 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
               this.completeToolCall(data.tool_id, data.tool_name, finalState, resultText);
             }
 
-            console.log(`工具调用结果: `, toolResult, resultText);
+            // console.log(`工具调用结果: `, toolResult, resultText);
 
             this.send("tool", JSON.stringify({
               "type": "tool",
@@ -3513,16 +3538,17 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
               
               // 显示报错，并提供重试按钮
               this.appendMessage('aily', `
-
-\`\`\`aily-task-action
+\`\`\`aily-error
 {
-  "actionType": "error",
-  "message": "任务执行过程中遇到问题，请重试或开始新会话。",
-  "stopReason": "${this.makeJsonSafe(stopReason)}",
-  "metadata": {}
+  "message": "任务执行过程中遇到问题，请重试或开始新会话。"
 }
-\`\`\`\n\n
-              `);
+\`\`\`
+
+\`\`\`aily-button
+[{"text":"重试","action":"retry","type":"primary"}]
+\`\`\`
+
+`);
             }
 
           }
@@ -3530,14 +3556,17 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
         } catch (e) {
           console.log('处理流数据时出错:', e);
           this.appendMessage('error', `
-
 \`\`\`aily-error
 {
   "message": "服务异常，请稍后重试。"
 }
-\`\`\`\n\n
+\`\`\`
 
-          `);
+\`\`\`aily-button
+[{"text":"重试","action":"retry","type":"primary"}]
+\`\`\`
+
+`);
           // 调用取消函数
           this.stop();
         }
@@ -3594,7 +3623,7 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
           this.appendMessage('error', `
 \`\`\`aily-error
 {
-  "message": "很抱歉，网络连接已断开，请稍后重试。"
+  "message": "网络连接已断开，请检查网络后重试。"
 }
 \`\`\`
 
