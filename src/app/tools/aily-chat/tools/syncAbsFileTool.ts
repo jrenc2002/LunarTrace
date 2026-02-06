@@ -394,7 +394,7 @@ async function importFromAbs(
 **统计:** ${totalBlocks} 个块, ${variableCount} 个变量${updateModeInfo}
 **备份:** 原 ABI 文件已备份为 \`project.abi.backup\`${versionInfo}${warnings}${failedInfo}
 
-工作区已更新，请检查实际生成的代码。`,
+工作区已更新，请使用get_workspace_overview_tool检查工作区实际的代码是否符合用户需求。`,
       metadata: {
         operation: 'import',
         filePath: absFilePath,

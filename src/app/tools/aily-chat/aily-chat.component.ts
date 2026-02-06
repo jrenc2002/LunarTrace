@@ -3333,10 +3333,11 @@ ${JSON.stringify(errData)}
 所有块操作统一通过ABS文件进行：创建=添加ABS代码行，修改=编辑参数，删除=移除代码行
 
 【准备阶段】
-1. 使用get_workspace_overview_tool分析当前工作区，获取ABS代码和变量列表
-2. 列出所有需要使用的库（必须包含\`lib-core-*\`系列核心库：logic、variables、time、math等）
-3. 逐一阅读各库readme_ai.md了解块定义和ABS语法
-4. 如果需要的库未安装，则查询并安装所需库，安装完成后重新执行步骤1-3
+1. 使用todo_write_tool规划当前项目流程
+2. 使用get_workspace_overview_tool分析当前工作区，获取ABS代码和变量列表
+3. 列出所有需要使用的库（必须包含\`lib-core-*\`系列核心库：logic、variables、time、math等）
+4. 逐一阅读各库readme_ai.md了解块定义和ABS语法
+5. 如果需要的库未安装，则查询并安装所需库，安装完成后重新执行步骤1-4
 
 【ABS编写规范】
 - 变量引用必须使用\`$变量名\`格式（如\`$count\`、\`$ledPin\`）
@@ -3350,7 +3351,7 @@ ${JSON.stringify(errData)}
 2. 使用sync_abs_file工具的export操作获取当前代码
 3. 编辑ABS代码：添加新块、修改参数、调整结构
 4. 使用sync_abs_file工具的import操作导入修改后的ABS
-5. 检查工具反馈，读取使用库的readme_ai.md获取正确语法
+5. 检查工具反馈，如果失败则分析错误信息，修正ABS代码后重新导入
 6. 重复步骤2-5直至完成
 
 【修复原则】
