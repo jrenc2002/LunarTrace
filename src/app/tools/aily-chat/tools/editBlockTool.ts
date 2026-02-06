@@ -1284,8 +1284,8 @@ function configureBlockFields(block: any, fields: FieldConfig): {
               // 检测是否是变量ID无效错误
               if (errorMsg.includes("Variable id doesn't point to a real variable")) {
                 const suggestion = `传入的值 "${actualValue}" 看起来是一个变量ID，但不是工作区中有效的变量ID。请使用变量名（如 "myVar", "counter"）而不是变量ID。`;
-                // console.error(`❌ ${errorMsg}`);
-                // console.error(`💡 ${suggestion}`);
+                // console.warn(`❌ ${errorMsg}`);
+                // console.warn(`💡 ${suggestion}`);
                 
                 failedFields.push({
                   fieldName,
@@ -1295,7 +1295,7 @@ function configureBlockFields(block: any, fields: FieldConfig): {
                 });
               } else {
                 // 其他错误也记录
-                // console.error(`❌ 字段设置失败: ${fieldName}`, setFieldError);
+                // console.warn(`❌ 字段设置失败: ${fieldName}`, setFieldError);
                 failedFields.push({
                   fieldName,
                   value: actualValue,
@@ -1407,7 +1407,7 @@ function configureBlockFields(block: any, fields: FieldConfig): {
             // 先获取字段和可用选项
             const field = block.getField(fieldName);
             if (!field) {
-              // console.error(`❌ 字段 "${fieldName}" 不存在`);
+              // console.warn(`❌ 字段 "${fieldName}" 不存在`);
               failedFields.push({
                 fieldName,
                 value: actualValue,
@@ -1587,7 +1587,7 @@ function configureBlockFields(block: any, fields: FieldConfig): {
                     }
                   }
                 } else {
-                  console.error(`❌ 下拉菜单设置验证失败: 期望 "${matchedOption}"，实际 "${actualFieldValue}"`);
+                  console.warn(`❌ 下拉菜单设置验证失败: 期望 "${matchedOption}"，实际 "${actualFieldValue}"`);
                   failedFields.push({
                     fieldName,
                     value: actualValue,
@@ -1597,7 +1597,7 @@ function configureBlockFields(block: any, fields: FieldConfig): {
                 }
               } catch (setError: any) {
                 const errorMsg = setError?.message || String(setError);
-                console.error(`❌ 下拉菜单设置异常: ${errorMsg}`);
+                console.warn(`❌ 下拉菜单设置异常: ${errorMsg}`);
                 failedFields.push({
                   fieldName,
                   value: actualValue,
@@ -1608,7 +1608,7 @@ function configureBlockFields(block: any, fields: FieldConfig): {
             } else {
               // 没有找到匹配的选项
               const suggestion = `下拉菜单 "${fieldName}" 的值 "${actualValue}" 不是有效选项。可用选项: [${availableOptions.join(', ')}]`;
-              console.error(`❌ ${suggestion}`);
+              console.warn(`❌ ${suggestion}`);
               failedFields.push({
                 fieldName,
                 value: actualValue,
@@ -1625,7 +1625,7 @@ function configureBlockFields(block: any, fields: FieldConfig): {
               configSuccess = true;
             } catch (setFieldError: any) {
               const errorMsg = setFieldError?.message || String(setFieldError);
-              console.error(`❌ 常规字段设置失败: ${fieldName}`, setFieldError);
+              console.warn(`❌ 常规字段设置失败: ${fieldName}`, setFieldError);
               failedFields.push({
                 fieldName,
                 value: actualValue,
@@ -1731,7 +1731,7 @@ function configureBlockFields(block: any, fields: FieldConfig): {
               ? `该块可用的字段有: [${availableFields.join(', ')}]。请阅读该块所属库的 README.md 文档，了解正确的字段名和用法。`
               : `请阅读块类型 "${block.type}" 所属库的 README.md 文档，了解该块支持的字段。`;
             
-            console.error(`❌ 二次尝试失败: ${errorMsg}`);
+            console.warn(`❌ 二次尝试失败: ${errorMsg}`);
             failedFields.push({
               fieldName,
               value: typeof value === 'object' ? JSON.stringify(value) : String(value),
@@ -1761,7 +1761,7 @@ function configureBlockFields(block: any, fields: FieldConfig): {
           
         } catch (retryError: any) {
           const errorMsg = retryError?.message || String(retryError);
-          console.error(`❌ 二次尝试设置失败: ${fieldName}`, retryError);
+          console.warn(`❌ 二次尝试设置失败: ${fieldName}`, retryError);
           failedFields.push({
             fieldName,
             value: typeof value === 'object' ? JSON.stringify(value) : String(value),
