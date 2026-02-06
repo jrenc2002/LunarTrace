@@ -5124,8 +5124,19 @@ export async function createBlockFromConfig(
     
     if (config.fields) {
       // console.log('🏷️ 配置块字段...');
-      configureBlockFields(block, config.fields);
+      const fieldResult = configureBlockFields(block, config.fields);
       // console.log('✅ 字段配置完成');
+      
+      // 收集字段配置失败信息（如无效的下拉选项值）
+      if (fieldResult.failedFields && fieldResult.failedFields.length > 0) {
+        for (const f of fieldResult.failedFields) {
+          failedBlocks.push({
+            blockType: config.type,
+            error: `字段 "${f.fieldName}" 设置失败: ${f.error}`,
+            suggestion: f.suggestion
+          });
+        }
+      }
     }
     
     // 🆕 动态输入映射：将 EXTRA_N 输入映射到块上实际存在的未配置值输入

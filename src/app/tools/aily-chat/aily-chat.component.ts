@@ -1396,6 +1396,65 @@ Do not create non-existent boards and libraries.
     //     }, 2000);
   }
 
+  /**
+   * 清理最后一条 AI 消息中的流式残留内容
+   * 
+   * 由于流式传输的延迟，agent 输出的终止标记（如 TERMINATE、[to_user]）
+   * 和未完成的特殊代码块可能残留在消息中。此方法在对话终止时统一清理。
+   */
+  private cleanupLastAiMessage(): void {
+    if (this.list.length === 0) return;
+    const lastMsg = this.list[this.list.length - 1];
+    if (lastMsg.role !== 'aily' || !lastMsg.content) return;
+
+    let content = lastMsg.content as string;
+    const originalLength = content.length;
+
+    // 1. 移除终止标记及其前后空白（完整或部分）
+    //    匹配 TERMINATE 的完整或部分出现（流式可能只传了前几个字符）
+    content = content.replace(/\s*\[?TERMINATE\]?\s*$/i, '');
+    content = content.replace(/\s*\[to_user\]\s*$/i, '');
+    // 部分终止标记（如 "TERMI", "TERMINA" 等出现在末尾）
+    const terminatePartials = ['TERMINAT', 'TERMINA', 'TERMIN', 'TERMI', 'TERM'];
+    for (const partial of terminatePartials) {
+      if (content.trimEnd().endsWith(partial)) {
+        content = content.substring(0, content.lastIndexOf(partial)).trimEnd();
+        break;
+      }
+    }
+
+    // 2. 移除未闭合的特殊 aily 代码块
+    //    检测以 ```aily-xxx 开头但未以 ``` 闭合的代码块
+    const ailyCodeBlockStart = /```(aily-(?:state|button|error|blockly|board|library|task-action|think|mermaid)|mermaid)[^\n]*\n/g;
+    let match: RegExpExecArray | null;
+    let lastUnclosedStart = -1;
+
+    // 重置 lastIndex
+    ailyCodeBlockStart.lastIndex = 0;
+    while ((match = ailyCodeBlockStart.exec(content)) !== null) {
+      const startPos = match.index;
+      // 在 startPos 之后查找闭合的 ```
+      const afterStart = content.substring(startPos + match[0].length);
+      const closeMatch = afterStart.match(/\n\s*```/);
+      if (!closeMatch) {
+        // 没找到闭合标记，这是一个未完成的代码块
+        lastUnclosedStart = startPos;
+      }
+    }
+
+    if (lastUnclosedStart >= 0) {
+      content = content.substring(0, lastUnclosedStart).trimEnd();
+    }
+
+    // 3. 清理末尾残留的不完整 markdown 代码块起始符 (```, `` 等)
+    content = content.replace(/\s*`{1,3}\s*$/, '');
+
+    // 只在内容实际发生变化时更新
+    if (content.length !== originalLength) {
+      lastMsg.content = content;
+    }
+  }
+
   appendMessage(role, text) {
     // console.log("添加消息: ", role, text);
 
@@ -1789,7 +1848,7 @@ ${JSON.stringify(errData)}
           return; // 如果不在等待状态，直接返回
         }
 
-        // console.log("Recv: ", data);
+        console.log("Recv: ", data);
 
         try {
           if (data.type === 'ModelClientStreamingChunkEvent') {
@@ -3326,6 +3385,12 @@ ${JSON.stringify(errData)}
                 newProject = false;
                 // Blockly 工具失败时：同时包含 keyInfo 和 rules
                 // toolContent += `\n${keyInfo}\n
+// 【ABS编写规范】
+// - 字段(field)直接写值：field_dropdown写枚举\`HIGH\`、field_input写字符串\`"dht"\`、field_number写数字\`9600\`、field_variable写\`$varName\`
+// - 值输入(input_value)必须连接值块：数字用\`math_number(10)\`、文本用\`text("Hello")\`、布尔用\`logic_boolean(TRUE)\`、变量用\`$varName\`(自动创建variables_get)
+// - 语句输入(input_statement)用4空格缩进子块表示
+// - 多输入块用\`@输入名:\`标记：如controls_if的\`@IF0:\`/\`@DO0:\`/\`@ELSE:\`
+// - 空括号不可省略：\`block_name()\`
                 toolContent += `
 <rules>Blockly块操作规范流程（ABS模式），**严格遵守**：
 
@@ -3338,13 +3403,6 @@ ${JSON.stringify(errData)}
 3. 列出所有需要使用的库（必须包含\`lib-core-*\`系列核心库：logic、variables、time、math等）
 4. 逐一阅读各库readme_ai.md了解块定义和ABS语法
 5. 如果需要的库未安装，则查询并安装所需库，安装完成后重新执行步骤1-4
-
-【ABS编写规范】
-- 变量引用必须使用\`$变量名\`格式（如\`$count\`、\`$ledPin\`）
-- 字符串值用双引号包裹：\`text_print("Hello")\`
-- 数字直接书写：\`math_number(10)\`
-- 嵌套块用圆括号：\`controls_if(logic_compare(...))\`
-- 注意区分：字段值直接写，输入值需要连接块
 
 【创建/修改阶段】
 1. **完整规划代码逻辑**，先在脑中构思完整的ABS结构
@@ -3421,6 +3479,9 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
             // 2. Maximum number of messages - 需要显示继续对话提示
             // 3. 其他异常 - 需要显示重试提示
             
+            // 先清理流式残留内容（TERMINATE 文字、未闭合的代码块等）
+            this.cleanupLastAiMessage();
+
             if (stopReason.includes('TERMINATE')) {
               // 正常结束，状态由 complete 回调统一处理
               // pass
@@ -3482,6 +3543,9 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
         }
       },
       complete: () => {
+        // 清理流式残留内容
+        this.cleanupLastAiMessage();
+
         if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
           this.list[this.list.length - 1].state = 'done';
         }
@@ -3524,15 +3588,22 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
         if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
           this.list[this.list.length - 1].state = 'done';
         }
-        this.appendMessage('error', `
 
+        // 只有在活跃对话中才显示错误提示和重试按钮
+        if (this.isWaiting) {
+          this.appendMessage('error', `
 \`\`\`aily-error
 {
-  "message": "连接中断。"
+  "message": "很抱歉，网络连接已断开，请稍后重试。"
 }
-\`\`\`\n\n
+\`\`\`
+
+\`\`\`aily-button
+[{"text":"重试","action":"retry","type":"primary"}]
+\`\`\`
 
 `);
+        }
         this.isWaiting = false;
       }
     });
