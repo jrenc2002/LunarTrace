@@ -1703,6 +1703,8 @@ ${JSON.stringify(errData)}
   }
 
   async sendButtonClick(): Promise<void> {
+    this.autoScrollEnabled = true;
+    this.scrollToBottom();
     if (this.isWaiting) {
       this.stop();
       return;
@@ -3715,6 +3717,8 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
         }, 0);
         event.preventDefault();
       } else {
+        this.autoScrollEnabled = true;
+        this.scrollToBottom();
         // Enter 发送消息
         if (this.isWaiting) {
           return;
