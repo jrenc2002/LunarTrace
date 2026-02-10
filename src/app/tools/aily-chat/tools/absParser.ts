@@ -85,6 +85,7 @@ interface BlockMeta {
   fieldNames?: string[];              // 字段名称列表
   isRootBlock?: boolean;              // 是否为根块
   isValueBlock?: boolean;             // 是否为无参数值块（如 esp32_wifi_status）
+  mutator?: string;                   // mutator 类型（如 function_params_mutator）
 }
 
 // =============================================================================
@@ -171,6 +172,7 @@ function convertDynamicMeta(meta: DynamicBlockMeta): Partial<BlockMeta> {
     hasStatementInput: meta.statementInputNames.length > 0,
     isRootBlock: meta.isRootBlock,
     isValueBlock: meta.hasOutput && meta.fieldNames.length === 0 && meta.valueInputNames.length === 0,
+    mutator: meta.mutator,
   };
 }
 
@@ -1207,11 +1209,86 @@ export class BlocklyAbsParser {
       }
     }
     
+    // 特殊处理使用 function_params_mutator 的块：将 EXTRA_N 字段转换为 extraState.params，
+    // 并将 EXTRA_N 输入重映射到 RETURN
+    const blockMutator = getBlockMeta(node.type)?.mutator;
+    if (blockMutator === 'function_params_mutator') {
+      // 1. 收集 EXTRA_N 字段（参数类型/名称对）
+      const extraFields: Array<{ index: number; value: any }> = [];
+      for (const [key, value] of Object.entries(config.fields || {})) {
+        const extraMatch = key.match(/^EXTRA_(\d+)$/);
+        if (extraMatch) {
+          extraFields.push({ index: parseInt(extraMatch[1], 10), value });
+        }
+      }
+      
+      // 2. 收集 EXTRA_N 输入（如返回值块）
+      const extraInputs: Array<{ index: number; value: any }> = [];
+      for (const [key, value] of Object.entries(config.inputs || {})) {
+        const extraMatch = key.match(/^EXTRA_(\d+)$/);
+        if (extraMatch) {
+          extraInputs.push({ index: parseInt(extraMatch[1], 10), value });
+        }
+      }
+      
+      const returnType = config.fields?.['RETURN_TYPE'] || 'void';
+      
+      // 3. 转换 EXTRA 字段为 params
+      const params: Array<{ type: string; name: string }> = [];
+      if (extraFields.length > 0) {
+        extraFields.sort((a, b) => a.index - b.index);
+        // EXTRA 字段成对出现：类型和名称
+        for (let i = 0; i + 1 < extraFields.length; i += 2) {
+          params.push({
+            type: String(extraFields[i].value),
+            name: String(extraFields[i + 1].value)
+          });
+        }
+        // 如果是奇数个，最后一个单独作为类型，名称使用默认值
+        if (extraFields.length % 2 !== 0) {
+          params.push({
+            type: String(extraFields[extraFields.length - 1].value),
+            name: 'param' + (params.length)
+          });
+        }
+        // 移除已转换的 EXTRA_N 字段
+        for (const ef of extraFields) {
+          delete config.fields![`EXTRA_${ef.index}`];
+        }
+      }
+      
+      // 4. 将 EXTRA_N 输入重映射到 RETURN（非 void 返回类型时）
+      if (extraInputs.length > 0 && returnType !== 'void') {
+        extraInputs.sort((a, b) => a.index - b.index);
+        // 第一个 EXTRA 输入映射为 RETURN
+        config.inputs!['RETURN'] = extraInputs[0].value;
+        // 移除已转换的 EXTRA_N 输入
+        for (const ei of extraInputs) {
+          delete config.inputs![`EXTRA_${ei.index}`];
+        }
+      } else if (extraInputs.length > 0) {
+        // void 返回类型但有多余输入，清理掉
+        for (const ei of extraInputs) {
+          delete config.inputs![`EXTRA_${ei.index}`];
+        }
+      }
+      
+      // 5. 设置 extraState
+      if (params.length > 0 || returnType !== 'void') {
+        config.extraState = {
+          params,
+          returnType
+        } as BlockConfig['extraState'];
+      }
+    }
+
     // 自动推断动态块的 extraState
     // 例如: controls_if 的 elseIfCount/hasElse, text_join 的 itemCount
-    const extraState = inferExtraStateFromInputs(node.type, config.inputs || {});
-    if (extraState) {
-      config.extraState = extraState as BlockConfig['extraState'];
+    if (!config.extraState) {
+      const extraState = inferExtraStateFromInputs(node.type, config.inputs || {});
+      if (extraState) {
+        config.extraState = extraState as BlockConfig['extraState'];
+      }
     }
     
     return config;
