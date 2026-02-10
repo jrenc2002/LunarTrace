@@ -1877,7 +1877,7 @@ ${JSON.stringify(errData)}
       next: async (data: any) => {
         // 记录流式数据到文件（Unicode 转中文）
         // try {
-        //   const logPath = this.projectService.projectRootPath + '\\stream_log.txt';
+        //   const logPath = this.projectService.projectRootPath + this.platformService.getPlatformSeparator() + 'stream_log.txt';
         //   const timestamp = new Date().toISOString();
         //   const jsonStr = JSON.stringify(data, null, 2).replace(/\\u[\dA-Fa-f]{4}/gi, match =>
         //     String.fromCharCode(parseInt(match.replace(/\\u/g, ''), 16))
