@@ -206,7 +206,7 @@ export class AilyChatSettingsComponent implements OnInit {
    * 加载模型列表
    */
   private loadModelList() {
-    this.modelList = [...this.ailyChatConfigService.models];
+    this.modelList = [...this.ailyChatConfigService.models].reverse();
     this.updateModelsAllChecked();
   }
 
@@ -310,6 +310,7 @@ export class AilyChatSettingsComponent implements OnInit {
 
       this.resetNewModelForm();
       this.showAddModelForm = false;
+      this.saveModels();
       this.message.success('模型已更新');
       return;
     }
@@ -331,10 +332,11 @@ export class AilyChatSettingsComponent implements OnInit {
       apiKey: this.newModel.apiKey
     };
 
-    this.modelList.push(newModelConfig);
+    this.modelList.unshift(newModelConfig);
     this.updateModelsAllChecked();
     this.resetNewModelForm();
     this.showAddModelForm = false;
+    this.saveModels();
     this.message.success('模型已添加');
   }
 
@@ -351,8 +353,17 @@ export class AilyChatSettingsComponent implements OnInit {
     if (index !== -1) {
       this.modelList.splice(index, 1);
       this.updateModelsAllChecked();
+      this.saveModels();
       this.message.success('模型已删除');
     }
+  }
+
+  /**
+   * 立即持久化模型配置
+   */
+  private saveModels(): void {
+    this.ailyChatConfigService.models = this.modelList;
+    this.ailyChatConfigService.save();
   }
 
   onClose() {
