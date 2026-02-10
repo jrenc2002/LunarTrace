@@ -1433,31 +1433,13 @@ Do not create non-existent boards and libraries.
       }
     }
 
-    // 2. 移除未闭合的特殊 aily 代码块
-    //    检测以 ```aily-xxx 开头但未以 ``` 闭合的代码块
-    const ailyCodeBlockStart = /```(aily-(?:state|button|error|blockly|board|library|task-action|think|mermaid)|mermaid)[^\n]*\n/g;
-    let match: RegExpExecArray | null;
-    let lastUnclosedStart = -1;
-
-    // 重置 lastIndex
-    ailyCodeBlockStart.lastIndex = 0;
-    while ((match = ailyCodeBlockStart.exec(content)) !== null) {
-      const startPos = match.index;
-      // 在 startPos 之后查找闭合的 ```
-      const afterStart = content.substring(startPos + match[0].length);
-      const closeMatch = afterStart.match(/\n\s*```/);
-      if (!closeMatch) {
-        // 没找到闭合标记，这是一个未完成的代码块
-        lastUnclosedStart = startPos;
-      }
+    // 2. 检查三个连续 ``` 的组数，若为单数则移除最后一个 ``` 及其后面的内容（未闭合的代码块）
+    const tripleBacktickGroups = content.match(/```/g);
+    const groupCount = tripleBacktickGroups ? tripleBacktickGroups.length : 0;
+    if (groupCount % 2 === 1) {
+      const lastIndex = content.lastIndexOf('```');
+      content = content.substring(0, lastIndex).trimEnd();
     }
-
-    if (lastUnclosedStart >= 0) {
-      content = content.substring(0, lastUnclosedStart).trimEnd();
-    }
-
-    // 3. 清理末尾残留的不完整 markdown 代码块起始符 (```, `` 等)
-    content = content.replace(/\s*`{1,3}\s*$/, '');
 
     // 只在内容实际发生变化时更新
     if (content.length !== originalLength) {
