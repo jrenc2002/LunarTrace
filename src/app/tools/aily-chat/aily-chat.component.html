@@ -25,7 +25,9 @@
   <!-- 整个聊天区域的容器 -->
   <div class="aily-chat-wrapper">
     <div class="todo-panel-container">
-      <app-floating-todo [sessionId]="sessionId"></app-floating-todo>
+      @if(!showSettings){
+        <app-floating-todo [sessionId]="sessionId"></app-floating-todo>
+      }
     </div>
     <ng-container *ngTemplateOutlet="windowBoxTemplate"></ng-container>
   </div>

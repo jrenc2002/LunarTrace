@@ -291,76 +291,98 @@ export class ChatService {
   }
 
   streamConnect(sessionId: string, options?: any): Observable<any> {
-    const messageSubject = new Subject<any>();
+    // 使用 Observable 构造函数，确保只有在订阅时才开始执行
+    return new Observable(observer => {
+      let aborted = false;
+      let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
-    // 获取 token 并添加 Authorization 头部
-    this.authService.getToken2().then(token => {
-      const headers: HeadersInit = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
+      // 获取 token 并添加 Authorization 头部
+      this.authService.getToken2().then(token => {
+        if (aborted) return;
 
-      fetch(`${API.streamConnect}/${sessionId}`, { headers })
-        .then(async response => {
-        if (!response.ok) {
-          messageSubject.error(new Error(`HTTP error! Status: ${response.status}`));
-          return;
+        const headers: HeadersInit = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
         }
 
-        const reader = response.body!.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
+        fetch(`${API.streamConnect}/${sessionId}`, { headers })
+          .then(async response => {
+          if (aborted) return;
 
-        try {
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
+          if (!response.ok) {
+            observer.error(new Error(`HTTP error! Status: ${response.status}`));
+            return;
+          }
 
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
+          reader = response.body!.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
 
-            for (const line of lines) {
-              if (!line.trim()) continue;
-              try {
-                const msg = JSON.parse(line);
-                messageSubject.next(msg);
-                // console.log(msg);
+          try {
+            while (!aborted) {
+              const { value, done } = await reader.read();
+              if (done) break;
 
-                if (msg.type === 'TaskCompleted') {
-                  // console.log("Complete Msg: ", msg);
-                  messageSubject.complete();
-                  return;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+
+              for (const line of lines) {
+                if (aborted) break;
+                if (!line.trim()) continue;
+                try {
+                  const msg = JSON.parse(line);
+                  observer.next(msg);
+                  // console.log("recv: ", msg);
+
+                  if (msg.type === 'TaskCompleted') {
+                    observer.complete();
+                    return;
+                  }
+                } catch (error) {
+                  console.warn('解析JSON失败:', error, line);
                 }
-              } catch (error) {
-                console.warn('解析JSON失败:', error, line);
               }
             }
-          }
 
-          // 处理缓冲区中剩余的内容
-          if (buffer.trim()) {
-            try {
-              const msg = JSON.parse(buffer);
-              messageSubject.next(msg);
-            } catch (error) {
-              console.warn('解析最后的JSON失败:', error, buffer);
+            // 处理缓冲区中剩余的内容
+            if (!aborted && buffer.trim()) {
+              try {
+                const msg = JSON.parse(buffer);
+                observer.next(msg);
+              } catch (error) {
+                console.warn('解析最后的JSON失败:', error, buffer);
+              }
+            }
+
+            if (!aborted) {
+              observer.complete();
+            }
+          } catch (error) {
+            if (!aborted) {
+              observer.error(error);
             }
           }
-
-          messageSubject.complete();
-        } catch (error) {
-          messageSubject.error(error);
+        })
+        .catch(error => {
+          if (!aborted) {
+            observer.error(error);
+          }
+        });
+      }).catch(error => {
+        if (!aborted) {
+          observer.error(error);
         }
-      })
-      .catch(error => {
-        messageSubject.error(error);
       });
-    }).catch(error => {
-      messageSubject.error(error);
-    });
 
-    return messageSubject.asObservable();
+      // 返回清理函数，在取消订阅时调用
+      return () => {
+        aborted = true;
+        if (reader) {
+          reader.cancel().catch(() => {});
+        }
+      };
+    });
   }
 
   sendMessage(sessionId: string, content: string, source: string = 'user') {

@@ -110,6 +110,27 @@ function registerWindowHandlers(mainWindow) {
         }
     });
 
+    // 为主窗口注册最大化/还原状态监听
+    mainWindow.on('maximize', () => {
+        try {
+            if (mainWindow && mainWindow.webContents) {
+                mainWindow.webContents.send('window-maximize-changed', true);
+            }
+        } catch (error) {
+            console.error('Error sending window-maximize-changed:', error.message);
+        }
+    });
+
+    mainWindow.on('unmaximize', () => {
+        try {
+            if (mainWindow && mainWindow.webContents) {
+                mainWindow.webContents.send('window-maximize-changed', false);
+            }
+        } catch (error) {
+            console.error('Error sending window-maximize-changed:', error.message);
+        }
+    });
+
 
     ipcMain.on("window-open", (event, data) => {
         const windowUrl = data.path;
@@ -133,6 +154,7 @@ function registerWindowHandlers(mainWindow) {
             frame: false,
             autoHideMenuBar: true,
             transparent: true,
+            titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
             alwaysOnTop: data.alwaysOnTop ? data.alwaysOnTop : false,
             width: data.width ? data.width : 800,
             height: data.height ? data.height : 600,
@@ -145,6 +167,48 @@ function registerWindowHandlers(mainWindow) {
 
         // 将新窗口添加到映射
         openWindows.set(windowUrl, subWindow);
+
+        // 为子窗口注册全屏状态监听
+        subWindow.on('enter-full-screen', () => {
+            try {
+                if (subWindow && subWindow.webContents) {
+                    subWindow.webContents.send('window-full-screen-changed', true);
+                }
+            } catch (error) {
+                console.error('Error sending sub-window-full-screen-changed:', error.message);
+            }
+        });
+
+        subWindow.on('leave-full-screen', () => {
+            try {
+                if (subWindow && subWindow.webContents) {
+                    subWindow.webContents.send('window-full-screen-changed', false);
+                }
+            } catch (error) {
+                console.error('Error sending sub-window-full-screen-changed:', error.message);
+            }
+        });
+
+        // 为子窗口注册最大化/还原状态监听
+        subWindow.on('maximize', () => {
+            try {
+                if (subWindow && subWindow.webContents) {
+                    subWindow.webContents.send('window-maximize-changed', true);
+                }
+            } catch (error) {
+                console.error('Error sending window-maximize-changed:', error.message);
+            }
+        });
+
+        subWindow.on('unmaximize', () => {
+            try {
+                if (subWindow && subWindow.webContents) {
+                    subWindow.webContents.send('window-maximize-changed', false);
+                }
+            } catch (error) {
+                console.error('Error sending window-maximize-changed:', error.message);
+            }
+        });
 
         // 当窗口关闭时，从映射中移除
         subWindow.on('closed', () => {

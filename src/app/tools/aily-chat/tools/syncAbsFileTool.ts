@@ -34,6 +34,39 @@ interface SyncAbsResult {
 }
 
 // =============================================================================
+// 辅助函数
+// =============================================================================
+
+/**
+ * 对 rootBlocks 进行排序，确保加载顺序正确
+ * 
+ * 加载顺序：
+ * 1. 先加载函数定义块（custom_function_def 等），让 mutator 注册函数到 registry
+ * 2. 最后加载 arduino_setup 和 arduino_loop，这时函数调用块能正确获取参数信息
+ * 
+ * @param rootBlocks 原始 rootBlocks 数组
+ * @returns 排序后的 rootBlocks 数组
+ */
+function sortBlocksForLoading(rootBlocks: any[]): any[] {
+  // 需要放到最后加载的块类型
+  const loadLastTypes = new Set(['arduino_setup', 'arduino_loop']);
+  
+  const normalBlocks: any[] = [];
+  const lastBlocks: any[] = [];
+  
+  for (const block of rootBlocks) {
+    if (loadLastTypes.has(block.type)) {
+      lastBlocks.push(block);
+    } else {
+      normalBlocks.push(block);
+    }
+  }
+  
+  // 返回：先加载普通块（包括函数定义），后加载 setup/loop
+  return [...normalBlocks, ...lastBlocks];
+}
+
+// =============================================================================
 // 工具处理函数
 // =============================================================================
 
@@ -197,6 +230,12 @@ async function importFromAbs(
     // 解析 ABS（不转换为 ABI JSON，而是获取 BlockConfig）
     const parser = new BlocklyAbsParser();
     const parseResult = parser.parse(absContent);
+    
+    // 🆕 重新排序 rootBlocks：先加载函数定义等块，最后加载 setup/loop
+    // 这确保 custom_function_def 先注册到 registry，custom_function_call 才能正确获取参数信息
+    const sortedRootBlocks = sortBlocksForLoading(parseResult.rootBlocks);
+    parseResult.rootBlocks = sortedRootBlocks;
+    // console.log(`📑 块加载顺序: ${sortedRootBlocks.map(b => b.type).join(' → ')}`);
     
     if (!parseResult.success) {
       const errorMessages = parseResult.errors
@@ -971,6 +1010,87 @@ function updateBlockFields(block: any, newFields: any, variableNameToId: Map<str
 }
 
 /**
+ * 将 EXTRA_N 输入映射到块上实际存在的输入，并在需要时动态扩展块的输入数量。
+ * 
+ * ABS 解析时，超出块元数据已知输入的参数被标记为 EXTRA_0、EXTRA_1 等。
+ * 此函数将它们映射到块上实际的未占用值输入（如 INPUT1、INPUT2）。
+ * 如果块的输入不够，会通过 plus()、updateShape_() 等方式动态扩展。
+ */
+function remapAndExpandInputs(block: any, inputs: Record<string, any>): Record<string, any> {
+  const extraInputs: Array<{ key: string; value: any; index: number }> = [];
+  const normalInputs: Record<string, any> = {};
+
+  for (const [key, value] of Object.entries(inputs)) {
+    const extraMatch = key.match(/^EXTRA_(\d+)$/);
+    if (extraMatch) {
+      extraInputs.push({ key, value, index: parseInt(extraMatch[1], 10) });
+    } else {
+      const inputMatch = key.match(/^INPUT(\d+)$/);
+      if (inputMatch && !block.getInput(key)) {
+        extraInputs.push({ key, value, index: parseInt(inputMatch[1], 10) });
+      } else {
+        normalInputs[key] = value;
+      }
+    }
+  }
+
+  if (extraInputs.length === 0) return inputs;
+
+  extraInputs.sort((a, b) => a.index - b.index);
+
+  const configuredInputs = new Set(Object.keys(normalInputs));
+
+  const getAvailable = () => {
+    const list: string[] = [];
+    for (const inp of block.inputList || []) {
+      if (inp.name && inp.type === 1 && !configuredInputs.has(inp.name)) {
+        list.push(inp.name);
+      }
+    }
+    return list;
+  };
+
+  let availableInputs = getAvailable();
+
+  // 动态扩展输入数量
+  if (extraInputs.length > availableInputs.length) {
+    const deficit = extraInputs.length - availableInputs.length;
+    let expanded = false;
+
+    if (block.plus && typeof block.plus === 'function') {
+      for (let i = 0; i < deficit; i++) {
+        try { block.plus(); } catch (e) { break; }
+      }
+      expanded = true;
+    } else if (block.updateShape_ && typeof block.updateShape_ === 'function' && block.extraCount_ !== undefined) {
+      const target = (block.extraCount_ || 0) + deficit;
+      try { block.extraCount_ = target; block.updateShape_(target); expanded = true; } catch (e) { /* ignore */ }
+    } else if (block.loadExtraState && typeof block.loadExtraState === 'function') {
+      const totalNeeded = (block.extraCount_ || block.itemCount_ || 0) + deficit;
+      const state = block.itemCount_ !== undefined ? { itemCount: totalNeeded } : { extraCount: totalNeeded };
+      try { block.loadExtraState(state); expanded = true; } catch (e) { /* ignore */ }
+    }
+
+    if (expanded) {
+      availableInputs = getAvailable();
+      // console.log(`    🔧 动态扩展后可用输入: [${availableInputs.join(', ')}]`);
+    }
+  }
+
+  const result = { ...normalInputs };
+  for (let i = 0; i < extraInputs.length && i < availableInputs.length; i++) {
+    result[availableInputs[i]] = extraInputs[i].value;
+    // console.log(`    🔄 输入映射: ${extraInputs[i].key} → ${availableInputs[i]}`);
+  }
+  for (let i = availableInputs.length; i < extraInputs.length; i++) {
+    result[extraInputs[i].key] = extraInputs[i].value;
+    console.warn(`    ⚠️ 无法映射输入 ${extraInputs[i].key}，块上没有更多可用值输入`);
+  }
+
+  return result;
+}
+
+/**
  * 简化方案：保留根块，清空并重建所有子树
  * 
  * 策略：
@@ -993,12 +1113,26 @@ async function rebuildBlockChildren(
   const failedBlocks: Array<{ blockType: string; error: string }> = [];
   // console.log(`    🔧 开始重建子树: ${existingBlock.type}`);
   
-  // 1. 更新根块的字段值
+  // 1. 更新 extraState（如 custom_function_def 的 params/returnType）
+  // 必须在更新字段和清空子块之前执行，以确保动态输入（如 RETURN、PARAM_TYPEn）已创建
+  if (newConfig.extraState) {
+    // console.log(`    🎛️ 更新 extraState: ${JSON.stringify(newConfig.extraState)}`);
+    try {
+      if (existingBlock.loadExtraState && typeof existingBlock.loadExtraState === 'function') {
+        existingBlock.loadExtraState(newConfig.extraState);
+        // console.log(`    ✅ loadExtraState 调用完成`);
+      }
+    } catch (e) {
+      console.warn(`    ⚠️ 更新 extraState 失败:`, e);
+    }
+  }
+  
+  // 2. 更新根块的字段值（在 extraState 之后，确保动态字段已创建）
   if (newConfig.fields) {
     updateBlockFields(existingBlock, newConfig.fields, variableNameToId);
   }
   
-  // 2. 收集所有需要删除的子块（先收集，后删除）
+  // 3. 收集所有需要删除的子块（先收集，后删除）
   const blocksToDelete: any[] = [];
   
   for (const input of existingBlock.inputList || []) {
@@ -1015,7 +1149,7 @@ async function rebuildBlockChildren(
     }
   }
   
-  // 3. 禁用事件，清空所有子块
+  // 4. 禁用事件，清空所有子块
   if (blocksToDelete.length > 0) {
     // console.log(`    🗑️ 清空 ${blocksToDelete.length} 个子块`);
     Blockly.Events.disable();
@@ -1043,9 +1177,12 @@ async function rebuildBlockChildren(
     }
   }
   
-  // 4. 根据新配置重建子块
+  // 5. 根据新配置重建子块
   if (newConfig.inputs) {
-    for (const [inputName, inputValue] of Object.entries(newConfig.inputs) as [string, any][]) {
+    // 🆕 映射 EXTRA_N 输入到块上实际输入，并在需要时动态扩展
+    const remappedInputs = remapAndExpandInputs(existingBlock, newConfig.inputs);
+    
+    for (const [inputName, inputValue] of Object.entries(remappedInputs) as [string, any][]) {
       const input = existingBlock.getInput(inputName);
       if (!input || !input.connection) {
         // console.log(`    ⚠️ 输入 ${inputName} 不存在`);
@@ -1196,45 +1333,103 @@ async function incrementalUpdate(
     }
   }
   
-  // ============ 阶段 2：按类型匹配并重建子树 ============
-  // 对于签名不同但类型相同的块，保留根块，重建内部子树
-  // console.log(`🔍 阶段 2: 类型匹配并重建子树`);
+  // 定义需要最后处理的块类型
+  const loadLastTypes = new Set(['arduino_setup', 'arduino_loop']);
   
+  // ============ 阶段 2：处理所有非 setup/loop 块 ============
+  // 先重建/添加独立块（如 custom_function_def），确保其 mutator 先注册
+  // console.log(`🔍 阶段 2: 处理非 setup/loop 块`);
+  
+  // 2a: 非 setup/loop 的类型匹配重建
   for (const currentItem of currentRootBlocks) {
     if (processedExistingBlocks.has(currentItem.block.id)) continue;
-    
     const currentType = currentItem.serialized.type;
+    if (loadLastTypes.has(currentType)) continue; // setup/loop 跳过，等阶段 3
     
-    // 查找同类型的未匹配新块
     const matchingNewBlock = newBlocksWithInfo.find(
       newItem => !processedNewBlocks.has(newItem.index) && newItem.type === currentType
     );
     
     if (matchingNewBlock) {
       // console.log(`  🔄 类型匹配，重建子树: ${currentType}`);
-      
       try {
-        // 简化方案：保留根块，清空并重建所有子树
         const rebuildResult = await rebuildBlockChildren(
-          workspace,
-          currentItem.block,
-          matchingNewBlock.config,
-          variableNameToId,
-          preprocessVariableReferences
+          workspace, currentItem.block, matchingNewBlock.config,
+          variableNameToId, preprocessVariableReferences
         );
-        // 收集子树重建过程中的失败信息
-        if (rebuildResult.failedBlocks && rebuildResult.failedBlocks.length > 0) {
-          failedBlocks.push(...rebuildResult.failedBlocks);
-        }
+        if (rebuildResult.failedBlocks?.length) failedBlocks.push(...rebuildResult.failedBlocks);
         // console.log(`    ✅ 子树重建成功: ${currentType}`);
       } catch (error) {
         console.warn(`子树重建失败: ${currentType}`, error);
-        failedBlocks.push({
-          blockType: currentType,
-          error: error instanceof Error ? error.message : String(error)
-        });
+        failedBlocks.push({ blockType: currentType, error: error instanceof Error ? error.message : String(error) });
       }
-      
+      processedExistingBlocks.add(currentItem.block.id);
+      processedNewBlocks.add(matchingNewBlock.index);
+      updatedCount++;
+    }
+  }
+  
+  // 2b: 添加所有未匹配的非 setup/loop 新块
+  let yPosition = 30;
+  const calcYPosition = () => {
+    let y = 30;
+    for (const block of workspace.getTopBlocks(false)) {
+      const bounds = block.getBoundingRectangle();
+      if (bounds) y = Math.max(y, bounds.bottom + 50);
+    }
+    return y;
+  };
+  yPosition = calcYPosition();
+  
+  const newNonSetupBlocks = newBlocksWithInfo.filter(
+    item => !processedNewBlocks.has(item.index) && !loadLastTypes.has(item.type)
+  );
+  for (const newItem of newNonSetupBlocks) {
+    const config = newItem.config;
+    // console.log(`  ➕ 添加新块: ${config.type}`);
+    const configWithPosition = { ...config, position: { x: 30, y: yPosition } };
+    preprocessVariableReferences(configWithPosition, variableNameToId);
+    try {
+      const result = await createBlockFromConfig(workspace, configWithPosition);
+      if (result.block) {
+        addedCount++;
+        const bounds = result.block.getBoundingRectangle();
+        yPosition = bounds ? bounds.bottom + 50 : yPosition + 100;
+      }
+      if (result.failedBlocks?.length) failedBlocks.push(...result.failedBlocks);
+      processedNewBlocks.add(newItem.index);
+    } catch (error) {
+      console.warn(`添加块失败: ${config.type}`, error);
+      failedBlocks.push({ blockType: config.type, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  
+  // ============ 阶段 3：处理 setup/loop 块 ============
+  // 所有独立块已就绪，现在重建 setup/loop 子树
+  // console.log(`🔍 阶段 3: 处理 setup/loop 块`);
+  
+  for (const currentItem of currentRootBlocks) {
+    if (processedExistingBlocks.has(currentItem.block.id)) continue;
+    const currentType = currentItem.serialized.type;
+    if (!loadLastTypes.has(currentType)) continue;
+    
+    const matchingNewBlock = newBlocksWithInfo.find(
+      newItem => !processedNewBlocks.has(newItem.index) && newItem.type === currentType
+    );
+    
+    if (matchingNewBlock) {
+      // console.log(`  🔄 重建 ${currentType} 子树`);
+      try {
+        const rebuildResult = await rebuildBlockChildren(
+          workspace, currentItem.block, matchingNewBlock.config,
+          variableNameToId, preprocessVariableReferences
+        );
+        if (rebuildResult.failedBlocks?.length) failedBlocks.push(...rebuildResult.failedBlocks);
+        // console.log(`    ✅ ${currentType} 子树重建成功`);
+      } catch (error) {
+        console.warn(`子树重建失败: ${currentType}`, error);
+        failedBlocks.push({ blockType: currentType, error: error instanceof Error ? error.message : String(error) });
+      }
       processedExistingBlocks.add(currentItem.block.id);
       processedNewBlocks.add(matchingNewBlock.index);
       updatedCount++;
@@ -1260,8 +1455,8 @@ async function incrementalUpdate(
   }
   // console.log(`${'─'.repeat(60)}`);
   
-  // ============ 阶段 3：删除无匹配的旧块 ============
-  // console.log(`🔍 阶段 3: 清理无匹配的旧块`);
+  // ============ 阶段 4：删除无匹配的旧块 ============
+  // console.log(`🔍 阶段 4: 清理无匹配的旧块`);
   
   for (const item of currentRootBlocks) {
     if (!processedExistingBlocks.has(item.block.id)) {
@@ -1278,50 +1473,28 @@ async function incrementalUpdate(
     }
   }
   
-  // ============ 阶段 4：添加无匹配的新块 ============
-  // console.log(`🔍 阶段 4: 添加无匹配的新块`);
-  
-  let yPosition = 30;
-  const existingBlocks = workspace.getTopBlocks(false);
-  for (const block of existingBlocks) {
-    const bounds = block.getBoundingRectangle();
-    if (bounds) {
-      yPosition = Math.max(yPosition, bounds.bottom + 50);
-    }
-  }
-  
-  for (const newItem of newBlocksWithInfo) {
-    if (!processedNewBlocks.has(newItem.index)) {
+  // ============ 阶段 5：添加剩余未匹配的新块 ============
+  const remainingNewItems = newBlocksWithInfo.filter(item => !processedNewBlocks.has(item.index));
+  if (remainingNewItems.length > 0) {
+    // console.log(`🔍 阶段 5: 添加剩余新块 (${remainingNewItems.length} 个)`);
+    yPosition = calcYPosition();
+    
+    for (const newItem of remainingNewItems) {
       const config = newItem.config;
       // console.log(`  ➕ 添加新块: ${config.type}`);
-      
-      const configWithPosition = {
-        ...config,
-        position: { x: 30, y: yPosition }
-      };
-      
+      const configWithPosition = { ...config, position: { x: 30, y: yPosition } };
       preprocessVariableReferences(configWithPosition, variableNameToId);
-      
       try {
         const result = await createBlockFromConfig(workspace, configWithPosition);
         if (result.block) {
           addedCount++;
           const bounds = result.block.getBoundingRectangle();
-          if (bounds) {
-            yPosition = bounds.bottom + 50;
-          } else {
-            yPosition += 100;
-          }
+          yPosition = bounds ? bounds.bottom + 50 : yPosition + 100;
         }
-        if (result.failedBlocks && result.failedBlocks.length > 0) {
-          failedBlocks.push(...result.failedBlocks);
-        }
+        if (result.failedBlocks?.length) failedBlocks.push(...result.failedBlocks);
       } catch (error) {
         console.warn(`添加块失败: ${config.type}`, error);
-        failedBlocks.push({
-          blockType: config.type,
-          error: error instanceof Error ? error.message : String(error)
-        });
+        failedBlocks.push({ blockType: config.type, error: error instanceof Error ? error.message : String(error) });
       }
     }
   }

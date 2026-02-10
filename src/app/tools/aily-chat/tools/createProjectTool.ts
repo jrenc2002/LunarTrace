@@ -98,6 +98,11 @@ export async function newProjectTool(prjRootPath: string, toolArgs: any, prjServ
         } catch {
             // 如果解析失败，说明不是JSON字符串，直接使用原值
             boardName = toolArgs.board;
+
+            // 如果boardName没有前缀，自动添加 @aily-project/ 前缀
+            if (!boardName.startsWith('@aily-project/')) {
+                boardName = `@aily-project/${boardName}`;
+            }
         }
 
         boardInfo = configService.boardDict[boardName] || null;
@@ -117,7 +122,7 @@ export async function newProjectTool(prjRootPath: string, toolArgs: any, prjServ
         toolResult = JSON.stringify(result, null, 2);
     } catch (e) {
         console.warn('创建项目失败:', e);
-        toolResult = `创建项目失败: ${e.message}`;
+        toolResult = `创建项目失败: ${e.message}，请务必使用正确的开发板名称或 JSON 格式的开发板信息。如：@aily-project/board-arduino_uno`;
         is_error = true;
     }
 

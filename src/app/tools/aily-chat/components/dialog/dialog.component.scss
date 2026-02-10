@@ -157,9 +157,14 @@
             font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
             font-size: 13px;
             line-height: 1.45;
+            width: 100%;
 
             .line {
                 min-height: 1em;
+            }
+
+            > code {
+                display: block !important;
             }
         }
 

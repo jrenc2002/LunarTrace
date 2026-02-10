@@ -193,6 +193,7 @@ export class AilyChatComponent implements OnDestroy {
   isCompleted = false;
   private isSessionStarting = false; // 防止重复启动会话的标志位
   private hasInitializedForThisLogin = false; // 标记是否已为当前登录状态初始化过
+  private isCancelled = false; // 标记任务是否被用户取消，防止取消后工具结果触发重连
 
   private textMessageSubscription: Subscription;
   private loginStatusSubscription: Subscription;
@@ -1432,31 +1433,13 @@ Do not create non-existent boards and libraries.
       }
     }
 
-    // 2. 移除未闭合的特殊 aily 代码块
-    //    检测以 ```aily-xxx 开头但未以 ``` 闭合的代码块
-    const ailyCodeBlockStart = /```(aily-(?:state|button|error|blockly|board|library|task-action|think|mermaid)|mermaid)[^\n]*\n/g;
-    let match: RegExpExecArray | null;
-    let lastUnclosedStart = -1;
-
-    // 重置 lastIndex
-    ailyCodeBlockStart.lastIndex = 0;
-    while ((match = ailyCodeBlockStart.exec(content)) !== null) {
-      const startPos = match.index;
-      // 在 startPos 之后查找闭合的 ```
-      const afterStart = content.substring(startPos + match[0].length);
-      const closeMatch = afterStart.match(/\n\s*```/);
-      if (!closeMatch) {
-        // 没找到闭合标记，这是一个未完成的代码块
-        lastUnclosedStart = startPos;
-      }
+    // 2. 检查三个连续 ``` 的组数，若为单数则移除最后一个 ``` 及其后面的内容（未闭合的代码块）
+    const tripleBacktickGroups = content.match(/```/g);
+    const groupCount = tripleBacktickGroups ? tripleBacktickGroups.length : 0;
+    if (groupCount % 2 === 1) {
+      const lastIndex = content.lastIndexOf('```');
+      content = content.substring(0, lastIndex).trimEnd();
     }
-
-    if (lastUnclosedStart >= 0) {
-      content = content.substring(0, lastUnclosedStart).trimEnd();
-    }
-
-    // 3. 清理末尾残留的不完整 markdown 代码块起始符 (```, `` 等)
-    content = content.replace(/\s*`{1,3}\s*$/, '');
 
     // 只在内容实际发生变化时更新
     if (content.length !== originalLength) {
@@ -1545,6 +1528,8 @@ Do not create non-existent boards and libraries.
     }
 
     this.isSessionStarting = true;
+    // 重置取消标志，确保新会话正常工作
+    this.isCancelled = false;
 
     // 清空会话期间的额外允许路径
     this.sessionAllowedPaths = [];
@@ -1722,8 +1707,16 @@ ${JSON.stringify(errData)}
   }
 
   async send(sender: string, content: string, clear: boolean = true): Promise<void> {
+    // 如果任务已取消且是工具消息，直接忽略，防止触发重连
+    if (this.isCancelled && sender === 'tool') {
+      console.log('任务已取消，忽略工具结果消息');
+      return;
+    }
+    
     if (this.isCompleted) {
       // console.log('上次会话已完成，需要重新启动会话');
+      // 重置取消标志，开始新会话
+      this.isCancelled = false;
       await this.resetChat();
     }
 
@@ -1828,6 +1821,9 @@ ${JSON.stringify(errData)}
 
   // 这里写停止发送信号
   stop() {
+    // 标记任务已取消，防止后续工具结果触发重连
+    this.isCancelled = true;
+    
     // 设置最后一条AI消息状态为done（如果存在）
     if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
       this.list[this.list.length - 1].state = 'done';
@@ -1861,6 +1857,20 @@ ${JSON.stringify(errData)}
 
     this.messageSubscription = this.chatService.streamConnect(this.sessionId).subscribe({
       next: async (data: any) => {
+        // 记录流式数据到文件（Unicode 转中文）
+        // try {
+        //   const logPath = this.projectService.projectRootPath + this.platformService.getPlatformSeparator() + 'stream_log.txt';
+        //   const timestamp = new Date().toISOString();
+        //   const jsonStr = JSON.stringify(data, null, 2).replace(/\\u[\dA-Fa-f]{4}/gi, match =>
+        //     String.fromCharCode(parseInt(match.replace(/\\u/g, ''), 16))
+        //   );
+        //   const logEntry = `[${timestamp}]\n${jsonStr}\n\n`;
+        //   window['fs'].appendFileSync(logPath, logEntry, 'utf8');
+        // } catch (logErr) {
+        //   console.warn('写入日志文件失败:', logErr);
+        // }
+        
+        // console.log("当前是否处于等待状态： ", this.isWaiting)
         if (!this.isWaiting) {
           return; // 如果不在等待状态，直接返回
         }
@@ -3412,7 +3422,7 @@ ${JSON.stringify(errData)}
                 newProject = false;
                 // Blockly 工具失败时：同时包含 keyInfo 和 rules
                 // toolContent += `\n${keyInfo}\n
-// 【ABS编写规范】
+// 【ABS编写规范】 
 // - 字段(field)直接写值：field_dropdown写枚举\`HIGH\`、field_input写字符串\`"dht"\`、field_number写数字\`9600\`、field_variable写\`$varName\`
 // - 值输入(input_value)必须连接值块：数字用\`math_number(10)\`、文本用\`text("Hello")\`、布尔用\`logic_boolean(TRUE)\`、变量用\`$varName\`(自动创建variables_get)
 // - 语句输入(input_statement)用4空格缩进子块表示
@@ -3429,7 +3439,7 @@ ${JSON.stringify(errData)}
 2. 使用get_workspace_overview_tool分析当前工作区，获取ABS代码和变量列表
 3. 列出所有需要使用的库（必须包含\`lib-core-*\`系列核心库：logic、variables、time、math等）
 4. 逐一阅读各库readme_ai.md了解块定义和ABS语法
-5. 如果需要的库未安装，则查询并安装所需库，安装完成后重新执行步骤1-4
+5. 如果当前已安装的库不满足需求，则查询并安装所需库，安装完成后重新执行步骤1-4
 
 【创建/修改阶段】
 1. **完整规划代码逻辑**，先在脑中构思完整的ABS结构
@@ -3437,7 +3447,7 @@ ${JSON.stringify(errData)}
 3. 编辑ABS代码：添加新块、修改参数、调整结构
 4. 使用sync_abs_file工具的import操作导入修改后的ABS
 5. 检查工具反馈，如果失败则分析错误信息，修正ABS代码后重新导入
-6. 重复步骤2-5直至完成
+6. 如果库功能不完善，安装lib-core-custom自定义库，重复步骤2-5直至完成
 
 【修复原则】
 - 诊断优先：分析get_workspace_overview_tool返回的ABS代码，定位问题
@@ -4005,6 +4015,7 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
     // 新会话时重新启用自动滚动
     this.autoScrollEnabled = true;
     this.isCompleted = false;
+    this.isCancelled = false; // 重置取消标志
 
     try {
       // 先停止并关闭当前会话（跳过保存，因为上面已保存）

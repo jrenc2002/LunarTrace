@@ -54,6 +54,7 @@ export class HeaderComponent implements OnDestroy {
 
   isMacFullScreen = false;
   private unsubscribeFullScreenChanged?: () => void;
+  private unsubscribeMaximizeChanged?: () => void;
   private unsubscribeCloseRequest?: () => void;
   private unsaveDialogOpen = false; // 标记未保存对话框是否已打开
 
@@ -116,6 +117,14 @@ export class HeaderComponent implements OnDestroy {
       // 监听窗口全屏状态变化
       this.unsubscribeFullScreenChanged = this.electronService.onWindowFullScreenChanged((isFullScreen: boolean) => {
         this.isMacFullScreen = isFullScreen;
+        // 使用 setTimeout 将变更检测推迟到下一个变更检测周期，避免 ExpressionChangedAfterItHasBeenCheckedError
+        setTimeout(() => {
+          this.cd.detectChanges();
+        }, 0);
+      });
+
+      // 监听窗口最大化状态变化（用于更新图标）
+      this.unsubscribeMaximizeChanged = this.electronService.onWindowMaximizeChanged((isMaximized: boolean) => {
         // 使用 setTimeout 将变更检测推迟到下一个变更检测周期，避免 ExpressionChangedAfterItHasBeenCheckedError
         setTimeout(() => {
           this.cd.detectChanges();
@@ -476,6 +485,10 @@ export class HeaderComponent implements OnDestroy {
       // 取消窗口全屏状态变化监听
       if (this.unsubscribeFullScreenChanged) {
         this.unsubscribeFullScreenChanged();
+      }
+      // 取消窗口最大化状态变化监听
+      if (this.unsubscribeMaximizeChanged) {
+        this.unsubscribeMaximizeChanged();
       }
       // 取消 Mac 平台关闭请求监听
       if (this.unsubscribeCloseRequest) {
