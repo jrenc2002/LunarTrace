@@ -161,6 +161,10 @@
             .line {
                 min-height: 1em;
             }
+
+            > code {
+                display: block !important;
+            }
         }
 
         // 代码显示

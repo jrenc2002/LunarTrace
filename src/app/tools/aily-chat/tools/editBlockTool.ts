@@ -77,11 +77,15 @@ export interface BlockConfig {
   next?: {
     block: BlockConfig;
   };
-  /** 动态块配置（如 text_join 的 itemCount, controls_if 的 elseIfCount/hasElse） */
+  /** 动态块配置（如 text_join 的 itemCount, controls_if 的 elseIfCount/hasElse, custom_function_def 的 params） */
   extraState?: {
     itemCount?: number;
     elseIfCount?: number;
     hasElse?: boolean;
+    params?: Array<{ type: string; name: string }>;
+    returnType?: string;
+    extraCount?: number;
+    [key: string]: any;
   };
 }
 
@@ -1846,24 +1850,63 @@ function configureBlockFields(block: any, fields: FieldConfig): {
             });
           }
         } else {
+          // 🆕 字段不存在：尝试映射到块上未配置的可用字段
+          const configuredFieldNames = new Set(Object.keys(fields || {}));
+          mappedRetryFields.forEach(f => configuredFieldNames.add(f.fieldName));
+          
           const availableFieldsList: string[] = [];
+          const unconfiguredFields: string[] = [];
           try {
             const inputList = block.inputList || [];
             for (const input of inputList) {
               for (const field of input.fieldRow || []) {
-                if (field.name) availableFieldsList.push(field.name);
+                if (field.name) {
+                  availableFieldsList.push(field.name);
+                  if (!configuredFieldNames.has(field.name)) {
+                    unconfiguredFields.push(field.name);
+                  }
+                }
               }
             }
           } catch (e) { /* ignore */ }
           
-          failedFields.push({
-            fieldName,
-            value: typeof value === 'object' ? JSON.stringify(value) : String(value),
-            error: `字段 "${fieldName}" 在块类型 "${block.type}" 中不存在`,
-            suggestion: availableFieldsList.length > 0 
-              ? `该块可用的字段有: [${availableFieldsList.join(', ')}]`
-              : `请阅读块类型 "${block.type}" 所属库的 README.md 文档`
-          });
+          // 尝试将值映射到第一个未配置的字段
+          if (unconfiguredFields.length > 0) {
+            const targetField = unconfiguredFields[0];
+            try {
+              let actualValue: string;
+              if (typeof value === 'object' && value !== null) {
+                if ((value as any).id) actualValue = (value as any).id;
+                else if ((value as any).name) actualValue = (value as any).name;
+                else actualValue = JSON.stringify(value);
+              } else {
+                actualValue = String(value);
+              }
+              block.setFieldValue(actualValue, targetField);
+              // console.log(`🔄 字段映射: ${fieldName} → ${targetField} = ${actualValue}`);
+              configuredFieldNames.add(targetField);
+              configSuccess = true;
+            } catch (e: any) {
+              console.warn(`⚠️ 字段映射失败: ${fieldName} → ${targetField}:`, e?.message);
+              failedFields.push({
+                fieldName,
+                value: typeof value === 'object' ? JSON.stringify(value) : String(value),
+                error: `字段 "${fieldName}" 在块类型 "${block.type}" 中不存在，映射到 "${targetField}" 也失败`,
+                suggestion: availableFieldsList.length > 0 
+                  ? `该块可用的字段有: [${availableFieldsList.join(', ')}]`
+                  : `请阅读块类型 "${block.type}" 所属库的 README.md 文档`
+              });
+            }
+          } else {
+            failedFields.push({
+              fieldName,
+              value: typeof value === 'object' ? JSON.stringify(value) : String(value),
+              error: `字段 "${fieldName}" 在块类型 "${block.type}" 中不存在`,
+              suggestion: availableFieldsList.length > 0 
+                ? `该块可用的字段有: [${availableFieldsList.join(', ')}]`
+                : `请阅读块类型 "${block.type}" 所属库的 README.md 文档`
+            });
+          }
         }
       }
     }
@@ -3719,6 +3762,18 @@ function analyzeDynamicInputPattern(block: any, blockType: string): any {
     };
   }
   
+  // 🆕 检测 inputCount 模式 (functionCallSyncMutator 使用 inputCount_ 管理 ARG 输入)
+  // 必须在 GENERIC fallback 之前检测
+  if (block.inputCount_ !== undefined && block.updateShape_ && typeof block.updateShape_ === 'function') {
+    return {
+      inputPattern: 'INPUTCOUNT',
+      extraStateKey: 'inputCount',
+      defaultCount: 0,
+      minCount: 0,
+      maxCount: 20
+    };
+  }
+  
   // 通用检测：如果有 updateShape_ 方法，很可能支持动态输入
   if (block.updateShape_ && typeof block.updateShape_ === 'function') {
     return {
@@ -3953,6 +4008,16 @@ function inferExtraState(block: any, config: any): any | null {
         const extraCount = Math.max(0, totalInputs - minInputs);
         // console.log(`🎯 ${blockType} 推断 extraCount: ${extraCount} (总输入=${totalInputs}, 最小=${minInputs})`);
         return { extraCount };
+      }
+    }
+    
+    else if (pattern === 'INPUTCOUNT') {
+      // functionCallSyncMutator 使用 inputCount 来管理 ARG 动态输入
+      // 从 INPUT{N} 或 ARG{N} 输入配置中推断数量
+      const dynamicInputs = inputKeys.filter(key => /^INPUT\d+$/.test(key) || /^ARG\d+$/.test(key));
+      if (dynamicInputs.length > 0) {
+        // console.log(`🎯 ${blockType} 推断 inputCount: ${dynamicInputs.length} (基于输入: ${dynamicInputs.join(', ')})`);
+        return { inputCount: dynamicInputs.length };
       }
     }
   }
@@ -4207,6 +4272,44 @@ async function applyDynamicExtraState(block: any, extraState: any, dynamicSuppor
     // console.log(`✅ controls_switch 插件模拟操作完成`);
   }
   
+  // function_params_mutator 块（params 为 [{type, name}] 对象数组格式 + returnType）
+  // 动态识别：extraState.params 是对象数组（非字符串数组），且块有 updateReturnInput_ 方法
+  else if (extraState.params && Array.isArray(extraState.params) &&
+           extraState.params.length > 0 && typeof extraState.params[0] === 'object' &&
+           (block.updateReturnInput_ || block.paramCount_ !== undefined)) {
+    // console.log(`🔢 ${blockType} (function_params_mutator) 设置 params:`, extraState.params);
+    
+    // 使用 loadExtraState 方法加载参数和返回类型
+    if (block.loadExtraState && typeof block.loadExtraState === 'function') {
+      // console.log(`🔄 调用 ${blockType} 的 loadExtraState`);
+      block.loadExtraState({
+        params: extraState.params,
+        returnType: extraState.returnType || block.getFieldValue('RETURN_TYPE') || 'void'
+      });
+      // console.log(`✅ ${blockType} loadExtraState 调用完成`);
+    } else {
+      // 回退：手动设置 params_ 并调用 updateShape_
+      block.params_ = extraState.params;
+      block.paramCount_ = extraState.params.length;
+      if (block.updateShape_ && typeof block.updateShape_ === 'function') {
+        block.updateShape_();
+      }
+    }
+    
+    // 设置参数字段的值
+    for (let i = 0; i < extraState.params.length; i++) {
+      const param = extraState.params[i];
+      const typeField = block.getField('PARAM_TYPE' + i);
+      if (typeField) {
+        typeField.setValue(param.type);
+      }
+      const nameField = block.getField('PARAM_NAME' + i);
+      if (nameField) {
+        nameField.setValue(param.name);
+      }
+    }
+  }
+
   // procedures 块（params 模式）
   else if ((blockType.startsWith('procedures_def') || blockType.startsWith('procedures_call')) && extraState.params) {
     // console.log(`🔢 ${blockType} 设置 params:`, extraState.params);
@@ -4439,6 +4542,77 @@ function remapExtraFieldsToActualFields(block: any, fields: Record<string, any>)
 /**
  * 将 EXTRA_N 输入映射到块上实际存在的未配置值输入
  * 
+/**
+ * 字段配置完成后刷新动态输入
+ * 
+ * 字段值变更（如设置 FUNC_NAME = "myFunction"）可能需要触发块的动态输入更新。
+ * 块的 mutator validator 在首次设置时可能不会自动触发 updateFromRegistry_/updateShape_。
+ * 此函数确保动态输入在输入映射之前已正确创建。
+ */
+function refreshDynamicInputsAfterFieldConfig(block: any, config: any): void {
+  if (!config.inputs) return;
+  
+  // 检查是否有待映射的输入（INPUT{N} 或 EXTRA_N 不在块上）
+  const pendingInputs = Object.keys(config.inputs).filter(key => {
+    return (/^INPUT\d+$/.test(key) || /^EXTRA_\d+$/.test(key)) && !block.getInput(key);
+  });
+  if (pendingInputs.length === 0) return;
+  
+  // 检查块上是否已有足够的值输入来映射
+  const configuredInputs = new Set(Object.keys(config.inputs).filter(key => block.getInput(key)));
+  const availableValueInputs = (block.inputList || [])
+    .filter((inp: any) => inp.name && inp.type === 1 && !configuredInputs.has(inp.name))
+    .map((inp: any) => inp.name);
+  
+  if (availableValueInputs.length >= pendingInputs.length) return; // 已有足够输入
+  
+  // console.log(`🔄 字段配置后刷新动态输入: ${block.type} (需要 ${pendingInputs.length} 个，可用 ${availableValueInputs.length} 个)`);
+  
+  const targetInputCount = pendingInputs.length;
+  
+  // 方案 1: 使用 loadExtraState 重新应用
+  if (block.loadExtraState && typeof block.loadExtraState === 'function') {
+    try {
+      // 构建正确格式的 extraState（优先用 config 中的，但确保 key 正确）
+      const stateToLoad = config.extraState ? { ...config.extraState } : {};
+      // 如果块使用 inputCount 模式（functionCallSyncMutator），确保 key 正确
+      if (block.inputCount_ !== undefined) {
+        stateToLoad.inputCount = stateToLoad.inputCount || stateToLoad.extraCount || targetInputCount;
+      }
+      // console.log(`  🔄 调用 loadExtraState:`, JSON.stringify(stateToLoad));
+      block.loadExtraState(stateToLoad);
+      const newValueInputCount = (block.inputList || []).filter((inp: any) => inp.type === 1).length;
+      // console.log(`  ✅ loadExtraState 后值输入数: ${newValueInputCount}`);
+      if (newValueInputCount > availableValueInputs.length) return;
+    } catch (e) {
+      console.warn(`  ⚠️ loadExtraState 失败:`, e);
+    }
+  }
+  
+  // 方案 2: 使用 updateFromRegistry_（custom_function_call 特有）
+  if (block.updateFromRegistry_ && typeof block.updateFromRegistry_ === 'function') {
+    try {
+      // console.log(`  🔄 调用 updateFromRegistry_`);
+      block.updateFromRegistry_(true);
+      const newValueInputCount = (block.inputList || []).filter((inp: any) => inp.type === 1).length;
+      if (newValueInputCount > availableValueInputs.length) return;
+    } catch (e) {
+      console.warn(`  ⚠️ updateFromRegistry_ 失败:`, e);
+    }
+  }
+  
+  // 方案 3: 直接用 updateShape_ 并传入目标数量
+  if (block.updateShape_ && typeof block.updateShape_ === 'function') {
+    if (block.inputCount_ !== undefined && block.inputCount_ < targetInputCount) {
+      // console.log(`  🔄 调用 updateShape_(${targetInputCount})`);
+      block.updateShape_(targetInputCount);
+    }
+  }
+}
+
+/**
+ * 将 EXTRA_N 输入映射到块上实际存在的未配置值输入
+ * 
  * ABS 解析时，对于动态扩展添加的输入（如 blinker_init_wifi 的 AUTH, SSID, PSWD），
  * 由于不知道实际输入名，会暂时使用 EXTRA_0, EXTRA_1 等临时名称。
  * 
@@ -4446,7 +4620,7 @@ function remapExtraFieldsToActualFields(block: any, fields: Record<string, any>)
  * 此函数将 EXTRA_N 的值映射到这些实际输入。
  */
 function remapExtraInputsToActualInputs(block: any, inputs: Record<string, any>): Record<string, any> {
-  // 收集所有 EXTRA_N 输入
+  // 收集所有 EXTRA_N 和 INPUT{N}（不存在于块上的）输入
   const extraInputs: Array<{ key: string; value: any; index: number }> = [];
   const normalInputs: Record<string, any> = {};
   
@@ -4455,11 +4629,18 @@ function remapExtraInputsToActualInputs(block: any, inputs: Record<string, any>)
     if (extraMatch) {
       extraInputs.push({ key, value, index: parseInt(extraMatch[1], 10) });
     } else {
-      normalInputs[key] = value;
+      // 🆕 检查 INPUT{N} 模式：如果块上没有该输入，也当作需要映射的输入
+      const inputMatch = key.match(/^INPUT(\d+)$/);
+      if (inputMatch && !block.getInput(key)) {
+        // console.log(`🔄 INPUT${inputMatch[1]} 在块 ${block.type} 上不存在，加入待映射列表`);
+        extraInputs.push({ key, value, index: parseInt(inputMatch[1], 10) });
+      } else {
+        normalInputs[key] = value;
+      }
     }
   }
   
-  // 如果没有 EXTRA_N 输入，直接返回
+  // 如果没有待映射输入，直接返回
   if (extraInputs.length === 0) {
     return inputs;
   }
@@ -4492,31 +4673,83 @@ function remapExtraInputsToActualInputs(block: any, inputs: Record<string, any>)
   const neededInputCount = extraInputs.length;
   let currentAvailableCount = availableInputs.length;
   
-  // 如果 EXTRA_N 数量超过可用输入，尝试扩展动态输入
-  if (neededInputCount > currentAvailableCount && block.plus && typeof block.plus === 'function') {
-    const inputsToAdd = neededInputCount - currentAvailableCount;
-    // console.log(`🔧 动态输入扩展: 需要 ${neededInputCount} 个输入，当前有 ${currentAvailableCount} 个，需要添加 ${inputsToAdd} 个`);
+  // 🆕 计算需要的总输入数量（已配置的 + 待映射的）
+  // 对于 INPUT{N} 模式，需要基于最大索引来计算
+  let maxInputIndex = -1;
+  for (const item of extraInputs) {
+    if (item.key.match(/^INPUT(\d+)$/)) {
+      const idx = parseInt(item.key.replace('INPUT', ''), 10);
+      if (idx > maxInputIndex) maxInputIndex = idx;
+    }
+  }
+  // 如果有 INPUT{N} 模式，需要的总数是 maxIndex + 1
+  const totalNeededInputs = maxInputIndex >= 0 ? maxInputIndex + 1 : neededInputCount;
+  
+  // 如果待映射输入数量超过可用输入，尝试扩展动态输入
+  if (neededInputCount > currentAvailableCount) {
+    let expanded = false;
     
-    for (let i = 0; i < inputsToAdd; i++) {
+    // 方式 1: 使用 block.plus() 方法 (dynamic-inputs 插件)
+    if (block.plus && typeof block.plus === 'function') {
+      const inputsToAdd = neededInputCount - currentAvailableCount;
+      // console.log(`🔧 动态输入扩展 (plus): 需要 ${neededInputCount} 个输入，当前有 ${currentAvailableCount} 个，需要添加 ${inputsToAdd} 个`);
+      
+      for (let i = 0; i < inputsToAdd; i++) {
+        try {
+          block.plus();
+          // console.log(`  ✅ 调用 block.plus() 添加第 ${i + 1} 个输入`);
+        } catch (e) {
+          console.warn(`  ⚠️ 调用 block.plus() 失败:`, e);
+          break;
+        }
+      }
+      expanded = true;
+    }
+    // 🆕 方式 2: 使用 updateShape_(count) 方法 (functionCallSyncMutator 模式)
+    else if (block.updateShape_ && typeof block.updateShape_ === 'function' && block.extraCount_ !== undefined) {
+      const currentCount = block.extraCount_ || 0;
+      const targetCount = totalNeededInputs;
+      
+      if (targetCount > currentCount) {
+        // console.log(`🔧 动态输入扩展 (updateShape_): 当前 extraCount_=${currentCount}，目标=${targetCount}`);
+        try {
+          block.extraCount_ = targetCount;
+          block.updateShape_(targetCount);
+          // console.log(`  ✅ 调用 block.updateShape_(${targetCount}) 成功`);
+          expanded = true;
+        } catch (e) {
+          console.warn(`  ⚠️ 调用 block.updateShape_(${targetCount}) 失败:`, e);
+        }
+      }
+    }
+    // 🆕 方式 3: 使用 loadExtraState 方法
+    else if (block.loadExtraState && typeof block.loadExtraState === 'function') {
+      // console.log(`🔧 动态输入扩展 (loadExtraState): 目标输入数=${totalNeededInputs}`);
       try {
-        block.plus();
-        // console.log(`  ✅ 调用 block.plus() 添加第 ${i + 1} 个输入`);
+        // 尝试用 extraCount 或 itemCount
+        const stateToLoad = block.itemCount_ !== undefined 
+          ? { itemCount: totalNeededInputs }
+          : { extraCount: totalNeededInputs };
+        block.loadExtraState(stateToLoad);
+        // console.log(`  ✅ 调用 block.loadExtraState(${JSON.stringify(stateToLoad)}) 成功`);
+        expanded = true;
       } catch (e) {
-        console.warn(`  ⚠️ 调用 block.plus() 失败:`, e);
-        break;
+        console.warn(`  ⚠️ 调用 block.loadExtraState 失败:`, e);
       }
     }
     
-    // 重新获取可用输入列表
-    availableInputs.length = 0;
-    const inputList = block.inputList || [];
-    for (const input of inputList) {
-      if (input.name && input.type === 1 && !configuredInputs.has(input.name)) {
-        availableInputs.push(input.name);
+    // 如果成功扩展，重新获取可用输入列表
+    if (expanded) {
+      availableInputs.length = 0;
+      const inputList = block.inputList || [];
+      for (const input of inputList) {
+        if (input.name && input.type === 1 && !configuredInputs.has(input.name)) {
+          availableInputs.push(input.name);
+        }
       }
+      currentAvailableCount = availableInputs.length;
+      // console.log(`  📋 扩展后可用输入: [${availableInputs.join(', ')}]`);
     }
-    currentAvailableCount = availableInputs.length;
-    // console.log(`  📋 扩展后可用输入: [${availableInputs.join(', ')}]`);
   }
   
   for (let i = 0; i < extraInputs.length && i < availableInputs.length; i++) {
@@ -4563,7 +4796,13 @@ async function applyDynamicExtensions(block: any, config: any): Promise<void> {
       const hasInputPattern = inputNames.some(name => /^INPUT\d+$/.test(name));
       const hasDynamicInputsPlugin = block.plus && typeof block.plus === 'function';
       
-      if (hasInputPattern && hasDynamicInputsPlugin) {
+      // 🆕 检查块是否真正使用 INPUT 模式的动态输入（而非 ARG/inputCount 模式）
+      // custom_function_call 等块有 plus() 方法但使用 inputCount_ + ARG 输入模式，不应该走 dynamic-inputs 逻辑
+      const blockUsesArgPattern = block.inputList?.some((inp: any) => inp.name && /^ARG\d+$/.test(inp.name));
+      const blockUsesInputCountMutator = block.inputCount_ !== undefined;  // functionCallSyncMutator
+      const isRealDynamicInputsPlugin = hasInputPattern && hasDynamicInputsPlugin && !blockUsesArgPattern && !blockUsesInputCountMutator;
+      
+      if (isRealDynamicInputsPlugin) {
         // console.log('🔧 检测到使用 dynamic-inputs 插件的块类型，准备扩展');
         await extendBlockWithDynamicInputs(block, config.inputs);
         
@@ -4825,18 +5064,29 @@ async function configureBlockInputs(
               failedBlocks.push(...childResult.failedBlocks);
             }
             
-            if (childBlock && input.connection) {
+            if (childBlock) {
               // console.log(`✅ 子块创建成功: ${childBlock.type} (ID: ${childBlock.id})`);
               
+              // 🆕 重新获取 input 引用：await 期间 BLOCK_CREATE 事件的 setTimeout(0) 
+              // 可能已触发 updateFromRegistry_(true)，销毁并重建了 INPUT，
+              // 此时之前缓存的 input 变量指向已销毁的旧 Input 对象。
+              const currentInput = block.getInput(inputName);
+              if (!currentInput || !currentInput.connection) {
+                console.warn(`⚠️ 输入 "${inputName}" 在子块创建后不存在或无连接点，跳过连接`);
+                failedBlocks.push({
+                  blockType: childBlock.type,
+                  error: `输入 "${inputName}" 在子块创建后不存在（可能被动态更新销毁）`
+                });
+              } else {
               // 🆕 检查并清理已连接的旧块（可能是动态扩展自动创建的默认块）
-              const existingConnection = input.connection.targetConnection;
+              const existingConnection = currentInput.connection.targetConnection;
               if (existingConnection) {
                 const existingBlock = existingConnection.getSourceBlock();
                 if (existingBlock && existingBlock !== childBlock) {
                   // console.log(`🧹 清理输入 "${inputName}" 已连接的旧块: ${existingBlock.type} (ID: ${existingBlock.id})`);
                   try {
                     // 先断开连接
-                    input.connection.disconnect();
+                    currentInput.connection.disconnect();
                     // 删除旧块（可能是动态扩展自动创建的默认 text 块）
                     existingBlock.dispose(true);
                   } catch (e) {
@@ -4847,7 +5097,7 @@ async function configureBlockInputs(
               
               const connectionToUse = childBlock.outputConnection || childBlock.previousConnection;
               if (connectionToUse) {
-                input.connection.connect(connectionToUse);
+                currentInput.connection.connect(connectionToUse);
                 // console.log(`🔗 成功连接子块到输入 "${inputName}"`);
                 updatedInputs.push(inputName);
               } else {
@@ -4857,15 +5107,10 @@ async function configureBlockInputs(
                   error: `子块没有可用的连接点（outputConnection 或 previousConnection）`
                 });
               }
+              } // 关闭 currentInput 存在性检查
             } else if (!childBlock) {
               // 子块创建失败的情况已经在 createBlockFromConfig 中收集
               console.warn(`❌ 子块创建失败: ${inputConfig.block?.type || 'unknown'}`);
-            } else {
-              console.warn(`❌ 输入 "${inputName}" 没有连接点`);
-              failedBlocks.push({
-                blockType: `${block.type}.${inputName}`,
-                error: `输入 "${inputName}" 没有连接点，无法连接子块`
-              });
             }
         } else if (inputConfig.shadow) {
           // console.log('👤 创建影子块...');
@@ -4878,16 +5123,25 @@ async function configureBlockInputs(
             failedBlocks.push(...shadowResult.failedBlocks);
           }
           
-          if (shadowBlock && input.connection) {
+          if (shadowBlock) {
             // console.log(`✅ 影子块创建成功: ${shadowBlock.type} (ID: ${shadowBlock.id})`);
             
+            // 🆕 重新获取 input 引用（同 block 子块的理由）
+            const currentInput = block.getInput(inputName);
+            if (!currentInput || !currentInput.connection) {
+              console.warn(`⚠️ 输入 "${inputName}" 在影子块创建后不存在或无连接点，跳过连接`);
+              failedBlocks.push({
+                blockType: shadowBlock.type,
+                error: `输入 "${inputName}" 在影子块创建后不存在（可能被动态更新销毁）`
+              });
+            } else {
             // 🆕 检查并清理已连接的旧块（可能是动态扩展自动创建的默认块）
-            const existingConnection = input.connection.targetConnection;
+            const existingConnection = currentInput.connection.targetConnection;
             if (existingConnection) {
               const existingBlock = existingConnection.getSourceBlock();
               if (existingBlock && existingBlock !== shadowBlock) {
                 try {
-                  input.connection.disconnect();
+                  currentInput.connection.disconnect();
                   existingBlock.dispose(true);
                 } catch (e) {
                   console.warn(`清理旧块失败:`, e);
@@ -4901,7 +5155,7 @@ async function configureBlockInputs(
               // 先设置为影子块
               shadowBlock.setShadow(true);
               // 然后连接到输入
-              input.connection.connect(connectionToUse);
+              currentInput.connection.connect(connectionToUse);
               // console.log(`🔗 成功设置影子块到输入 "${inputName}"`);
               updatedInputs.push(inputName);
             } else {
@@ -4911,14 +5165,9 @@ async function configureBlockInputs(
                 error: `影子块没有可用的连接点`
               });
             }
+            } // 关闭 currentInput 存在性检查
           } else if (!shadowBlock) {
             console.warn(`❌ 影子块创建失败: ${inputConfig.shadow?.type || 'unknown'}`);
-          } else {
-            console.warn(`❌ 输入 "${inputName}" 没有连接点`);
-            failedBlocks.push({
-              blockType: `${block.type}.${inputName}`,
-              error: `输入 "${inputName}" 没有连接点，无法设置影子块`
-            });
           }
         } else {
           // console.log(`ℹ️ 输入 "${inputName}" 没有块或影子配置`);
@@ -5137,6 +5386,11 @@ export async function createBlockFromConfig(
           });
         }
       }
+      
+      // 🆕 字段配置后刷新动态输入
+      // 设置字段值（如 FUNC_NAME）可能影响块的动态状态，
+      // 需要确保动态输入（如 ARG0）已正确创建后再进行输入映射
+      refreshDynamicInputsAfterFieldConfig(block, config);
     }
     
     // 🆕 动态输入映射：将 EXTRA_N 输入映射到块上实际存在的未配置值输入

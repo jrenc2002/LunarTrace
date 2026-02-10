@@ -129,6 +129,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.on("window-full-screen-changed", listener);
       return () => ipcRenderer.removeListener("window-full-screen-changed", listener);
     },
+    // 监听窗口最大化状态变化事件
+    onMaximizeChanged: (callback) => {
+      const listener = (event, isMaximized) => callback(isMaximized);
+      ipcRenderer.on("window-maximize-changed", listener);
+      return () => ipcRenderer.removeListener("window-maximize-changed", listener);
+    },
     // 监听 Mac 平台下系统关闭按钮的关闭请求
     onCloseRequest: (callback) => {
       const listener = () => callback();

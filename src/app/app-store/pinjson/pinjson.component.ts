@@ -34,6 +34,8 @@ export class PinjsonComponent implements OnInit, OnDestroy {
   
   // 无数据状态显示控制
   showEmptyState = false;
+  // Loading 状态显示控制
+  isLoading = true;
 
   constructor(
     @Optional() @Inject(NZ_MODAL_DATA) public data: PinjsonModalData | null,
@@ -62,10 +64,14 @@ export class PinjsonComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
-    // 延迟1.5秒显示无数据状态
+    // 延迟显示无数据状态（如果加载失败）
     setTimeout(() => {
-      this.showEmptyState = true;
-    }, 800);
+      // 如果仍在加载中，说明加载失败
+      if (this.isLoading) {
+        this.isLoading = false;
+        this.showEmptyState = true;
+      }
+    }, 5000); // 5秒超时
 
     // 如果不是 modal 模式，从 URL 查询参数读取文件路径
     if (!this.data) {
@@ -94,6 +100,33 @@ export class PinjsonComponent implements OnInit, OnDestroy {
   onIframeLoad(event: Event): void {
     const iframe = event.target as HTMLIFrameElement;
     this.iframeElement = iframe;
+    // iframe 加载完成，但还需要等待数据确认
+    // 如果 iframe 加载后一段时间内没有收到数据确认，则显示失败状态
+    setTimeout(() => {
+      if (this.isLoading && !this.dataConfirmed) {
+        // 检查 iframe 是否真的加载成功
+        try {
+          // 尝试访问 iframe 内容，如果失败则说明加载失败
+          if (iframe.contentWindow) {
+            // iframe 已加载，但数据未确认，继续等待或显示失败
+            // 这里不立即显示失败，等待超时处理
+          } else {
+            this.handleLoadError();
+          }
+        } catch (e) {
+          // 跨域或其他错误
+          this.handleLoadError();
+        }
+      }
+    }, 3000); // 给 3 秒时间等待数据确认
+  }
+
+  /**
+   * 处理加载错误
+   */
+  handleLoadError(): void {
+    this.isLoading = false;
+    this.showEmptyState = true;
   }
 
   /**
@@ -193,6 +226,9 @@ export class PinjsonComponent implements OnInit, OnDestroy {
   private handleDataConfirmed(): void {
     this.dataConfirmed = true;
     console.log('PostMessage: 子端已确认收到数据');
+    // 数据确认后，隐藏 loading，显示内容
+    this.isLoading = false;
+    this.showEmptyState = false;
   }
 
   /**

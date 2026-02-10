@@ -99,23 +99,22 @@ export class BlocklyService {
       const blockFileIsExist = this.electronService.exists(this.electronService.pathJoin(libPackagePath, 'block.json'));
 
       if (blockFileIsExist) {
-        // 加载generator
-        // const generatorFileIsExist = this.electronService.exists(libPackagePath + '\\generator.js');
-        const generatorFileIsExist = this.electronService.exists(this.electronService.pathJoin(libPackagePath, 'generator.js'));
-        if (generatorFileIsExist) {
-          await this.loadLibGenerator(this.electronService.pathJoin(libPackagePath, 'generator.js'));
-        }
         // 加载blocks
         let blocks = JSON.parse(this.electronService.readFile(this.electronService.pathJoin(libPackagePath, 'block.json')));
         let i18nData = null;
-        // 检查多语言文件是否存在
+        // 检查多语言文件是否存在（先于 generator.js 加载，确保动态扩展能读取到 i18n 数据）
         const i18nFilePath = this.electronService.pathJoin(libPackagePath, 'i18n', this.translateService.currentLang + '.json');
         if (this.electronService.exists(i18nFilePath)) {
           i18nData = JSON.parse(this.electronService.readFile(i18nFilePath));
-          blocks = processI18n(blocks, i18nData);
           // 将 i18n 数据按库名存储到全局，供动态扩展使用
           (window as any).__BLOCKLY_LIB_I18N__ = (window as any).__BLOCKLY_LIB_I18N__ || {};
           (window as any).__BLOCKLY_LIB_I18N__[libPackageName] = i18nData;
+          blocks = processI18n(blocks, i18nData);
+        }
+        // 加载generator（必须在 i18n 数据存储后，这样动态定义的块才能读取到正确的多语言）
+        const generatorFileIsExist = this.electronService.exists(this.electronService.pathJoin(libPackagePath, 'generator.js'));
+        if (generatorFileIsExist) {
+          await this.loadLibGenerator(this.electronService.pathJoin(libPackagePath, 'generator.js'));
         }
         // 替换block中静态图片路径
         const staticFileIsExist = this.electronService.exists(this.electronService.pathJoin(libPackagePath, 'static'));

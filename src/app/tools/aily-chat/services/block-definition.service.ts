@@ -43,6 +43,7 @@ export interface BlockMeta {
   hasNext: boolean;                   // 是否有下连接点
   isRootBlock: boolean;               // 是否为根块（无上下连接）
   library: string;                    // 所属库名
+  mutator?: string;                   // mutator 类型（如 function_params_mutator）
   // 原始定义（用于调试）
   raw?: any;
 }
@@ -253,6 +254,7 @@ export class BlockDefinitionService {
       hasNext: 'nextStatement' in def,
       isRootBlock: false,
       library,
+      mutator: def.mutator || undefined,
     };
     
     // 检测根块（如 arduino_setup, arduino_loop）
@@ -414,6 +416,7 @@ function parseBlockDefSimple(def: any, library: string): BlockMeta | null {
     hasNext: 'nextStatement' in def,
     isRootBlock: false,
     library,
+    mutator: def.mutator || undefined,
   };
   
   // 检测根块

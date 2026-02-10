@@ -1877,7 +1877,7 @@ ${JSON.stringify(errData)}
       next: async (data: any) => {
         // 记录流式数据到文件（Unicode 转中文）
         // try {
-        //   const logPath = this.projectService.projectRootPath + '\\stream_log.txt';
+        //   const logPath = this.projectService.projectRootPath + this.platformService.getPlatformSeparator() + 'stream_log.txt';
         //   const timestamp = new Date().toISOString();
         //   const jsonStr = JSON.stringify(data, null, 2).replace(/\\u[\dA-Fa-f]{4}/gi, match =>
         //     String.fromCharCode(parseInt(match.replace(/\\u/g, ''), 16))
@@ -3440,7 +3440,7 @@ ${JSON.stringify(errData)}
                 newProject = false;
                 // Blockly 工具失败时：同时包含 keyInfo 和 rules
                 // toolContent += `\n${keyInfo}\n
-// 【ABS编写规范】
+// 【ABS编写规范】 
 // - 字段(field)直接写值：field_dropdown写枚举\`HIGH\`、field_input写字符串\`"dht"\`、field_number写数字\`9600\`、field_variable写\`$varName\`
 // - 值输入(input_value)必须连接值块：数字用\`math_number(10)\`、文本用\`text("Hello")\`、布尔用\`logic_boolean(TRUE)\`、变量用\`$varName\`(自动创建variables_get)
 // - 语句输入(input_statement)用4空格缩进子块表示
@@ -3457,7 +3457,7 @@ ${JSON.stringify(errData)}
 2. 使用get_workspace_overview_tool分析当前工作区，获取ABS代码和变量列表
 3. 列出所有需要使用的库（必须包含\`lib-core-*\`系列核心库：logic、variables、time、math等）
 4. 逐一阅读各库readme_ai.md了解块定义和ABS语法
-5. 如果需要的库未安装，则查询并安装所需库，安装完成后重新执行步骤1-4
+5. 如果当前已安装的库不满足需求，则查询并安装所需库，安装完成后重新执行步骤1-4
 
 【创建/修改阶段】
 1. **完整规划代码逻辑**，先在脑中构思完整的ABS结构
@@ -3465,7 +3465,7 @@ ${JSON.stringify(errData)}
 3. 编辑ABS代码：添加新块、修改参数、调整结构
 4. 使用sync_abs_file工具的import操作导入修改后的ABS
 5. 检查工具反馈，如果失败则分析错误信息，修正ABS代码后重新导入
-6. 重复步骤2-5直至完成
+6. 如果库功能不完善，安装lib-core-custom自定义库，重复步骤2-5直至完成
 
 【修复原则】
 - 诊断优先：分析get_workspace_overview_tool返回的ABS代码，定位问题
