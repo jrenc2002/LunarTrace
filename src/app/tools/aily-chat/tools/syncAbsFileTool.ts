@@ -1010,6 +1010,87 @@ function updateBlockFields(block: any, newFields: any, variableNameToId: Map<str
 }
 
 /**
+ * 将 EXTRA_N 输入映射到块上实际存在的输入，并在需要时动态扩展块的输入数量。
+ * 
+ * ABS 解析时，超出块元数据已知输入的参数被标记为 EXTRA_0、EXTRA_1 等。
+ * 此函数将它们映射到块上实际的未占用值输入（如 INPUT1、INPUT2）。
+ * 如果块的输入不够，会通过 plus()、updateShape_() 等方式动态扩展。
+ */
+function remapAndExpandInputs(block: any, inputs: Record<string, any>): Record<string, any> {
+  const extraInputs: Array<{ key: string; value: any; index: number }> = [];
+  const normalInputs: Record<string, any> = {};
+
+  for (const [key, value] of Object.entries(inputs)) {
+    const extraMatch = key.match(/^EXTRA_(\d+)$/);
+    if (extraMatch) {
+      extraInputs.push({ key, value, index: parseInt(extraMatch[1], 10) });
+    } else {
+      const inputMatch = key.match(/^INPUT(\d+)$/);
+      if (inputMatch && !block.getInput(key)) {
+        extraInputs.push({ key, value, index: parseInt(inputMatch[1], 10) });
+      } else {
+        normalInputs[key] = value;
+      }
+    }
+  }
+
+  if (extraInputs.length === 0) return inputs;
+
+  extraInputs.sort((a, b) => a.index - b.index);
+
+  const configuredInputs = new Set(Object.keys(normalInputs));
+
+  const getAvailable = () => {
+    const list: string[] = [];
+    for (const inp of block.inputList || []) {
+      if (inp.name && inp.type === 1 && !configuredInputs.has(inp.name)) {
+        list.push(inp.name);
+      }
+    }
+    return list;
+  };
+
+  let availableInputs = getAvailable();
+
+  // 动态扩展输入数量
+  if (extraInputs.length > availableInputs.length) {
+    const deficit = extraInputs.length - availableInputs.length;
+    let expanded = false;
+
+    if (block.plus && typeof block.plus === 'function') {
+      for (let i = 0; i < deficit; i++) {
+        try { block.plus(); } catch (e) { break; }
+      }
+      expanded = true;
+    } else if (block.updateShape_ && typeof block.updateShape_ === 'function' && block.extraCount_ !== undefined) {
+      const target = (block.extraCount_ || 0) + deficit;
+      try { block.extraCount_ = target; block.updateShape_(target); expanded = true; } catch (e) { /* ignore */ }
+    } else if (block.loadExtraState && typeof block.loadExtraState === 'function') {
+      const totalNeeded = (block.extraCount_ || block.itemCount_ || 0) + deficit;
+      const state = block.itemCount_ !== undefined ? { itemCount: totalNeeded } : { extraCount: totalNeeded };
+      try { block.loadExtraState(state); expanded = true; } catch (e) { /* ignore */ }
+    }
+
+    if (expanded) {
+      availableInputs = getAvailable();
+      console.log(`    🔧 动态扩展后可用输入: [${availableInputs.join(', ')}]`);
+    }
+  }
+
+  const result = { ...normalInputs };
+  for (let i = 0; i < extraInputs.length && i < availableInputs.length; i++) {
+    result[availableInputs[i]] = extraInputs[i].value;
+    console.log(`    🔄 输入映射: ${extraInputs[i].key} → ${availableInputs[i]}`);
+  }
+  for (let i = availableInputs.length; i < extraInputs.length; i++) {
+    result[extraInputs[i].key] = extraInputs[i].value;
+    console.warn(`    ⚠️ 无法映射输入 ${extraInputs[i].key}，块上没有更多可用值输入`);
+  }
+
+  return result;
+}
+
+/**
  * 简化方案：保留根块，清空并重建所有子树
  * 
  * 策略：
@@ -1098,7 +1179,10 @@ async function rebuildBlockChildren(
   
   // 5. 根据新配置重建子块
   if (newConfig.inputs) {
-    for (const [inputName, inputValue] of Object.entries(newConfig.inputs) as [string, any][]) {
+    // 🆕 映射 EXTRA_N 输入到块上实际输入，并在需要时动态扩展
+    const remappedInputs = remapAndExpandInputs(existingBlock, newConfig.inputs);
+    
+    for (const [inputName, inputValue] of Object.entries(remappedInputs) as [string, any][]) {
       const input = existingBlock.getInput(inputName);
       if (!input || !input.connection) {
         console.log(`    ⚠️ 输入 ${inputName} 不存在`);
