@@ -80,6 +80,9 @@ export const API = {
   // github oauth
   get githubBrowserAuthorize() { return `${getServerUrl()}/api/v1/oauth/github/browser-authorize`; },
   get githubTokenExchange() { return `${getServerUrl()}/api/v1/oauth/github/token-exchange`; },
+  // wechat oauth
+  get wechatQrcode() { return `${getServerUrl()}/api/v1/oauth/wechat/qrcode`; },
+  get wechatCheck() { return `${getServerUrl()}/api/v1/oauth/wechat/check`; },
   // sso
   get ssoGenerate() { return `${getServerUrl()}/api/v1/auth/sso/generate`; },
   // ai

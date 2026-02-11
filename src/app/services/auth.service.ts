@@ -912,6 +912,47 @@ export class AuthService {
   }
 
   /**
+   * 获取微信扫码二维码
+   */
+  getWeChatQrcode(): Observable<CommonResponse & { data: { ticket: string; qrcode_url: string; expires_in: number } }> {
+    return this.http.get<CommonResponse & { data: { ticket: string; qrcode_url: string; expires_in: number } }>(API.wechatQrcode).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  /**
+   * 检查微信扫码状态
+   */
+  checkWeChatStatus(ticket: string): Observable<CommonResponse & { data: { status: string; access_token?: string; refresh_token?: string; token_type?: string; is_new_user?: boolean; user?: any; message?: string } }> {
+    return this.http.get<CommonResponse & { data: { status: string; access_token?: string; refresh_token?: string; token_type?: string; is_new_user?: boolean; user?: any; message?: string } }>(
+      API.wechatCheck,
+      { params: { ticket } }
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  /**
+   * 微信扫码登录成功处理
+   */
+  async handleWeChatOAuthSuccess(data: { access_token: string; refresh_token?: string; user?: any }): Promise<void> {
+    try {
+      await this.saveToken2(data.access_token);
+      if (data.refresh_token) {
+        await this.saveRefreshToken(data.refresh_token);
+      }
+      if (data.user) {
+        await this.saveUserInfo(data.user);
+        this.userInfoSubject.next(data.user);
+      }
+      this.isLoggedInSubject.next(true);
+    } catch (error) {
+      console.error('处理微信 OAuth 成功数据失败:', error);
+      throw error;
+    }
+  }
+
+  /**
    * 生成 SSO Token（用于桌面端跳转 Web 端免登）
    * @param targetUrl 可选，目标跳转 URL
    * @returns Observable<SSOTokenResponse>
