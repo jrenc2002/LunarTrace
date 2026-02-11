@@ -621,10 +621,10 @@ export class BlocklyService {
     lines.push(`块类型: ${blockType}`);
     lines.push(`ABS代码:`);
     lines.push(this._truncateAbsSnippet(absSnippet));
-    lines.push(`对应C++代码行数: ${cppLineRange}`);
     if (absLineRange !== '无') {
       lines.push(`对应ABS代码行数: ${absLineRange}`);
     }
+    lines.push(`对应C++代码行数: ${cppLineRange}`);
     return lines.join('\n');
   }
 
