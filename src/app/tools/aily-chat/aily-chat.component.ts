@@ -202,13 +202,17 @@ export class AilyChatComponent implements OnDestroy {
   private projectPathSubscription: Subscription; // 订阅项目路径变化
   private configChangedSubscription: Subscription; // 订阅配置变更
   private mcpInitialized = false; // 添加标志位防止重复初始化MCP
-  
+
   // 任务操作相关
   private taskActionHandler: ((event: Event) => void) | null = null;
   private lastStopReason: string = ''; // 保存上次停止原因用于重试
 
   get sessionId() {
     return this.chatService.currentSessionId;
+  }
+
+  set sessionId(value: string) {
+    this.chatService.currentSessionId = value;
   }
 
   get sessionTitle() {
@@ -1025,7 +1029,7 @@ Do not create non-existent boards and libraries.
     const securityWorkspaces = this.ailyChatConfigService.securityWorkspaces;
     const allowProjectPathAccess: boolean = securityWorkspaces.project;
     const allowNodeModulesAccess: boolean = securityWorkspaces.library;
-    
+
     // 使用会话期间保存的允许路径
     return createSecurityContext(this.getCurrentProjectPath(), {
       allowProjectPathAccess: allowProjectPathAccess,  // 默认允许访问当前项目路径
@@ -1126,21 +1130,21 @@ Do not create non-existent boards and libraries.
     ).subscribe(
       (newPath: string) => {
         console.log('[AilyChat] 项目路径变化:', newPath);
-        
+
         // 更新当前项目路径
         this.prjPath = newPath === this.projectService.projectRootPath ? '' : newPath;
         this.prjRootPath = this.projectService.projectRootPath;
-        
+
         // 根据新的项目路径重新加载聊天历史
         const targetPath = newPath || this.projectService.projectRootPath;
         this.chatService.openHistoryFile(targetPath);
         this.HistoryList = [...this.chatService.historyList].reverse();
-        
+
         // 初始化 ABS 自动同步服务
         if (newPath && newPath !== this.projectService.projectRootPath) {
           this.absAutoSyncService.initialize(newPath);
         }
-        
+
         console.log('[AilyChat] 历史记录已重新加载, 数量:', this.HistoryList.length);
       }
     );
@@ -1226,10 +1230,10 @@ Do not create non-existent boards and libraries.
     this.configChangedSubscription = this.ailyChatConfigService.configChanged$.subscribe(
       async (newConfig) => {
         // console.log('配置已变更:', newConfig);
-        
+
         // 判断当前会话是否有对话历史（排除系统默认消息）
         const hasConversationHistory = this.list.length > 0;
-        
+
         // 如果当前会话没有对话历史，则可以安全地重新启动会话以应用新配置
         if (!hasConversationHistory && this.sessionId && this.isLoggedIn) {
           // console.log('当前会话无对话历史，重新启动会话以应用新配置');
@@ -1408,7 +1412,7 @@ Do not create non-existent boards and libraries.
 
   /**
    * 清理最后一条 AI 消息中的流式残留内容
-   * 
+   *
    * 由于流式传输的延迟，agent 输出的终止标记（如 TERMINATE、[to_user]）
    * 和未完成的特殊代码块可能残留在消息中。此方法在对话终止时统一清理。
    */
@@ -1422,16 +1426,16 @@ Do not create non-existent boards and libraries.
 
     // 1. 移除终止标记及其前后空白（完整或部分）
     //    匹配 TERMINATE 的完整或部分出现（流式可能只传了前几个字符）
-    content = content.replace(/\s*\[?TERMINATE\]?\s*$/i, '');
-    content = content.replace(/\s*\[to_user\]\s*$/i, '');
-    // 部分终止标记（如 "TERMI", "TERMINA" 等出现在末尾）
-    const terminatePartials = ['TERMINAT', 'TERMINA', 'TERMIN', 'TERMI', 'TERM'];
-    for (const partial of terminatePartials) {
-      if (content.trimEnd().endsWith(partial)) {
-        content = content.substring(0, content.lastIndexOf(partial)).trimEnd();
-        break;
-      }
-    }
+    // content = content.replace(/\s*\[?TERMINATE\]?\s*$/i, '');
+    // content = content.replace(/\s*\[to_user\]\s*$/i, '');
+    // // 部分终止标记（如 "TERMI", "TERMINA" 等出现在末尾）
+    // const terminatePartials = ['TERMINAT', 'TERMINA', 'TERMIN', 'TERMI', 'TERM'];
+    // for (const partial of terminatePartials) {
+    //   if (content.trimEnd().endsWith(partial)) {
+    //     content = content.substring(0, content.lastIndexOf(partial)).trimEnd();
+    //     break;
+    //   }
+    // }
 
     // 2. 检查三个连续 ``` 的组数，若为单数则移除最后一个 ``` 及其后面的内容（未闭合的代码块）
     const tripleBacktickGroups = content.match(/```/g);
@@ -1447,6 +1451,8 @@ Do not create non-existent boards and libraries.
     }
   }
 
+  terminateTemp = '';
+
   appendMessage(role, text) {
     // console.log("添加消息: ", role, text);
 
@@ -1458,6 +1464,33 @@ Do not create non-existent boards and libraries.
     } catch (e) {
       // 如果解析失败，说明不是JSON格式的字符串
       // 保持原样
+    }
+
+    // 如果text是TER MIN ATE
+    const terminateText = 'TERMINATE';
+    if (this.terminateTemp) {
+      this.terminateTemp += text;
+      if (terminateText.startsWith(this.terminateTemp)) {
+        return;
+      }
+      if (this.list.length > 0 && this.list[this.list.length - 1].role === role) {
+        this.list[this.list.length - 1].content += this.terminateTemp;
+        // 如果是AI角色且正在输出，保持doing状态
+        if (role === 'aily' && this.isWaiting) {
+          this.list[this.list.length - 1].state = 'doing';
+        }
+      } else {
+        this.list.push({
+          "role": role,
+          "content": this.terminateTemp,
+          "state": (role === 'aily' && this.isWaiting) ? 'doing' : 'done'
+        });
+      }
+      this.terminateTemp = '';
+      return;
+    } else if (terminateText.startsWith(text)) {
+      this.terminateTemp += text;
+      return;
     }
 
     // 检查是否存在消息列表，且最后一条消息的role与当前role相同
@@ -1494,7 +1527,7 @@ Do not create non-existent boards and libraries.
       // 使用会话创建时记录的路径，确保历史记录保存到发起会话的位置
       // 如果没有记录的路径，才使用当前项目路径作为后备
       const prjPath = this.chatService.currentSessionPath || this.projectService.currentProjectPath || this.projectService.projectRootPath;
-      
+
       if (!prjPath) {
         console.warn('无法获取项目路径，跳过保存会话');
         return;
@@ -1510,17 +1543,26 @@ Do not create non-existent boards and libraries.
 
       // 保存历史列表索引文件
       this.chatService.saveHistoryFile(prjPath);
-      
+
       // 保存聊天记录到 .chat_history 文件夹
       this.chatService.saveSessionChatHistory(prjPath, this.sessionId, this.list);
-      
+
       // console.log('会话已保存:', this.sessionId, '路径:', prjPath);
     } catch (error) {
       console.warn('保存会话失败:', error);
     }
   }
 
+  debug = false; // TODO 用于测试本地流式数据，生产不要提交true！！！
+
   async startSession(): Promise<void> {
+    if (this.debug) {
+      this.sessionId = new Date().getTime().toString();
+      this.isWaiting = true;
+      this.streamConnect();
+      return;
+    }
+
     // 如果会话正在启动中，直接返回
     if (this.isSessionStarting) {
       // console.log('startSession 被跳过: 会话正在启动中');
@@ -1537,13 +1579,13 @@ Do not create non-existent boards and libraries.
     if (!this.mcpInitialized) {
       this.mcpInitialized = true;
       await this.mcpService.init();
-      
+
       // 延迟加载硬件索引数据（用于 AI 工具的开发板/库搜索）
       this.configService.loadHardwareIndexForAI().catch(err => {
         console.warn('[AilyChat] 加载硬件索引失败:', err);
       });
     }
-    
+
     // // 会话开始时自动导出 ABS 文件（无感同步）
     // const currentPath = this.getCurrentProjectPath();
     // if (currentPath) {
@@ -1555,22 +1597,22 @@ Do not create non-existent boards and libraries.
 
     // tools + mcp tools
     this.isCompleted = false;
-    
+
     // 根据配置过滤启用的工具
     const enabledToolNames = this.ailyChatConfigService.enabledTools;
     const disabledToolNames = this.ailyChatConfigService.disabledTools || [];
     const hasEnabledToolsConfig = enabledToolNames && enabledToolNames.length > 0;
-    
+
     // 过滤工具逻辑：
     // 1. 如果没有配置，使用全部工具
     // 2. 如果有配置，启用的工具 + 新工具（不在禁用列表中的未知工具）
-    let tools = hasEnabledToolsConfig 
-      ? this.tools.filter(tool => 
-          enabledToolNames.includes(tool.name) || 
+    let tools = hasEnabledToolsConfig
+      ? this.tools.filter(tool =>
+          enabledToolNames.includes(tool.name) ||
           (!disabledToolNames.includes(tool.name) && !enabledToolNames.includes(tool.name))
         )
       : this.tools;
-    
+
     let mcpTools = this.mcpService.tools.map(tool => {
       if (!tool.name.startsWith("mcp_")) {
         tool.name = "mcp_" + tool.name;
@@ -1580,7 +1622,7 @@ Do not create non-existent boards and libraries.
     if (mcpTools && mcpTools.length > 0) {
       tools = tools.concat(mcpTools);
     }
-    
+
     // 获取 maxCount 配置
     const maxCount = this.ailyChatConfigService.maxCount;
 
@@ -1712,7 +1754,7 @@ ${JSON.stringify(errData)}
       console.log('任务已取消，忽略工具结果消息');
       return;
     }
-    
+
     if (this.isCompleted) {
       // console.log('上次会话已完成，需要重新启动会话');
       // 重置取消标志，开始新会话
@@ -1823,7 +1865,7 @@ ${JSON.stringify(errData)}
   stop() {
     // 标记任务已取消，防止后续工具结果触发重连
     this.isCancelled = true;
-    
+
     // 设置最后一条AI消息状态为done（如果存在）
     if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
       this.list[this.list.length - 1].state = 'done';
@@ -1855,7 +1897,7 @@ ${JSON.stringify(errData)}
       this.messageSubscription = null;
     }
 
-    this.messageSubscription = this.chatService.streamConnect(this.sessionId).subscribe({
+    this.messageSubscription = (this.debug ? this.chatService.debugStream(this.sessionId) : this.chatService.streamConnect(this.sessionId)).subscribe({
       next: async (data: any) => {
         // 记录流式数据到文件（Unicode 转中文）
         // try {
@@ -1869,7 +1911,7 @@ ${JSON.stringify(errData)}
         // } catch (logErr) {
         //   console.warn('写入日志文件失败:', logErr);
         // }
-        
+
         // console.log("当前是否处于等待状态： ", this.isWaiting)
         if (!this.isWaiting) {
           return; // 如果不在等待状态，直接返回
@@ -3006,7 +3048,7 @@ ${JSON.stringify(errData)}
                     } else {
                       const op = toolArgs.operation;
                       // export 时不显示状态
-                      resultText = op === 'import' ? '加载 图形化代码 完成' 
+                      resultText = op === 'import' ? '加载 图形化代码 完成'
                         // : op === 'status' ? 'ABS 状态查询完成'
                         : '';  // status 与 export 不显示
                     }
@@ -3422,7 +3464,7 @@ ${JSON.stringify(errData)}
                 newProject = false;
                 // Blockly 工具失败时：同时包含 keyInfo 和 rules
                 // toolContent += `\n${keyInfo}\n
-// 【ABS编写规范】 
+// 【ABS编写规范】
 // - 字段(field)直接写值：field_dropdown写枚举\`HIGH\`、field_input写字符串\`"dht"\`、field_number写数字\`9600\`、field_variable写\`$varName\`
 // - 值输入(input_value)必须连接值块：数字用\`math_number(10)\`、文本用\`text("Hello")\`、布尔用\`logic_boolean(TRUE)\`、变量用\`$varName\`(自动创建variables_get)
 // - 语句输入(input_statement)用4空格缩进子块表示
@@ -3515,7 +3557,7 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
             // 1. Text 'TERMINATE' mentioned - 正常结束，由 complete 回调处理状态
             // 2. Maximum number of messages - 需要显示继续对话提示
             // 3. 其他异常 - 需要显示重试提示
-            
+
             // 先清理流式残留内容（TERMINATE 文字、未闭合的代码块等）
             this.cleanupLastAiMessage();
 
@@ -3526,10 +3568,10 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
               // 解析最大消息数
               const maxMessagesMatch = stopReason.match(/(\d+)\s*reached/);
               const maxMessages = maxMessagesMatch ? parseInt(maxMessagesMatch[1], 10) : 10;
-              
+
               // 保存当前停止原因用于继续对话
               this.lastStopReason = stopReason;
-              
+
               // 显示提示信息，询问是否继续
               this.appendMessage('aily', `
 
@@ -3547,7 +3589,7 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
             } else {
               // 保存当前停止原因用于重试
               this.lastStopReason = stopReason;
-              
+
               // 显示报错，并提供重试按钮
               this.appendMessage('aily', `
 \`\`\`aily-error
@@ -3655,7 +3697,7 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
 
     this.list = [];
     // console.log('获取历史消息，sessionId:', this.sessionId);
-    
+
     // 优先从内存缓存中获取
     if (this.chatService.historyChatMap.get(this.sessionId)) {
       const cachedHistory = this.chatService.historyChatMap.get(this.sessionId);
@@ -4051,9 +4093,9 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
   private handleTaskAction(event: Event): void {
     const customEvent = event as CustomEvent;
     const { action, data } = customEvent.detail || {};
-    
+
     // console.log('收到任务操作事件:', action, data);
-    
+
     switch (action) {
       case 'continue':
         this.continueConversation();
@@ -4081,12 +4123,12 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
       this.message.warning('正在处理中，请稍候...');
       return;
     }
-    
+
     if (!this.sessionId) {
       this.message.warning('会话不存在，请开始新对话');
       return;
     }
-    
+
     // 发送继续消息
     const continueMessage = '请继续完成之前的任务。';
     await this.send('user', continueMessage, false);
@@ -4100,12 +4142,12 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
       this.message.warning('正在处理中，请稍候...');
       return;
     }
-    
+
     if (!this.sessionId) {
       this.message.warning('会话不存在，请开始新对话');
       return;
     }
-    
+
     // 发送重试消息
     const retryMessage = '请重试上次的操作。';
     await this.send('user', retryMessage, false);
@@ -4595,7 +4637,7 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
   onSettingsSaved() {
     // 关闭设置面板
     this.showSettings = false;
-    
+
     // 注意：配置生效逻辑已由 configChanged$ 订阅处理
     // 这里不需要额外操作，消息提示会在订阅中统一处理
   }

@@ -82,7 +82,7 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
   private async processContent() {
     // 过滤 think 标签内容，支持实时过滤
     let currentContent = this.filterThinkContent(this.content);
-    
+
     // 对一些常见错误的处理，确保markdown格式正确
     currentContent = this.fixContent(currentContent);
 
@@ -257,6 +257,13 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
     return 'paragraph';
   }
 
+  private isMermaidCodeBlockWaiting(content: string): string | boolean {
+    if (content === '```aily-mermaid') {
+      return false;
+    }
+    return content.startsWith('```aily-mermaid') && !content.endsWith('```');
+  }
+
   /**
    * 切分并渲染内容
    */
@@ -267,6 +274,9 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
 
       // 为每个段落生成HTML
       for (const segment of segments) {
+        if (this.isMermaidCodeBlockWaiting(segment.content)) {
+          continue;
+        }
         const htmlObservable = this.markdownPipe.transform(segment.content);
         const safeHtml = await firstValueFrom(htmlObservable);
         segment.html = this.getHtmlString(safeHtml);
@@ -409,6 +419,9 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
     for (const segment of newSegments) {
       // 如果HTML还没有生成，先生成HTML
       if (!segment.html) {
+        if (this.isMermaidCodeBlockWaiting(segment.content)) {
+          continue;
+        }
         const htmlObservable = this.markdownPipe.transform(segment.content);
         const safeHtml = await firstValueFrom(htmlObservable);
         segment.html = this.getHtmlString(safeHtml);
@@ -434,6 +447,10 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
     const container = this.contentDiv?.nativeElement;
     if (!container || this.contentList.length === 0) {
       await this.renderContentList();
+      return;
+    }
+
+    if (this.isMermaidCodeBlockWaiting(modifiedSegment.content)) {
       return;
     }
 
@@ -481,14 +498,14 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
       if (thinkComponents.length > 0) {
         // 找到最后一个 think 组件（应该对应最后一个段落）
         const lastThinkComponent = thinkComponents[thinkComponents.length - 1];
-        
+
         // 创建临时容器来解析新的HTML，提取 think 占位符数据
         const newTempDiv = document.createElement('div');
         newTempDiv.innerHTML = modifiedSegment.html;
-        
+
         // 查找新HTML中的 think 占位符
         const newPlaceholder = newTempDiv.querySelector('.aily-code-block-placeholder[data-aily-type="aily-think"]') as HTMLElement;
-        
+
         if (newPlaceholder) {
           const encodedData = newPlaceholder.getAttribute('data-aily-data');
           if (encodedData) {
@@ -497,7 +514,7 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
               // 先解码 base64，然后解析 JSON
               const decodedData = safeBase64Decode(encodedData);
               const jsonData = JSON.parse(decodedData);
-              
+
               // 如果 content 是编码的，需要进一步解码（与 markdown pipe 的逻辑一致）
               let thinkContent = jsonData.content || jsonData.text || '';
               if (jsonData.encoded && typeof thinkContent === 'string') {
@@ -507,7 +524,7 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
                   console.warn('Failed to decode think content:', e);
                 }
               }
-              
+
               // 构建组件数据（与 markdown pipe 的输出格式一致）
               const componentData = {
                 type: 'aily-think',
@@ -515,14 +532,14 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
                 isComplete: jsonData.isComplete !== false,
                 metadata: jsonData.metadata || {}
               };
-              
+
               // 通过自定义事件通知组件更新
-              const updateEvent = new CustomEvent('think-data-update', { 
+              const updateEvent = new CustomEvent('think-data-update', {
                 detail: componentData,
-                bubbles: true 
+                bubbles: true
               });
               lastThinkComponent.dispatchEvent(updateEvent);
-              
+
               // 同时尝试直接设置 data 属性（如果组件支持）
               // 注意：这需要组件暴露 data 属性为 @Input() 或 public
               if ((lastThinkComponent as any).__ngContext__) {
@@ -532,7 +549,7 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
                   componentInstance.setData(componentData);
                 }
               }
-              
+
               // 不替换DOM，直接返回
               return;
             } catch (error) {
@@ -636,6 +653,9 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
     for (let i = startRenderIndex; i < newSegments.length; i++) {
       const segment = newSegments[i];
       if (!segment.html) {
+        if (this.isMermaidCodeBlockWaiting(segment.content)) {
+          continue;
+        }
         const htmlObservable = this.markdownPipe.transform(segment.content);
         const safeHtml = await firstValueFrom(htmlObservable);
         segment.html = this.getHtmlString(safeHtml);
@@ -748,7 +768,7 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
     let i = 0;
     let inThinkBlock = false;
     let thinkContent = '';
-    
+
     while (i < content.length) {
       // 检查是否遇到 <think> 标签
       if (!inThinkBlock && content.substring(i, i + 7) === '<think>') {
@@ -757,7 +777,7 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
         i += 7; // 跳过 <think>
         continue;
       }
-      
+
       // 检查是否遇到 </think> 标签
       if (inThinkBlock && content.substring(i, i + 8) === '</think>') {
         inThinkBlock = false;
@@ -777,17 +797,17 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
         i += 8; // 跳过 </think>
         continue;
       }
-      
+
       // 收集 think 块内的内容或添加到结果中
       if (inThinkBlock) {
         thinkContent += content[i];
       } else {
         result += content[i];
       }
-      
+
       i++;
     }
-    
+
     // 如果内容结束时仍在 think 块内（流式传输中），显示正在思考的状态
     if (inThinkBlock && thinkContent.trim()) {
       // 使用 base64 编码 content 避免换行符转义问题
@@ -800,7 +820,7 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
       // 确保代码块前后有正确的换行
       result += '```aily-think\n' + JSON.stringify(thinkData) + '\n```';
     }
-    
+
     return result;
   }
 
