@@ -938,9 +938,9 @@ export class AuthService {
   async handleWeChatOAuthSuccess(data: { access_token: string; refresh_token?: string; user?: any }): Promise<void> {
     try {
       await this.saveToken2(data.access_token);
-      if (data.refresh_token) {
-        await this.saveRefreshToken(data.refresh_token);
-      }
+      // if (data.refresh_token) {
+      //   await this.saveRefreshToken(data.refresh_token);
+      // }
       if (data.user) {
         await this.saveUserInfo(data.user);
         this.userInfoSubject.next(data.user);
