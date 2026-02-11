@@ -197,7 +197,7 @@ export class BlocklyEditorComponent {
     if (this.blocklyService.checkAiWaiting()) {
       return;
     }
-    this.uiService.closeToolAll();
+    // this.uiService.closeToolAll();
     this.showLibraryManager = !this.showLibraryManager;
     this.cd.detectChanges();
   }
