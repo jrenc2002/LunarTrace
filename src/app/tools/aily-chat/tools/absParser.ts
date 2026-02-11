@@ -1105,50 +1105,9 @@ export class BlocklyAbsParser {
   }
   
   /**
-   * 规范化输入名称
+   * 规范化输入名称 - 仅转换大小写
    */
   private normalizeInputName(name: string): string {
-    const nameMap: Record<string, string> = {
-      'condition': 'IF0',
-      'if': 'IF0',
-      'do': 'DO0',
-      'then': 'DO0',
-      'else': 'ELSE',
-      'default': 'DEFAULT',
-      'switch': 'SWITCH',
-      'times': 'TIMES',
-      'from': 'FROM',
-      'to': 'TO',
-      'by': 'BY',
-      'value': 'VALUE',
-      'list': 'LIST',
-      'handler': 'HANDLER',
-      'frame': 'FRAME',
-    };
-    
-    // 直接映射
-    if (nameMap[name.toLowerCase()]) {
-      return nameMap[name.toLowerCase()];
-    }
-    
-    // 处理带编号的 do (do1, do2...) -> DO1, DO2...
-    const doMatch = name.match(/^do(\d+)$/i);
-    if (doMatch) {
-      return `DO${doMatch[1]}`;
-    }
-    
-    // 处理带编号的 case (case0, case1...) -> CASE0, CASE1...
-    const caseMatch = name.match(/^case(\d+)$/i);
-    if (caseMatch) {
-      return `CASE${caseMatch[1]}`;
-    }
-    
-    // 处理带编号的 if (if1, if2...) -> IF1, IF2...
-    const ifMatch = name.match(/^if(\d+)$/i);
-    if (ifMatch) {
-      return `IF${ifMatch[1]}`;
-    }
-    
     return name.toUpperCase();
   }
   
