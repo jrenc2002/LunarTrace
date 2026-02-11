@@ -1708,7 +1708,7 @@ ${JSON.stringify(errData)}
       return;
     }
 
-    this.send('user', this.inputValue.trim(), true);
+    await this.send('user', this.inputValue.trim(), true);
     // 将用户添加的上下文路径保存到会话允许路径中
     this.mergeSelectContentToSessionPaths();
     this.selectContent = [];
@@ -3747,7 +3747,7 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
           return;
         }
 
-        this.send("user", this.inputValue.trim(), true);
+        await this.send("user", this.inputValue.trim(), true);
         // 将用户添加的上下文路径保存到会话允许路径中
         this.mergeSelectContentToSessionPaths();
         this.selectContent = [];
