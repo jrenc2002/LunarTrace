@@ -1465,6 +1465,37 @@ Do not create non-existent boards and libraries.
     }
   }
 
+  /**
+   * 在 text 中查找 TERMINATE 前缀的起始位置（可能前面有其它字符）。
+   * 例如 "ACTER" 中 "TER" 是 TERMINATE 的前缀，返回 2。
+   */
+  private findTerminatePrefixStart(text: string, target: string): number {
+    for (let i = 0; i < text.length; i++) {
+      const suffix = text.slice(i);
+      if (target.startsWith(suffix)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  setLastMsgContent(role, text) {
+    if (this.list.length > 0 && this.list[this.list.length - 1].role === role) {
+      this.list[this.list.length - 1].content += text;
+      // 如果是AI角色且正在输出，保持doing状态
+      if (role === 'aily' && this.isWaiting) {
+        this.list[this.list.length - 1].state = 'doing';
+      }
+    } else {
+      this.list.push({
+        "role": role,
+        "content": text,
+        "state": (role === 'aily' && this.isWaiting) ? 'doing' : 'done'
+      });
+    }
+    this.chatService.historyChatMap.set(this.sessionId, this.list);
+  }
+
   terminateTemp = '';
 
   appendMessage(role, text) {
@@ -1480,6 +1511,8 @@ Do not create non-existent boards and libraries.
       // 保持原样
     }
 
+    text = text.replace(/```/g, '\n```');
+
     // 如果text是TER MIN ATE
     const terminateText = 'TERMINATE';
     if (this.terminateTemp) {
@@ -1487,46 +1520,20 @@ Do not create non-existent boards and libraries.
       if (terminateText.startsWith(this.terminateTemp)) {
         return;
       }
-      if (this.list.length > 0 && this.list[this.list.length - 1].role === role) {
-        this.list[this.list.length - 1].content += this.terminateTemp;
-        // 如果是AI角色且正在输出，保持doing状态
-        if (role === 'aily' && this.isWaiting) {
-          this.list[this.list.length - 1].state = 'doing';
-        }
-      } else {
-        this.list.push({
-          "role": role,
-          "content": this.terminateTemp,
-          "state": (role === 'aily' && this.isWaiting) ? 'doing' : 'done'
-        });
-      }
+      this.setLastMsgContent(role, this.terminateTemp);
       this.terminateTemp = '';
       return;
-    } else if (terminateText.startsWith(text)) {
-      this.terminateTemp += text;
+    }
+    let prefixStart = this.findTerminatePrefixStart(text, terminateText);
+    if (prefixStart >= 0) {
+      this.terminateTemp += text.substring(prefixStart);
+      text = text.substring(0, prefixStart);
+      this.setLastMsgContent(role, text);
       return;
     }
 
-    // 检查是否存在消息列表，且最后一条消息的role与当前role相同
-    if (this.list.length > 0 && this.list[this.list.length - 1].role === role) {
-      // 如果是同一个role，追加内容到最后一条消息
-      this.list[this.list.length - 1].content += text;
-      // 如果是AI角色且正在输出，保持doing状态
-      if (role === 'aily' && this.isWaiting) {
-        this.list[this.list.length - 1].state = 'doing';
-      }
-    } else {
-      // console.log("添加新消息: ", role);
-      // 如果是不同的role或列表为空，创建新的消息
-      const state = (role === 'aily' && this.isWaiting) ? 'doing' : 'done';
-      this.list.push({
-        "role": role,
-        "content": text,
-        "state": state
-      });
-    }
+    this.setLastMsgContent(role, text);
     this.terminateTemp = '';
-    this.chatService.historyChatMap.set(this.sessionId, this.list);
   }
 
   /**
@@ -1568,7 +1575,7 @@ Do not create non-existent boards and libraries.
     }
   }
 
-  debug = false; // TODO 用于测试本地流式数据，生产不要提交true！！！
+  debug = true; // TODO 用于测试本地流式数据，生产不要提交true！！！
 
   async startSession(): Promise<void> {
     if (this.debug) {
