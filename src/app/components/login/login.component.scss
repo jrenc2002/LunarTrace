@@ -56,11 +56,19 @@
         }
 
         &:hover {
-            color: #FFF;
+            color: #f5f5f5;
         }
 
         &.active {
             color: #FFF;
+        }
+
+        &.wechat-active {
+            color: #FFF;
+
+            i {
+                color: #52c41a;
+            }
         }
 
         .icon {

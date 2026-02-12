@@ -18,8 +18,8 @@
             <i class="fa-brands fa-microsoft"></i>
             Microsoft
         </div> -->
-            <div class="item ccenter" (click)="select('wechat')" [ngClass]="{'active':mode=='wechat'}">
-                <i class="fa-brands fa-weixin"></i>
+            <div class="item ccenter" (click)="select('wechat')" [ngClass]="{'wechat-active':mode=='wechat'}">
+                <div class="icon ccenter"><i class="fa-brands fa-weixin"></i></div>
                 WeChat
             </div>
             <!-- <div class="item ccenter" (click)="select('phone')" [ngClass]="{'active':mode=='phone'}">
@@ -72,7 +72,7 @@
                 <div class="error-text">{{ getWeChatErrorText() }}</div>
             </div>
             }
-            
+
             <div class="wechat-status">
                 @if (wechatStatus === 'pending') {
                 <div class="status-message">{{ getWeChatStatusMessage() }}</div>
@@ -80,12 +80,14 @@
                 <!-- <div class="status-message success">{{ getWeChatSuccessText() }}</div> -->
                 } @else if (wechatStatus === 'expired') {
                 <div class="status-message expired">{{ wechatStatusMessage }}</div>
-                <button nz-button nzType="primary" nzSize="small" (click)="refreshWeChatQrcode()" style="margin-top: 10px;">
+                <button nz-button nzType="primary" nzSize="small" (click)="refreshWeChatQrcode()"
+                    style="margin-top: 10px;">
                     {{ getWeChatRefreshText() }}
                 </button>
                 } @else if (wechatStatus === 'error') {
                 <div class="status-message error">{{ wechatStatusMessage }}</div>
-                <button nz-button nzType="primary" nzSize="small" (click)="refreshWeChatQrcode()" style="margin-top: 10px;">
+                <button nz-button nzType="primary" nzSize="small" (click)="refreshWeChatQrcode()"
+                    style="margin-top: 10px;">
                     {{ getWeChatRetryText() }}
                 </button>
                 }
@@ -115,7 +117,8 @@
                 </div>
                 <input nz-input type="text" [placeholder]="'LOGIN.CODE_PLACEHOLDER' | translate"
                     [(ngModel)]="inputCode" />
-                <button nz-button nzType="default" class="send-code-btn" [disabled]="isSendingCode || countdown > 0" (click)="sendVerificationCode()">
+                <button nz-button nzType="default" class="send-code-btn" [disabled]="isSendingCode || countdown > 0"
+                    (click)="sendVerificationCode()">
                     {{ countdown > 0 ? (countdown + 's') : ('LOGIN.SEND_CODE' | translate) }}
                 </button>
             </div>
