@@ -343,19 +343,85 @@ async function importFromAbs(
     const failedBlocks: Array<{ blockType: string; error: string; suggestion?: string }> = [];
     
     if (!useIncrementalUpdate) {
-      // console.log('🔄 执行全量更新（清空并重建）...');
-      // 清空当前工作区
-      workspace.clear();
+      // console.log('🔄 执行全量更新（保留受保护块）...');
+      
+      // 🆕 收集受保护的块，稍后恢复
+      const protectedBlocksMap = new Map<string, any>();
+      const existingTopBlocks = workspace.getTopBlocks(false);
+      for (const block of existingTopBlocks) {
+        if (PROTECTED_ROOT_BLOCKS.has(block.type) && !protectedBlocksMap.has(block.type)) {
+          // 记录受保护块的位置信息
+          protectedBlocksMap.set(block.type, {
+            block: block,
+            x: block.getRelativeToSurfaceXY().x,
+            y: block.getRelativeToSurfaceXY().y
+          });
+        }
+      }
+      
+      // 清空非受保护块
+      Blockly.Events.disable();
+      try {
+        for (const block of existingTopBlocks) {
+          if (!PROTECTED_ROOT_BLOCKS.has(block.type)) {
+            block.dispose(true);
+          } else {
+            // 清空受保护块的子块
+            for (const input of block.inputList || []) {
+              if (input.connection?.isConnected()) {
+                const child = input.connection.targetBlock();
+                if (child && !child.isShadow()) {
+                  input.connection.disconnect();
+                  child.dispose(true);
+                }
+              }
+            }
+          }
+        }
+      } finally {
+        Blockly.Events.enable();
+      }
       
       // 重新创建变量
       variableNameToId.clear();
       for (const [name, type] of allVariables) {
-        const variable = workspace.createVariable(name, type || undefined);
+        let variable = workspace.getVariable(name);
+        if (!variable) {
+          variable = workspace.createVariable(name, type || undefined);
+        }
         variableNameToId.set(name, variable.getId());
       }
       
       let yPosition = 30;
+      const processedTypes = new Set<string>();
+      
       for (const blockConfig of parseResult.rootBlocks) {
+        // 检查是否有受保护块需要重建子块
+        if (PROTECTED_ROOT_BLOCKS.has(blockConfig.type) && protectedBlocksMap.has(blockConfig.type)) {
+          const protectedInfo = protectedBlocksMap.get(blockConfig.type);
+          processedTypes.add(blockConfig.type);
+          
+          // 使用 rebuildBlockChildren 重建子块
+          preprocessVariableReferences(blockConfig, variableNameToId);
+          try {
+            const rebuildResult = await rebuildBlockChildren(
+              workspace, protectedInfo.block, blockConfig,
+              variableNameToId, preprocessVariableReferences
+            );
+            totalBlocks++;
+            if (rebuildResult.failedBlocks?.length) {
+              failedBlocks.push(...rebuildResult.failedBlocks);
+            }
+          } catch (error) {
+            console.warn(`重建受保护块子块失败: ${blockConfig.type}`, error);
+            failedBlocks.push({
+              blockType: blockConfig.type,
+              error: error instanceof Error ? error.message : String(error)
+            });
+          }
+          continue;
+        }
+        
         // 设置位置
         const configWithPosition = {
           ...blockConfig,
@@ -1223,6 +1289,25 @@ async function rebuildBlockChildren(
   return { failedBlocks };
 }
 
+// =============================================================================
+// 保护块类型定义
+// =============================================================================
+
+/**
+ * 受保护的根块类型集合
+ * 
+ * 这些块在增量更新时不会被删除，只会清空/重建其内部子块：
+ * - arduino_global: 全局代码块
+ * - arduino_setup: setup() 函数块
+ * - arduino_loop: loop() 函数块
+ * 
+ * 保护原因：
+ * 1. 这些是 Arduino 项目的核心结构块，用户无法从工具箱手动添加
+ * 2. 如果用户在 AI 加载过程中暂停，这些块消失后用户无法继续编程
+ * 3. 保留这些块可以提供更好的用户体验和容错性
+ */
+const PROTECTED_ROOT_BLOCKS = new Set(['arduino_global', 'arduino_setup', 'arduino_loop']);
+
 /**
  * 增量更新工作区（细粒度版本）
  * 
@@ -1230,6 +1315,8 @@ async function rebuildBlockChildren(
  * 1. 精确匹配：签名完全相同的块直接保留
  * 2. 类型匹配：同类型的块进行递归更新
  * 3. 清理/添加：删除无匹配的旧块，添加无匹配的新块
+ * 
+ * 🆕 保护机制：arduino_global、arduino_setup、arduino_loop 块不会被删除
  * 
  * 返回操作统计
  */
@@ -1455,18 +1542,67 @@ async function incrementalUpdate(
   }
   // console.log(`${'─'.repeat(60)}`);
   
-  // ============ 阶段 4：删除无匹配的旧块 ============
-  // console.log(`🔍 阶段 4: 清理无匹配的旧块`);
+  // ============ 阶段 4：删除无匹配的旧块（保护关键块）============
+  // console.log(`🔍 阶段 4: 清理无匹配的旧块（保留受保护块）`);
   
   for (const item of currentRootBlocks) {
     if (!processedExistingBlocks.has(item.block.id)) {
-      // console.log(`  🗑️ 删除无匹配块: ${item.serialized.type} (ID: ${item.block.id})`);
+      const blockType = item.serialized.type;
+      
+      // 🆕 保护机制：对于受保护的根块，不删除块本身
+      if (PROTECTED_ROOT_BLOCKS.has(blockType)) {
+        // 查找 ABS 中是否有这个块类型的未处理配置
+        const matchingNewConfig = newBlocksWithInfo.find(
+          newItem => !processedNewBlocks.has(newItem.index) && newItem.type === blockType
+        );
+        
+        if (matchingNewConfig) {
+          // ABS 中有该块的配置，重建子块
+          // console.log(`  🛡️ 保留受保护块: ${blockType} (ID: ${item.block.id})，使用 ABS 配置重建子块`);
+          try {
+            const rebuildResult = await rebuildBlockChildren(
+              workspace, item.block, matchingNewConfig.config,
+              variableNameToId, preprocessVariableReferences
+            );
+            if (rebuildResult.failedBlocks?.length) failedBlocks.push(...rebuildResult.failedBlocks);
+          } catch (error) {
+            console.warn(`重建受保护块子块失败: ${blockType}`, error);
+            failedBlocks.push({ blockType: blockType, error: error instanceof Error ? error.message : String(error) });
+          }
+          processedNewBlocks.add(matchingNewConfig.index);
+        } else {
+          // ABS 中没有该块的配置，只清空子块（保留空的主块）
+          // console.log(`  🛡️ 保留受保护块: ${blockType} (ID: ${item.block.id})，清空其子块`);
+          Blockly.Events.disable();
+          try {
+            // 清空受保护块的所有子块
+            for (const input of item.block.inputList || []) {
+              if (input.connection?.isConnected()) {
+                const child = input.connection.targetBlock();
+                if (child && !child.isShadow()) {
+                  input.connection.disconnect();
+                  child.dispose(true);
+                }
+              }
+            }
+          } catch (e) {
+            console.warn(`清空受保护块子块失败: ${blockType}`, e);
+          } finally {
+            Blockly.Events.enable();
+          }
+        }
+        // 标记为已处理，避免后续再次删除
+        processedExistingBlocks.add(item.block.id);
+        continue;
+      }
+      
+      // console.log(`  🗑️ 删除无匹配块: ${blockType} (ID: ${item.block.id})`);
       Blockly.Events.disable();
       try {
         item.block.dispose(true);
         removedCount++;
       } catch (e) {
-        console.warn(`删除块失败: ${item.serialized.type}`, e);
+        console.warn(`删除块失败: ${blockType}`, e);
       } finally {
         Blockly.Events.enable();
       }
@@ -1523,9 +1659,16 @@ async function incrementalUpdate(
   }
   
   // 删除多余的块（类型不在 ABS 中，或者数量超出预期）
+  // 🆕 但保留受保护的根块类型
   let cleanupCount = 0;
   for (const [type, blocks] of currentBlocksByType) {
     const expectedCount = expectedBlockCounts.get(type) || 0;
+    
+    // 🆕 保护机制：受保护的根块类型不删除
+    if (PROTECTED_ROOT_BLOCKS.has(type)) {
+      // console.log(`  🛡️ 跳过受保护块类型: ${type} (${blocks.length} 个)`);
+      continue;
+    }
     
     if (expectedCount === 0) {
       // 该类型完全不在 ABS 中，全部删除
