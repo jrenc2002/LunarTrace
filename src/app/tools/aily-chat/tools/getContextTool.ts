@@ -24,7 +24,7 @@ interface ProjectInfo {
     projectPath?: string;
     name?: string;
     board?: BoardInfo;
-    libraries?: LibraryInfo[];
+    installedLibraries?: LibraryInfo[];
     appDataPath?: string;
 }
 
@@ -245,7 +245,7 @@ async function getProjectInfo(projectService): Promise<ProjectInfo> {
             }
 
             if (libraries.length > 0) {
-                result.libraries = libraries;
+                result.installedLibraries = libraries;
             }
         }
 

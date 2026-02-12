@@ -1617,7 +1617,7 @@ function configureBlockFields(block: any, fields: FieldConfig): {
               failedFields.push({
                 fieldName,
                 value: actualValue,
-                error: `无效的下拉选项值: ${actualValue}`,
+                error: `无效的下拉选项值: ${actualValue}, 可用选项: [${availableOptions.join(', ')}]`,
                 suggestion
               });
             }
