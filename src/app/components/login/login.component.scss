@@ -6,7 +6,7 @@
     top: 0;
     background: rgba(0, 0, 0, 0.5);
     flex-direction: column;
-    z-index: 9;
+    z-index: 10;
 
     .inner {
         background: #292929;
@@ -19,6 +19,7 @@
 
 .description {
     width: 100%;
+    min-height: 200px;
 }
 
 .phone-login-box {
@@ -93,11 +94,12 @@
 .wechat {
     flex-direction: column;
     justify-content: flex-start;
-    height: 220px;
+    height: 200px;
+    padding-top: 10px;
 
     .qrcode {
-        width: 156px;
-        height: 156px;
+        width: 150px;
+        height: 150px;
         border: 1px solid #666;
         border-radius: 3px;
         margin-bottom: 15px;
@@ -143,12 +145,6 @@
             &.error {
                 color: #ff4d4f;
             }
-        }
-
-        .countdown-hint {
-            color: #888;
-            font-size: 12px;
-            margin-top: 6px;
         }
     }
 }

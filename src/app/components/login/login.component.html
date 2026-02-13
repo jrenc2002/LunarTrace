@@ -76,7 +76,7 @@
             <div class="wechat-status">
                 @if (wechatStatus === 'pending') {
                 <div class="status-message">{{ getWeChatStatusMessage() }}</div>
-                <div class="countdown-hint">{{ wechatQrcodeCountdown }}s {{ getWeChatCountdownHint() }}</div>
+                <!-- <div class="countdown-hint">{{ wechatQrcodeCountdown }}s {{ getWeChatCountdownHint() }}</div> -->
                 } @else if (wechatStatus === 'confirmed') {
                 <!-- <div class="status-message success">{{ getWeChatSuccessText() }}</div> -->
                 } @else if (wechatStatus === 'expired') {
