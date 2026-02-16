@@ -184,7 +184,8 @@
             "CREATING": "作成中"
         },
         "WARNINGS": {
-            "BETA_VERSION": "ベータ版、未検証、注意して使用"
+            "BETA_VERSION": "ベータ版、未検証、注意して使用",
+            "TODO": "このデバイスのサポートは近日公開予定"
         }
     },
     "LIB_MANAGER": {

@@ -184,7 +184,8 @@
             "CREATING": "Création en cours"
         },
         "WARNINGS": {
-            "BETA_VERSION": "Version bêta, non vérifiée, utilisez avec prudence"
+            "BETA_VERSION": "Version bêta, non vérifiée, utilisez avec prudence",
+            "TODO": "Le support de cet appareil sera bientôt disponible"
         }
     },
     "LIB_MANAGER": {

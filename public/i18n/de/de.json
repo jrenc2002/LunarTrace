@@ -184,7 +184,8 @@
             "CREATING": "Erstellen"
         },
         "WARNINGS": {
-            "BETA_VERSION": "Beta-Version, ungeprüft, mit Vorsicht verwenden"
+            "BETA_VERSION": "Beta-Version, ungeprüft, mit Vorsicht verwenden",
+            "TODO": "Geräteunterstützung kommt bald"
         }
     },
     "LIB_MANAGER": {

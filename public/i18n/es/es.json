@@ -184,7 +184,8 @@
             "CREATING": "Creando"
         },
         "WARNINGS": {
-            "BETA_VERSION": "Versión beta, no verificada, usar con precaución"
+            "BETA_VERSION": "Versión beta, no verificada, usar con precaución",
+            "TODO": "El soporte para este dispositivo estará disponible pronto"
         }
     },
     "LIB_MANAGER": {

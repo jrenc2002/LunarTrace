@@ -184,7 +184,8 @@
             "CREATING": "Criando"
         },
         "WARNINGS": {
-            "BETA_VERSION": "Versão beta, não verificada, use com cautela"
+            "BETA_VERSION": "Versão beta, não verificada, use com cautela",
+            "TODO": "O suporte a este dispositivo estará disponível em breve"
         }
     },
     "LIB_MANAGER": {

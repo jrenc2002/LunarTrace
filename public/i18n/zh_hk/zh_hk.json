@@ -184,7 +184,8 @@
             "CREATING": "正在創建"
         },
         "WARNINGS": {
-            "BETA_VERSION": "內測版本，未經驗證，謹慎使用"
+            "BETA_VERSION": "內測版本，未經驗證，謹慎使用",
+            "TODO": "該設備支持即將上線"
         }
     },
     "LIB_MANAGER": {

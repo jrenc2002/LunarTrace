@@ -233,7 +233,8 @@
             "CREATING": "正在创建"
         },
         "WARNINGS": {
-            "BETA_VERSION": "内测版本，未经验证，谨慎使用"
+            "BETA_VERSION": "内测版本，未经验证，谨慎使用",
+            "TODO": "该设备支持即将上线"
         }
     },
     "LIB_MANAGER": {

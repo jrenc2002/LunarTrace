@@ -45,6 +45,16 @@ export const BRAND_LIST = [
         img: 'sponsor\\seekfree\\logo.webp',
     },
     {
+        name: 'adafruit',
+        value: 'adafruit',
+        img: 'brands\\adafruit.webp'
+    },
+    {
+        name: 'sparkfun',
+        value: 'sparkfun',
+        img: 'brands\\sparkfun.webp'
+    },
+    {
         name: 'Other Brand',
         value: 'other',
         img: '',
