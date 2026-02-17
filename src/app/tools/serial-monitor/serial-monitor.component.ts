@@ -204,11 +204,30 @@ export class SerialMonitorComponent {
     // 检查并设置默认串口
     this.checkAndSetDefaultPort();
 
-    // 上传过程中断开串口连接
-    this.uiService.stateSubject.subscribe((state) => {
-      if (state.state == 'doing' && state.text == '固件上传中...' && this.switchValue) {
-        this.switchValue = false;
-        this.serialMonitorService.disconnect();
+    // 监听工具信号，处理上传过程中的串口断开/重连
+    this.uiService.actionSubject.subscribe((action: any) => {
+      if (action.action === 'signal' && action.type === 'tool') {
+        const signal = action.data as string;
+        if (signal === 'serial-monitor:disconnect' && this.switchValue) {
+          this.switchValue = false;
+          this.serialMonitorService.disconnect();
+          this.cd.detectChanges();
+        } else if (signal === 'serial-monitor:connect' && !this.switchValue && this.currentPort) {
+          this.switchValue = true;
+          this.serialMonitorService.connect({
+            path: this.currentPort,
+            baudRate: parseInt(this.currentBaudRate),
+            dataBits: parseInt(this.dataBits),
+            stopBits: parseFloat(this.stopBits),
+            parity: this.parity,
+            flowControl: this.flowControl
+          }).then(result => {
+            if (!result) {
+              this.switchValue = false;
+            }
+            this.cd.detectChanges();
+          });
+        }
       }
     });
 
