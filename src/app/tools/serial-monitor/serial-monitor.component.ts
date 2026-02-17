@@ -1,4 +1,5 @@
-import { ChangeDetectorRef, Component, ViewChild, ElementRef, AfterViewInit, OnDestroy, viewChild, viewChildren, signal, effect, untracked } from '@angular/core';
+import { ChangeDetectorRef, Component, ViewChild, ElementRef, AfterViewInit, OnDestroy, viewChild, viewChildren, signal, effect, untracked, DestroyRef, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { FormsModule } from '@angular/forms';
 import { NzInputModule } from 'ng-zorro-antd/input';
@@ -60,8 +61,7 @@ import { ElectronService } from '../../services/electron.service';
   styleUrl: './serial-monitor.component.scss',
 })
 export class SerialMonitorComponent {
-  // 记录上次的数据长度，用于优化更新
-  private lastDataLength = 0;
+  private destroyRef = inject(DestroyRef);
 
   // 更新防抖定时器
   private updateTimer: any = null;
@@ -197,15 +197,19 @@ export class SerialMonitorComponent {
   }
 
   ngAfterViewInit() {
-    this.serialMonitorService.dataUpdated.subscribe((data) => {
-      this.handleDataUpdate(data);
-    });
+    this.serialMonitorService.dataUpdated
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((data) => {
+        this.handleDataUpdate(data);
+      });
 
     // 检查并设置默认串口
     this.checkAndSetDefaultPort();
 
     // 监听工具信号，处理上传过程中的串口断开/重连
-    this.uiService.actionSubject.subscribe((action: any) => {
+    this.uiService.actionSubject
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((action: any) => {
       if (action.action === 'signal' && action.type === 'tool') {
         const signal = action.data as string;
         if (signal === 'serial-monitor:disconnect' && this.switchValue) {
@@ -233,7 +237,6 @@ export class SerialMonitorComponent {
 
     // 如果已有数据,滚动到底部
     if (this.dataList.length > 0) {
-      this.lastDataLength = this.dataList.length; // 初始化时记录数据长度
       this.scrollToBottom();
     }
   }
@@ -265,14 +268,12 @@ export class SerialMonitorComponent {
     }
     // 如果数据被清空
     if (this.dataList.length === 0) {
-      this.lastDataLength = 0;
       this.dataCount.set(0);
       this.cd.detectChanges();
       return;
     }
 
     const currentDataCount = this.dataList.length;
-    this.lastDataLength = currentDataCount;
     this.dataCount.set(currentDataCount);
     this.cd.detectChanges();
     // 如果开启自动滚动,滚动到底部
@@ -478,7 +479,6 @@ export class SerialMonitorComponent {
 
   clearView() {
     this.serialMonitorService.dataList = [];
-    this.lastDataLength = 0;
     this.dataCount.set(0);
     this.cd.detectChanges();
     // 清空图表数据
