@@ -1730,6 +1730,21 @@ ${JSON.stringify(errData)}
 
   autoScrollEnabled = true; // 控制是否自动滚动到底部
 
+  // 标记是否收到了 user_input_required 和 StreamComplete，两者都到齐后再设置 done
+  private pendingUserInput = false;
+  private streamCompleted = false;
+
+  /**
+   * 当 user_input_required 和 StreamComplete 都到齐后，执行最终状态设置
+   */
+  private finalizeUserInput(): void {
+    this.pendingUserInput = false;
+    this.streamCompleted = false;
+    if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
+      this.list[this.list.length - 1].state = 'done';
+    }
+    this.isWaiting = false;
+  }
 
   private _isWaiting = false;
 
@@ -1896,11 +1911,11 @@ ${JSON.stringify(errData)}
     this.chatService.cancelTask(this.sessionId).subscribe((res: any) => {
       if (res.status === 'success') {
         // console.log('任务已取消:', res);
-        this.isWaiting = false;
-        this.isCompleted = true;
       } else {
         console.warn('取消任务失败:', res);
       }
+      this.isWaiting = false;
+      this.isCompleted = true;
     });
   }
 
@@ -1918,6 +1933,10 @@ ${JSON.stringify(errData)}
       this.messageSubscription.unsubscribe();
       this.messageSubscription = null;
     }
+
+    // 重置待处理标记
+    this.pendingUserInput = false;
+    this.streamCompleted = false;
 
     this.messageSubscription = (this.debug ? this.chatService.debugStream(this.sessionId) : this.chatService.streamConnect(this.sessionId)).subscribe({
       next: async (data: any) => {
@@ -3624,12 +3643,20 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
               "is_error": toolResult?.is_error ?? false
             }, null, 2), false);
           } else if (data.type === 'user_input_required') {
-            // 处理用户输入请求 - 需要用户补充消息时停止等待状态
-            // 设置最后一条消息状态为done
-            if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
-              this.list[this.list.length - 1].state = 'done';
+            // 处理用户输入请求 - 需要与 StreamComplete 配合，两者都到齐后再设置 done
+            // 避免后续流式内容（如 aily-button）因提前设置 done 而未渲染
+            this.pendingUserInput = true;
+            if (this.streamCompleted) {
+              // StreamComplete 已先到达，立即完成
+              this.finalizeUserInput();
             }
-            this.isWaiting = false;
+          } else if (data.type === 'StreamComplete') {
+            // 流式内容传输完成
+            this.streamCompleted = true;
+            if (this.pendingUserInput) {
+              // user_input_required 已先到达，立即完成
+              this.finalizeUserInput();
+            }
           } else if (data.type === 'TaskCompleted') {
             const stopReason = data.stop_reason || 'unknown';
             // 判断停止原因
@@ -3707,6 +3734,10 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
       complete: () => {
         // 清理流式残留内容
         this.cleanupLastAiMessage();
+
+        // 清除待处理标记（兜底处理）
+        this.pendingUserInput = false;
+        this.streamCompleted = false;
 
         if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
           this.list[this.list.length - 1].state = 'done';
