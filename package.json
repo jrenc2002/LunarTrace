@@ -1,7 +1,7 @@
 {
   "name": "aily-blockly",
   "productName": "aily blockly",
-  "version": "0.9.27",
+  "version": "0.9.28",
   "author": "coloz",
   "description": "aily blockly dev",
   "main": "electron/main.js",
@@ -183,7 +183,6 @@
     "tslib": "^2.3.0",
     "ua-parser-js": "^2.0.5",
     "uuid": "^11.1.0",
-    "vscroll": "^1.8.0",
     "zone.js": "~0.15.0"
   },
   "devDependencies": {
