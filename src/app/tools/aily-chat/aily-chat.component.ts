@@ -76,7 +76,7 @@ import { getAbsSyntaxTool } from './tools/getAbsSyntaxTool';
 // import { flatCreateBlocksTool } from './tools/flatBlockTools';
 // // ABS 块操作工具 (Aily Block Syntax)
 // import { dslCreateBlocksTool } from './tools/dslBlockTools';
-import { todoWriteTool } from './tools';
+import { todoWriteTool, injectTodoReminder } from './tools';
 // import { arduinoSyntaxTool } from './tools/arduinoSyntaxTool';
 import { NzModalService } from 'ng-zorro-antd/modal';
 import { ConfigService } from '../../services/config.service';
@@ -2067,7 +2067,7 @@ ${JSON.stringify(errData)}
             let resultState = "done";
             let resultText = '';
 
-            // console.log("工具调用请求: ", data.tool_name, toolArgs);
+            console.log("工具调用请求: ", data.tool_name, toolArgs);
 
             // 定义 block 工具列表
             const blockTools = [
@@ -3468,6 +3468,11 @@ ${JSON.stringify(errData)}
             // 获取keyinfo
             // const keyInfo = await this.getKeyInfo();
 
+            // 集中注入 todo 提醒 - 对所有非 todo 工具的结果统一注入
+            if (toolResult && data.tool_name !== 'todo_write_tool') {
+              toolResult = injectTodoReminder(toolResult, data.tool_name);
+            }
+
             let toolContent = '';
 
             // 拼接到工具结果中返回
@@ -3632,7 +3637,7 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
               this.completeToolCall(data.tool_id, data.tool_name, finalState, resultText);
             }
 
-            // console.log(`工具调用结果: `, toolResult, resultText);
+            console.log(`工具调用结果: `, toolResult, resultText);
 
             this.send("tool", JSON.stringify({
               "type": "tool",
