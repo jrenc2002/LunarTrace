@@ -703,7 +703,7 @@ export class ArduinoGenerator extends Blockly.CodeGenerator {
     thisOnly = false,
   ): string {
     // === 追踪 body 代码：记录每个 block 自身直接返回的代码 ===
-    if (code && code.trim()) {
+    if (typeof code === 'string' && code.trim()) {
       this._blockBodyCode.set(block.id, code);
       this._blockTypes.set(block.id, block.type);
     }

@@ -1,7 +1,6 @@
 import { arduinoGenerator } from "../../../editors/blockly-editor/components/blockly/generators/arduino/arduino";
 import { ToolUseResult } from "./tools";
 import { jsonrepair } from 'jsonrepair';
-import { injectTodoReminder } from './todoWriteTool';
 import { ArduinoSyntaxTool } from "./arduinoSyntaxTool";
 import { fixBlockConfig } from './blockConfigFixer';
 import { normalizeInputNameForAbs } from './abiAbsConverter';
@@ -3426,8 +3425,7 @@ export async function smartBlockTool(args: SmartBlockArgs): Promise<SmartBlockRe
       }
     };
 
-    // 注入todo提醒
-    return injectTodoReminder(toolResult, 'smartBlockTool');
+    return toolResult;
   } catch (error) {
     console.warn('❌ 智能块工具执行失败:', error);
     const errorResult = {
@@ -3437,8 +3435,7 @@ export async function smartBlockTool(args: SmartBlockArgs): Promise<SmartBlockRe
       details: ``
     };
     
-    // 注入todo提醒
-    return injectTodoReminder(errorResult, 'smartBlockTool');
+    return errorResult;
   }
 }
 
@@ -5769,8 +5766,7 @@ ${workspaceOverview}`;
     metadata
   };
 
-  // 注入todo提醒
-  return injectTodoReminder(result, 'createCodeStructureTool');
+  return result;
 }
 
 /**
@@ -7746,8 +7742,7 @@ export async function getWorkspaceOverviewTool(args?: any): Promise<ToolUseResul
       })
     };
 
-    // 注入todo提醒
-    return injectTodoReminder(result, 'getWorkspaceOverviewTool');
+    return result;
 
   } catch (error) {
     console.warn('❌ 获取工作区概览失败:', error);
@@ -7757,8 +7752,7 @@ export async function getWorkspaceOverviewTool(args?: any): Promise<ToolUseResul
       details: JSON.stringify({ error: error.message })
     };
     
-    // 注入todo提醒
-    return injectTodoReminder(errorResult, 'getWorkspaceOverviewTool');
+    return errorResult;
   }
 }
 
@@ -8555,8 +8549,7 @@ export async function generateCodeTool(): Promise<ToolUseResult> {
       })
     };
 
-    // 注入todo提醒
-    return injectTodoReminder(result, 'generateCodeTool');
+    return result;
 
   } catch (error) {
     console.warn('❌ 代码生成失败:', error);
@@ -8566,8 +8559,7 @@ export async function generateCodeTool(): Promise<ToolUseResult> {
       details: JSON.stringify({ error: error.message })
     };
     
-    // 注入todo提醒
-    return injectTodoReminder(errorResult, 'generateCodeTool');
+    return errorResult;
   }
 }
 
@@ -9286,7 +9278,7 @@ export async function findBlockTool(args: any): Promise<ToolUseResult> {
       }, null, 2)
     };
 
-    return injectTodoReminder(toolResult, 'findBlockTool');
+    return toolResult;
   } catch (error) {
     console.warn('❌ 查找块失败:', error);
     const toolResult = {
@@ -9298,7 +9290,7 @@ export async function findBlockTool(args: any): Promise<ToolUseResult> {
       })
     };
 
-    return injectTodoReminder(toolResult, 'findBlockTool');
+    return toolResult;
   }
 }
 
@@ -9684,7 +9676,7 @@ export async function queryBlockDefinitionTool(projectService: any, args: {
       })
     };
 
-    return injectTodoReminder(toolResult, 'queryBlockDefinitionTool');
+    return toolResult;
   } catch (error) {
     console.warn('❌ 块定义查询失败:', error);
     const toolResult = {
@@ -9692,7 +9684,7 @@ export async function queryBlockDefinitionTool(projectService: any, args: {
       content: `❌ 块定义查询失败: ${error instanceof Error ? error.message : String(error)}`
     };
 
-    return injectTodoReminder(toolResult, 'queryBlockDefinitionTool');
+    return toolResult;
   }
 }
 
@@ -11616,7 +11608,7 @@ export async function analyzeLibraryBlocksTool(
         }
       };
 
-      return injectTodoReminder(toolResults, 'analyzeLibraryBlocksTool');
+      return toolResults;
     }
     
     if (!projectInfo.hasNodeModules) {
@@ -11634,7 +11626,7 @@ export async function analyzeLibraryBlocksTool(
         }
       };
 
-      return injectTodoReminder(toolResults, 'analyzeLibraryBlocksTool');
+      return toolResults;
     }
     
     // console.log(`✅ 项目验证通过，开始分析库...`);
@@ -11853,7 +11845,7 @@ export async function analyzeLibraryBlocksTool(
     metadata
   };
 
-  return injectTodoReminder(toolResults, 'analyzeLibraryBlocksTool');
+  return toolResults;
 }
 
 // /**
@@ -12128,5 +12120,5 @@ export async function verifyBlockExistenceTool(
     metadata
   };
 
-  return injectTodoReminder(toolResults, 'verifyBlockExistenceTool');
+  return toolResults;
 }

@@ -129,8 +129,8 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
     return;
     if (this.electronService.isElectron) {
       this.uiService.openWindow({
-        // path: `iframe?url=${encodeURIComponent('https://tool.aily.pro/connection-graph?type=json&theme=dark')}`,
-        path: `iframe?url=${encodeURIComponent('http://localhost:50002/connection-graph?type=json&theme=dark')}`,
+        path: `iframe?url=${encodeURIComponent('https://tool.aily.pro/connection-graph?type=json&theme=dark')}`,
+        // path: `iframe?url=${encodeURIComponent('http://localhost:50002/connection-graph?type=json&theme=dark')}`,
         data: { a: 1, b: 2 },
         width: 800,
         height: 600

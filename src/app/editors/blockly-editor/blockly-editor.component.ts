@@ -134,9 +134,9 @@ export class BlocklyEditorComponent {
       await this.cmdService.runAsync(`npm install`, projectPath);
       if (!(await this.npmService.installedOk(projectPath))) {
         setTimeout(() => {
-          this.noticeService.update({ 
-            title: this.translate.instant('NPM.INSTALL_FAILED_TITLE'), 
-            text: this.translate.instant('NPM.BOARD_DEPS_INSTALL_FAILED'), 
+          this.noticeService.update({
+            title: this.translate.instant('NPM.INSTALL_FAILED_TITLE'),
+            text: this.translate.instant('NPM.BOARD_DEPS_INSTALL_FAILED'),
             state: 'error'
           });
         }, 1000);
@@ -144,8 +144,8 @@ export class BlocklyEditorComponent {
       }
       setTimeout(() => {
         this.noticeService.update({
-          title: this.translate.instant('NPM.INSTALL_COMPLETE_TITLE'), 
-          text: this.translate.instant('NPM.DEPS_INSTALL_COMPLETE'), 
+          title: this.translate.instant('NPM.INSTALL_COMPLETE_TITLE'),
+          text: this.translate.instant('NPM.DEPS_INSTALL_COMPLETE'),
           state: 'done',
           showProgress: false,
           setTimeout: 3000
@@ -193,10 +193,12 @@ export class BlocklyEditorComponent {
       });
   }
 
-  openProjectManager() {
+  openProjectManager(event?: MouseEvent) {
     if (this.blocklyService.checkAiWaiting()) {
       return;
     }
+    // hideChaff 会关闭所有打开的下拉、输入、WidgetDiv 和 DropDownDiv
+    this.blocklyService.workspace.hideChaff();
     // this.uiService.closeToolAll();
     this.showLibraryManager = !this.showLibraryManager;
     this.cd.detectChanges();

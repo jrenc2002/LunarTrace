@@ -62,7 +62,8 @@ export class LogComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnInit() {
     // 初始化日志列表
-    this.logList = this.logService.list;
+    this.logList = [...this.logService.list];
+    this.logCount.set(this.logList.length);
   }
 
   ngAfterViewInit() {

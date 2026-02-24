@@ -827,13 +827,14 @@ Query and return specific content (for detailed info)
     },
     {
         name: "fetch",
-        description: `获取网络上的信息和资源，支持HTTP/HTTPS请求，能够处理大文件下载。支持多种请求方法和响应类型。注意：非必要时请避免使用此工具，以减少外部依赖和网络请求。`,
+        description: `获取网页内容和API数据。支持HTTP/HTTPS请求。
+注意：非必要时请避免使用此工具。如需搜索信息请优先使用 web_search 工具。`,
         input_schema: {
             type: 'object',
             properties: {
                 url: {
                     type: 'string',
-                    description: '要请求的URL地址'
+                    description: '要请求的URL地址（仅支持 http:// 和 https://）'
                 },
                 method: {
                     type: 'string',
@@ -855,8 +856,8 @@ Query and return specific content (for detailed info)
                 },
                 maxSize: {
                     type: 'number',
-                    description: '最大文件大小（字节）',
-                    default: 52428800
+                    description: '最大文件大小（字节），默认5MB',
+                    default: 5242880
                 },
                 responseType: {
                     type: 'string',
@@ -866,6 +867,32 @@ Query and return specific content (for detailed info)
                 }
             },
             required: ['url']
+        }
+    },
+    {
+        name: "web_search",
+        description: `搜索网络以获取最新信息。使用 DuckDuckGo 搜索引擎，返回搜索结果列表（标题、摘要、链接）。
+适用场景：
+- 查找最新的技术文档、库版本信息、API 参考
+- 搜索错误信息的解决方案
+- 获取项目、产品、工具的最新状态
+- 查找教程、指南和示例代码
+- 在不知道确切 URL 时先搜索再用 fetch 获取详情
+注意：搜索结果仅包含标题和摘要，如需完整内容请使用 fetch 工具访问结果中的链接。`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                query: {
+                    type: 'string',
+                    description: '搜索关键词，建议使用具体、有针对性的搜索词以获得更好的结果'
+                },
+                maxResults: {
+                    type: 'number',
+                    description: '返回的最大结果数量',
+                    default: 10
+                }
+            },
+            required: ['query']
         }
     },
     // {
@@ -1965,150 +1992,47 @@ Query and return specific content (for detailed info)
 //     },
     {
         name: "todo_write_tool",
-        description: `Creates and manages todo items for task tracking and progress management in the current session.
-Use this tool to create and manage todo items for tracking tasks and progress. This tool provides comprehensive todo management:
+        description: `Manage a structured todo list to track progress and plan tasks throughout your coding session. Use this tool frequently to ensure task visibility and proper planning.
 
-## When to Use This Tool
+When to use:
+- Complex multi-step work requiring planning and tracking
+- When user provides multiple tasks or requests
+- BEFORE starting work on any todo (mark as in-progress)
+- IMMEDIATELY after completing each todo (mark completed individually)
 
-Use this tool proactively in these scenarios:
+When NOT to use:
+- Single, trivial tasks completed in one step
+- Purely conversational/informational requests
 
-1. **Complex multi-step tasks** - When a task requires 3 or more distinct steps or actions
-2. **Non-trivial and complex tasks** - Tasks that require careful planning or multiple operations
-3. **User explicitly requests todo list** - When the user directly asks you to use the todo list
-4. **User provides multiple tasks** - When users provide a list of things to be done (numbered or comma-separated)
-5. **After receiving new instructions** - Immediately capture user requirements as todos
-6. **When you start working on a task** - Mark it as in_progress BEFORE beginning work. Ideally you should only have one todo as in_progress at a time
-7. **After completing a task** - Mark it as completed and add any new follow-up tasks discovered during implementation
+Task states:
+- not-started: Todo not yet begun
+- in-progress: Currently working (limit ONE at a time)
+- completed: Finished successfully
 
-## When NOT to Use This Tool
+CRITICAL workflow:
+1. Plan tasks by adding todos with specific, actionable items
+2. Mark ONE todo as in-progress before starting work
+3. Complete the work for that specific todo
+4. Mark that todo as completed IMMEDIATELY
+5. Move to next todo and repeat
 
-Skip using this tool when:
-1. There is only a single, straightforward task
-2. The task is trivial and tracking it provides no organizational benefit
-3. The task can be completed in less than 3 trivial steps
-4. The task is purely conversational or informational
+Operations:
+- **update**: 全量替换todo列表（推荐，传入完整的todos数组）
+- **add**: 添加单个任务（需要content字段）
+- **batch_add**: 批量添加任务（需要todos数组）
+- **list/read**: 查看当前任务列表
+- **toggle**: 切换任务状态循环 not-started → in-progress → completed
+- **delete**: 删除指定任务
+- **clear**: 清空所有任务
+- **stats**: 查看统计信息
 
-## Task States and Management
-
-1. **Task States**: Use these states to track progress:
-   - pending: Task not yet started
-   - in_progress: Currently working on (limit to ONE task at a time)
-   - completed: Task finished successfully
-
-2. **Task Management**:
-   - Update task status in real-time as you work
-   - Mark tasks complete IMMEDIATELY after finishing (don't batch completions)
-   - Only have ONE task in_progress at any time
-   - Complete current tasks before starting new ones
-   - Remove tasks that are no longer relevant from the list entirely
-
-3. **Task Completion Requirements**:
-   - ONLY mark a task as completed when you have FULLY accomplished it
-   - If you encounter errors, blockers, or cannot finish, keep the task as in_progress
-   - When blocked, create a new task describing what needs to be resolved
-   - Never mark a task as completed if:
-     - Tests are failing
-     - Implementation is partial
-     - You encountered unresolved errors
-     - You couldn't find necessary files or dependencies
-
-4. **Task Breakdown**:
-   - Create specific, actionable items
-   - Break complex tasks into smaller, manageable steps
-   - Use clear, descriptive task names
-
-## Tool Capabilities
-
-- **Create new todos**: Add tasks with content, priority, and status
-- **Update existing todos**: Modify any aspect of a todo (status, priority, content)
-- **Delete todos**: Remove completed or irrelevant tasks
-- **Batch operations**: Update multiple todos in a single operation
-- **Clear all todos**: Reset the entire todo list
-
-When in doubt, use this tool. Being proactive with task management demonstrates attentiveness and ensures you complete all requirements successfully.
-
-请求参数
-## 必填字段
-- \`operation\`: 操作类型 (add|list|update|toggle|delete|query|stats|clear|optimize)
-
-## 操作特定必填字段
-- **add**: \`content\` - 任务内容
-- **update**: \`todos\` - 任务数组
-- **toggle/delete**: \`id\` - 任务ID
-- **query**: \`query\` - 查询条件对象
-
-## 可选字段
-- \`priority\`: 优先级 (high|medium|low)，默认 'medium'
-- \`tags\`: 标签数组
-
-示例:
-## 添加单个任务 (add)
-\`\`\`json
-{
-  "operation": "add",
-  "content": "完成项目文档",
-  "priority": "high",
-  "status": "pending",
-}
-\`\`\`
-
-## 批量添加任务 (batch_add)
-\`\`\`json
-{
-  "operation": "batch_add",
-  "todos": [
-    {
-      "content": "任务1内容",
-      "priority": "medium",
-      "status": "pending"
-    },
-    {
-      "content": "任务2内容",
-      "priority": "low",
-      "status": "in_progress"
-    }
-  ]
-}
-\`\`\`
-
-## 批量更新任务 (update)
-\`\`\`json
-{
-  "operation": "update",
-  "todos": [
-    {
-      "id": "任务ID",
-      "content": "更新后的任务内容",
-      "status": "in_progress",
-      "priority": "high",
-      "tags": ["标签1", "标签2"]
-    }
-  ]
-}
-\`\`\`
-
-## 查看任务列表 (list)
-\`\`\`json
-{
-  "operation": "list"
-}
-\`\`\`
-
-## 切换任务状态 (toggle)
-\`\`\`json
-{
-  "operation": "toggle",
-  "id": "任务ID"
-}
-\`\`\`
-状态循环：\`pending\` → \`in_progress\` → \`completed\`
-`,
+IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的数字ID。Mark todos completed as soon as they are done. Do not batch completions.`,
         input_schema: {
             type: 'object',
             properties: {
                 operation: {
                     type: 'string',
-                    enum: ['add', 'batch_add', 'list', 'update', 'toggle', 'delete', 'query', 'stats', 'clear', 'optimize'],
+                    enum: ['add', 'batch_add', 'list', 'read', 'update', 'toggle', 'delete', 'stats', 'clear'],
                     description: '操作类型'
                 },
                 sessionId: {
@@ -2118,7 +2042,7 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
                 },
                 content: {
                     type: 'string',
-                    description: '任务内容（add操作必需）'
+                    description: '任务内容（add操作必需，也接受title字段）'
                 },
                 priority: {
                     type: 'string',
@@ -2128,9 +2052,9 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
                 },
                 status: {
                     type: 'string',
-                    enum: ['pending', 'in_progress', 'completed'],
-                    description: '任务状态，默认为pending',
-                    default: 'pending'
+                    enum: ['not-started', 'in-progress', 'completed'],
+                    description: '任务状态，默认为not-started',
+                    default: 'not-started'
                 },
                 tags: {
                     type: 'array',
@@ -2142,26 +2066,26 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
                     description: '预估工时'
                 },
                 id: {
-                    type: 'string',
-                    description: '任务ID（toggle/delete操作必需）'
+                    type: 'number',
+                    description: '任务ID - 简单递增数字（toggle/delete操作必需）'
                 },
                 todos: {
                     type: 'array',
-                    description: '任务数组（update/batch_add操作使用）',
+                    description: '任务数组（update时为全量替换，batch_add时为新增列表）',
                     items: {
                         type: 'object',
                         properties: {
                             id: {
-                                type: 'string',
-                                description: '任务唯一标识符'
+                                type: 'number',
+                                description: '任务ID（递增数字，如 1, 2, 3）'
                             },
                             content: {
                                 type: 'string',
-                                description: '任务内容描述'
+                                description: '任务内容描述（也接受title字段）'
                             },
                             status: {
                                 type: 'string',
-                                enum: ['pending', 'in_progress', 'completed'],
+                                enum: ['not-started', 'in-progress', 'completed'],
                                 description: '任务状态'
                             },
                             priority: {
@@ -2180,37 +2104,6 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
                             }
                         },
                         required: ['content']
-                    }
-                },
-                query: {
-                    type: 'object',
-                    description: '查询条件（query操作使用）',
-                    properties: {
-                        status: {
-                            type: 'array',
-                            items: {
-                                type: 'string',
-                                enum: ['pending', 'in_progress', 'completed']
-                            },
-                            description: '状态筛选'
-                        },
-                        priority: {
-                            type: 'array',
-                            items: {
-                                type: 'string',
-                                enum: ['high', 'medium', 'low']
-                            },
-                            description: '优先级筛选'
-                        },
-                        contentMatch: {
-                            type: 'string',
-                            description: '内容关键词搜索'
-                        },
-                        tags: {
-                            type: 'array',
-                            items: { type: 'string' },
-                            description: '标签筛选'
-                        }
                     }
                 }
             },
