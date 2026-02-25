@@ -22,37 +22,21 @@ import { CommonModule } from '@angular/common';
       .ac-state {
         display: flex;
         align-items: center;
-        gap: 8px;
-        padding: 6px 12px;
+        gap: 5px;
+        padding: 5px 10px;
         border-radius: 5px;
         font-size: 13px;
         margin: 4px 0;
+        background-color: #3a3a3a;
+        color: #ccc;
+        overflow: hidden;
       }
-      .ac-state[data-state='doing'] {
-        background: rgba(24, 144, 255, 0.12);
-        border: 1px solid rgba(24, 144, 255, 0.3);
-        color: #91caff;
-      }
-      .ac-state[data-state='done'] {
-        background: rgba(143, 195, 31, 0.12);
-        border: 1px solid rgba(143, 195, 31, 0.3);
-        color: #95de64;
-      }
-      .ac-state[data-state='warn'] {
-        background: rgba(212, 160, 23, 0.12);
-        border: 1px solid rgba(212, 160, 23, 0.3);
-        color: #ffd666;
-      }
-      .ac-state[data-state='error'] {
-        background: rgba(255, 77, 79, 0.12);
-        border: 1px solid rgba(255, 77, 79, 0.3);
-        color: #ff7875;
-      }
-      .ac-state[data-state='info'] {
-        background: rgba(82, 196, 26, 0.08);
-        border: 1px solid rgba(82, 196, 26, 0.2);
-        color: #b7eb8f;
-      }
+      .ac-state[data-state='doing'] i { color: #1890ff; }
+      .ac-state[data-state='done'] i { color: #52c41a; }
+      .ac-state[data-state='warn'] i { color: #faad14; }
+      .ac-state[data-state='error'] i { color: #ff4d4f; }
+      .ac-state[data-state='info'] i { color: #1890ff; }
+      .ac-state i { flex-shrink: 0; font-size: 14px; margin-right: 5px; }
       .ac-state-text {
         flex: 1;
         width: 0;

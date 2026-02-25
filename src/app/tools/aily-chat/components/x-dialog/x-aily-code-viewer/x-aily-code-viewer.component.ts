@@ -18,14 +18,15 @@ import { CommonModule } from '@angular/common';
         margin: 0;
         border-radius: 4px;
         overflow-x: auto;
-        background: #0d1117;
-        padding: 10px 12px;
+        background: #1e1e1e;
+        padding: 12px;
+        border: 1px solid #444;
       }
       pre code {
         font-family: Consolas, 'Courier New', monospace;
-        font-size: 13px;
-        line-height: 1.6;
-        color: #e1e4e8;
+        font-size: 12px;
+        line-height: 1.4;
+        color: #abb2bf;
       }
       code {
         font-family: Consolas, 'Courier New', monospace;
@@ -33,6 +34,7 @@ import { CommonModule } from '@angular/common';
         color: #ffbd08;
         padding: 1px 4px;
         border-radius: 3px;
+        background: #1e1e1e;
       }
     `,
   ],

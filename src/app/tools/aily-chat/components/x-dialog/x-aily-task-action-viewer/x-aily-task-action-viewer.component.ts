@@ -33,31 +33,41 @@ import { CommonModule } from '@angular/common';
   `,
   styles: [`
     .ac-task {
-      border: 1px solid #3c3c3c; border-radius: 5px;
-      margin: 4px 0; overflow: hidden; background: #252526;
+      border-radius: 8px; padding: 12px 16px; margin: 8px 0;
+      background-color: #2d2d2d; border: 1px solid #404040;
+      color: #e0e0e0; overflow: hidden;
     }
     .ac-task[data-type="error"]   { border-color: rgba(255,77,79,.35); }
     .ac-task[data-type="timeout"] { border-color: rgba(212,160,23,.35); }
     .ac-task-header {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 12px; border-bottom: 1px solid #3c3c3c;
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 0 12px 0; border-bottom: none;
     }
-    .ac-task-label { font-size: 13px; color: #d4d4d4; font-weight: 500; }
-    .ac-task-msg { padding: 6px 12px; margin: 0; font-size: 13px; color: #888; line-height: 1.6; }
-    .ac-task-btns { display: flex; gap: 6px; padding: 6px 12px 10px; flex-wrap: wrap; }
-    .ac-task-done { display: block; padding: 4px 12px 10px; font-size: 12px; color: #666; }
+    .ac-task-label { font-size: 13px; color: #ccc; font-weight: 500; }
+    .ac-task-msg { padding: 0 0 12px 0; margin: 0; font-size: 13px; color: #ccc; line-height: 1.5; }
+    .ac-task-btns { display: flex; gap: 8px; padding-left: 34px; flex-wrap: wrap; }
+    .ac-task-done { display: block; padding: 4px 0 0 34px; font-size: 12px; color: #666; }
     .ac-btn {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 4px 12px; border-radius: 5px; font-size: 13px;
-      cursor: pointer; border: 1px solid #505050;
-      background: #3a3c3f; color: #d4d4d4;
-      transition: all 0.2s;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500;
+      cursor: pointer; border: none; outline: none;
+      transition: all 0.2s ease;
     }
-    .ac-btn:hover:not(:disabled) { border-color: #1890ff; color: #91caff; background: rgba(24,144,255,.1); }
-    .ac-btn[data-type="primary"] { background: #1890ff; border-color: #1890ff; color: #fff; }
-    .ac-btn[data-type="primary"]:hover:not(:disabled) { background: #40a9ff; }
-    .ac-btn-ghost { background: none; border-color: #505050; color: #818992; }
-    .ac-btn-ghost:hover { color: #a5a5a5 !important; background: rgba(255,255,255,.05) !important; border-color: #666 !important; }
+    .ac-btn[data-type="primary"] {
+      background-color: #1890ff; color: #fff;
+    }
+    .ac-btn[data-type="primary"]:hover:not(:disabled) { background-color: #40a9ff; }
+    .ac-btn:not([data-type="primary"]):not(.ac-btn-ghost) {
+      background-color: #404040; color: #e0e0e0; border: 1px solid #555;
+    }
+    .ac-btn:not([data-type="primary"]):not(.ac-btn-ghost):hover {
+      background-color: #4a4a4a; border-color: #666;
+    }
+    .ac-btn-ghost {
+      background-color: transparent; color: #999; padding: 6px 8px;
+    }
+    .ac-btn-ghost:hover { color: #ccc; background-color: rgba(255,255,255,.05); }
+    .ac-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   `],
 })
 export class XAilyTaskActionViewerComponent {

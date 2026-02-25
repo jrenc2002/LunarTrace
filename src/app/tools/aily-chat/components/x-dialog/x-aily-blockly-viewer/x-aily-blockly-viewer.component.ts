@@ -31,12 +31,13 @@ import { CommonModule } from '@angular/common';
   `,
   styles: [`
     .ac-blockly {
-      border: 1px solid #3c3c3c; border-radius: 5px;
-      margin: 4px 0; overflow: hidden; background: #252526;
+      border: 1px solid #444; border-radius: 5px;
+      margin: 12px 0; overflow: hidden; background: #3a3a3a;
     }
+    .ac-blockly:hover { background: #3f3f3f; }
     .ac-blockly-header {
       display: flex; align-items: center; gap: 6px;
-      padding: 8px 12px; border-bottom: 1px solid #3c3c3c;
+      padding: 8px 12px; border-bottom: 1px solid #444;
       font-size: 13px; font-weight: 500; color: #d4d4d4;
     }
     .ac-blockly-chips {
@@ -51,11 +52,12 @@ import { CommonModule } from '@angular/common';
     }
     .ac-chip em { font-style: normal; color: #666; font-size: 10px; }
     .ac-blockly-code {
-      margin: 0; padding: 10px 12px; font-size: 12px;
-      line-height: 1.6; overflow-x: auto;
+      margin: 0; padding: 12px; font-size: 12px;
+      line-height: 1.4; overflow-x: auto;
       background: #1e1e1e; color: #abb2bf;
-      border-top: 1px solid #3c3c3c;
+      border-top: 1px solid #444;
       font-family: Consolas, 'Courier New', monospace;
+      border-radius: 4px;
     }
   `],
 })
