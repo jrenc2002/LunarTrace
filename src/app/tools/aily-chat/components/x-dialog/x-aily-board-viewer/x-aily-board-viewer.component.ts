@@ -60,7 +60,7 @@ import { ConfigService } from '../../../../../services/config.service';
       font-size: 11px; padding: 2px 6px; border-radius: 3px;
       background: rgba(255,255,255,.08); color: #a5a5a5;
     }
-    .ac-card-desc { font-size: 12px; color: #888; margin: 0 0 8px 0; line-height: 1.6; }
+    .ac-card-desc { font-size: 12px; color: #888; margin: 0 0 8px 0; line-height: 1.6; white-space: break-spaces; }
     .ac-card-meta { display: flex; gap: 12px; font-size: 12px; color: #666; margin-bottom: 8px; }
     .ac-card-actions { display: flex; gap: 6px; }
     .ac-action-btn {
