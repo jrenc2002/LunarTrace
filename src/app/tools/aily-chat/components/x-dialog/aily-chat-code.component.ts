@@ -19,6 +19,9 @@ import { XAilyBlocklyViewerComponent } from './x-aily-blockly-viewer/x-aily-bloc
 import { XAilyErrorViewerComponent } from './x-aily-error-viewer/x-aily-error-viewer.component';
 import { XAilyTaskActionViewerComponent } from './x-aily-task-action-viewer/x-aily-task-action-viewer.component';
 import { XAilyCodeViewerComponent } from './x-aily-code-viewer/x-aily-code-viewer.component';
+import { NzModalService } from 'ng-zorro-antd/modal';
+import { MermaidComponent } from '../aily-mermaid-viewer/mermaid/mermaid.component';
+import mermaid from 'mermaid';
 
 /** 所有 aily-* 自定义代码块类型 */
 const AILY_TYPES = [
@@ -79,13 +82,15 @@ const AILY_TYPES = [
       <x-aily-think-viewer [data]="parsedData" />
     }
     @if (isType('aily-mermaid') || isMermaidStd) {
-      <ngx-mermaid-code
-        [children]="mermaidCode"
-        [block]="true"
-        [lang]="'mermaid'"
-        [streamStatus]="streamStatus"
-        placeholderText="正在生成图表…"
-      />
+      <div class="aily-mermaid-clickable" (click)="openMermaidFullscreen()" title="点击全屏查看">
+        <ngx-mermaid-code
+          [children]="mermaidCode"
+          [block]="true"
+          [lang]="'mermaid'"
+          [streamStatus]="streamStatus"
+          placeholderText="正在生成图表…"
+        />
+      </div>
     }
     @if (isType('aily-context') && parsedData) {
       <x-aily-context-viewer [data]="parsedData" />
@@ -103,7 +108,16 @@ const AILY_TYPES = [
       <x-aily-code-viewer [children]="children" [block]="block" [lang]="lang" />
     }
   `,
-  styles: [`:host { display: block; }`],
+  styles: [`
+    :host { display: block; }
+    .aily-mermaid-clickable {
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .aily-mermaid-clickable:hover {
+      opacity: 0.95;
+    }
+  `],
 })
 export class AilyChatCodeComponent implements OnChanges, OnDestroy {
   // ===== Inputs (由 x-markdown 注入) =====
@@ -122,7 +136,10 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
   parsedData: any = null;
   parsedArray: any[] | null = null;
 
-  constructor(private cdr: ChangeDetectorRef) {}
+  constructor(
+    private cdr: ChangeDetectorRef,
+    private modal: NzModalService,
+  ) {}
 
   // ===== Getters =====
   isType(t: string): boolean { return this.block && this.lang === t; }
@@ -186,5 +203,43 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
     const el = document.createElement('textarea');
     el.innerHTML = html;
     return el.value;
+  }
+
+  /** 点击 mermaid 块时打开全屏 SVG 查看 */
+  async openMermaidFullscreen(): Promise<void> {
+    const code = this.mermaidCode;
+    if (!code?.trim()) return;
+
+    try {
+      const diagramId = `mermaid-fullscreen-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const result = await mermaid.render(diagramId, code);
+      const svg = typeof result === 'object' && result?.svg ? result.svg : typeof result === 'string' ? result : '';
+
+      // 清理 mermaid 渲染时可能插入的临时节点
+      document.getElementById(diagramId)?.remove();
+
+      if (!svg?.trim()) {
+        console.warn('Mermaid render returned empty SVG');
+        return;
+      }
+
+      const enhancedSvg = svg
+        .replace('<svg', `<svg id="${diagramId}" data-mermaid-svg="true"`)
+        .replace(/width="[^"]*"/, 'width="100%"')
+        .replace(/height="[^"]*"/, 'height="auto"')
+        .replace(/<svg([^>]*)>/, (_m: string, attrs: string) => `<svg${attrs} style="max-width: 100%; height: auto; display: block;">`);
+
+      this.modal.create({
+        nzTitle: null,
+        nzFooter: null,
+        nzClosable: false,
+        nzBodyStyle: { padding: '0' },
+        nzContent: MermaidComponent,
+        nzData: { svg: enhancedSvg },
+        nzWidth: '90vw',
+      });
+    } catch (err) {
+      console.warn('Mermaid fullscreen failed:', err);
+    }
   }
 }

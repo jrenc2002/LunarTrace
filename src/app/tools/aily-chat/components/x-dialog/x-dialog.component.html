@@ -9,6 +9,9 @@
       <i class="fa-light fa-user-astronaut"></i>&nbsp;&nbsp;aily
     }
   </div>
+  @if(content==='[thinking...]'){
+    <div class="content thinking">Thinking...</div>
+  }
   <div class="content">
     @if (streamContent()) {
       <x-markdown

@@ -2,6 +2,7 @@ import { Component, ElementRef, ViewChild, OnDestroy } from '@angular/core';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { FormsModule } from '@angular/forms';
 import { XDialogComponent } from './components/x-dialog/x-dialog.component';
+import { DialogComponent } from './components/dialog/dialog.component';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { ToolContainerComponent } from '../../components/tool-container/tool-container.component';
 import { UiService } from '../../services/ui.service';
@@ -148,6 +149,7 @@ import { absVersionControlHandler } from './tools/absVersionControlTool';
     FormsModule,
     CommonModule,
     XDialogComponent,
+    DialogComponent,
     NzButtonModule,
     ToolContainerComponent,
     NzResizableModule,
