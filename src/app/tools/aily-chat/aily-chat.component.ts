@@ -575,13 +575,13 @@ export class AilyChatComponent implements OnDestroy {
       case 'getBlockConnectionCompatibilityTool':
         return "分析块连接兼容性...";
       // 连线图工具
-      case 'generate_connection_graph':
+      case 'generate_schematic':
         return "分析引脚信息，准备连线方案...";
       case 'get_pinmap_summary':
         return "获取引脚摘要信息...";
       case 'get_sensor_pinmap_catalog':
         return "扫描传感器库 pinmap 目录...";
-      case 'validate_connection_graph':
+      case 'validate_schematic':
         return "验证连线配置安全性...";
       case 'generate_pinmap':
         return "获取 pinmap 生成参考信息...";
@@ -719,13 +719,13 @@ export class AilyChatComponent implements OnDestroy {
         return `块定义查询完成`;
       case 'getBlockConnectionCompatibilityTool':
         return `块连接兼容性分析完成`;
-      case 'generate_connection_graph':
+      case 'generate_schematic':
         return `连线方案生成完成`;
       case 'get_pinmap_summary':
         return `引脚摘要获取成功`;
       case 'get_sensor_pinmap_catalog':
         return `传感器目录获取完成`;
-      case 'validate_connection_graph':
+      case 'validate_schematic':
         return `连线配置验证完成`;
       case 'generate_pinmap':
         return `Pinmap 参考信息获取完成`;
@@ -1997,7 +1997,7 @@ ${JSON.stringify(errData)}
           return; // 如果不在等待状态，直接返回
         }
 
-        // console.log("Recv: ", data);
+        console.log("Recv: ", data);
 
         try {
           if (data.type === 'ModelClientStreamingChunkEvent') {
@@ -3498,7 +3498,7 @@ ${JSON.stringify(errData)}
                   //                     }
                   //                     break;
 
-                  case 'generate_connection_graph':
+                  case 'generate_schematic':
                     this.appendMessage('aily', `
 
 \`\`\`aily-state
@@ -3546,7 +3546,7 @@ ${JSON.stringify(errData)}
                     }
                     break;
 
-                  case 'validate_connection_graph':
+                  case 'validate_schematic':
                     this.appendMessage('aily', `
 
 \`\`\`aily-state
