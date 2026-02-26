@@ -83,7 +83,7 @@ import { NzModalService } from 'ng-zorro-antd/modal';
 import { ConfigService } from '../../services/config.service';
 import { createSecurityContext } from './services/security.service';
 import { AilyChatConfigService } from './services/aily-chat-config.service';
-import { MermaidCodeComponent } from 'ngx-x-markdown';
+import { MERMAID_DARK_THEME, MermaidCodeComponent } from 'ngx-x-markdown';
 
 export interface Tool {
   name: string;
@@ -1116,7 +1116,7 @@ Do not create non-existent boards and libraries.
 
     // 初始化 MermaidCodeComponent（x-dialog 中 aily-mermaid 使用）
     import('mermaid').then(m => {
-      MermaidCodeComponent.setMermaidInstance(m.default, { startOnLoad: false });
+      MermaidCodeComponent.setMermaidInstance(m.default, { startOnLoad: false, ...MERMAID_DARK_THEME });
     });
 
     // 设置全局工具引用，供测试和调试使用

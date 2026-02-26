@@ -8108,10 +8108,10 @@ ng-zorro-antd@^19.0.1:
     date-fns "^2.16.1"
     tslib "^2.3.0"
 
-ngx-x-markdown@^0.0.1:
-  version "0.0.1"
-  resolved "https://registry.npmmirror.com/ngx-x-markdown/-/ngx-x-markdown-0.0.1.tgz#077dc9e89faa26e7b85eb034c1cc73c300ba66ca"
-  integrity sha512-HaOMa+UqFKIk4Op3Uv1ly29oEOIQ/uzVWlk0WWNl3Ghnp2ec/51QKDD2udRqkFeGFRe0kosoYvK2pdpjP6AgQQ==
+ngx-x-markdown@^0.0.2:
+  version "0.0.2"
+  resolved "https://registry.npmmirror.com/ngx-x-markdown/-/ngx-x-markdown-0.0.2.tgz#76ebb7e40f4c6e60fbacd3d8283abdc00d28d91f"
+  integrity sha512-a8P1F6t/ntpOhRp/pvxsJ3MazklpB36t7CLXMi8kieB72LD8JgbNA5HYPUkUh8gB20Cxr27aMQj3r5ow0uabdA==
   dependencies:
     tslib "^2.3.0"
 
