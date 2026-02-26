@@ -30,21 +30,23 @@ import { CommonModule } from '@angular/common';
   `,
   styles: [`
     .ac-mermaid {
-      border: 1px solid #3c3c3c; border-radius: 5px;
-      margin: 4px 0; overflow: hidden; background: #1e1e1e;
+      border-radius: 5px; margin: 4px 0; overflow: auto;
+      background-color: #3a3a3a; max-height: 500px;
     }
+    .ac-mermaid:hover { background-color: #3f3f3f; }
     .ac-mermaid-pending {
       display: flex; align-items: center; justify-content: center;
-      gap: 10px; padding: 28px 16px; color: #666; font-size: 13px;
-      min-height: 80px;
+      gap: 12px; padding: 24px 16px; min-height: 120px;
+      color: #888; font-size: 13px;
     }
     .ac-mermaid-svg {
       text-align: center; overflow-x: auto; padding: 16px;
     }
-    .ac-mermaid-svg ::ng-deep svg { max-width: 100%; height: auto; }
+    .ac-mermaid-svg ::ng-deep svg { max-width: 100%; height: auto; background: transparent !important; }
+    .ac-mermaid-svg ::ng-deep .label-container { fill: #333 !important; }
     .ac-mermaid-err {
-      padding: 8px 14px; background: rgba(255,77,79,.1);
-      color: #ff7875; font-size: 12px;
+      padding: 16px; display: flex; align-items: center; gap: 8px;
+      color: #999; font-size: 13px;
     }
     @keyframes ac-spin { to { transform: rotate(360deg); } }
     .ac-spin { animation: ac-spin 0.8s linear infinite; display: inline-block; }

@@ -173,7 +173,7 @@
     "mermaid": "^11.9.0",
     "monaco-editor": "^0.52.2",
     "ng-zorro-antd": "^19.0.1",
-    "ngx-x-markdown": "^0.0.1",
+    "ngx-x-markdown": "^0.0.2",
     "penpal": "^7.0.6",
     "pinyin-pro": "^3.26.0",
     "rxjs": "~7.8.0",

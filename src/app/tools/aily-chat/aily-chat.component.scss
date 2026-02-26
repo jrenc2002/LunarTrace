@@ -319,4 +319,8 @@ nz-resize-handle {
       user-select: none;
     }
   }
+
+  pre, code, kbd, samp, label, span {
+    font-family: "MiSans Regular", "FiraCode Regular";
+  }
 }

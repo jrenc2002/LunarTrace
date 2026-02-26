@@ -43,11 +43,18 @@ import { ConfigService } from '../../../../../services/config.service';
   `,
   styles: [`
     .ac-card {
-      border: 1px solid #444; border-radius: 5px;
-      padding: 10px 12px; margin: 4px 0; background: #252526;
+      border-radius: 5px; padding: 5px 10px; margin: 4px 0;
+      background-color: #3a3a3a; color: #ccc; min-height: 60px;
     }
-    .ac-card-loading { color: #888; font-size: 13px; padding: 8px 0; }
-    .ac-card-err { color: #ff7875; font-size: 13px; padding: 4px 0; }
+    .ac-card:hover { background-color: #3f3f3f; }
+    .ac-card-loading {
+      display: flex; justify-content: center; align-items: center; min-height: 50px;
+      gap: 10px; color: #888; font-size: 13px;
+    }
+    .ac-card-err {
+      display: flex; justify-content: center; align-items: center; min-height: 50px;
+      color: #999; font-size: 13px;
+    }
     .ac-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
     .ac-card-icon { font-size: 18px; color: #888; flex-shrink: 0; }
     .ac-card-title { flex: 1; display: flex; align-items: baseline; gap: 6px; }

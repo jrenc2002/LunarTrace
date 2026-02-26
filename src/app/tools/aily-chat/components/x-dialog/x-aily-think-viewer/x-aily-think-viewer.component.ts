@@ -16,10 +16,11 @@ import { CommonModule } from '@angular/common';
   template: `
     <div class="ac-think" [class.expanded]="thinkExpanded">
       <div class="ac-think-header" (click)="thinkExpanded = !thinkExpanded">
-        <i
-          class="fa-light"
-          [class]="data?.isComplete ? 'fa-lightbulb' : 'fa-rotate ac-spin'"
-        ></i>
+        @if (data?.isComplete) {
+          <i class="fa-light fa-circle-check ac-think-icon done"></i>
+        } @else {
+          <i class="fa-duotone fa-solid fa-loader ac-think-icon loading ac-spin"></i>
+        }
         <span>{{ data?.isComplete ? 'Think' : 'Thinking...' }}</span>
         <i class="fa-light fa-chevron-down ac-think-arrow"></i>
       </div>
@@ -31,46 +32,52 @@ import { CommonModule } from '@angular/common';
   styles: [
     `
       .ac-think {
-        border: 1px solid #3c3c3c;
         border-radius: 5px;
+        padding: 5px 10px;
         margin: 4px 0;
         overflow: hidden;
-        background: #222427;
+        background-color: #3a3a3a;
+        color: #ccc;
       }
       .ac-think-header {
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 8px 12px;
+        padding: 0;
         cursor: pointer;
         font-size: 13px;
-        color: #a5a5a5;
         user-select: none;
         transition: background 0.2s;
       }
       .ac-think-header:hover {
-        background: rgba(255, 255, 255, 0.04);
+        background: rgba(255, 255, 255, 0.05);
+        margin: -5px -10px;
+        padding: 5px 10px;
       }
+      .ac-think-icon { flex-shrink: 0; }
+      .ac-think-icon.loading { color: #1890ff; }
+      .ac-think-icon.done { color: #52c41a; }
       .ac-think-arrow {
         margin-left: auto;
         font-size: 10px;
-        color: #666;
+        color: #888;
         transition: transform 0.2s;
       }
       .ac-think.expanded .ac-think-arrow {
         transform: rotate(180deg);
       }
       .ac-think-body {
-        padding: 6px 12px 10px;
+        padding: 8px 2px;
+        margin: 5px -10px 0 0;
         font-size: 12px;
-        color: #777;
-        line-height: 1.7;
+        line-height: 1.6;
+        color: #999;
         white-space: pre-wrap;
-        border-top: 1px solid #3c3c3c;
-        max-height: 220px;
+        word-break: break-word;
+        max-height: 200px;
         overflow-y: auto;
         scrollbar-width: thin;
-        scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+        scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
       }
       @keyframes ac-spin {
         to {

@@ -16,19 +16,21 @@ import { CommonModule } from '@angular/common';
   `,
   styles: [`
     .ac-context {
-      border: 1px solid #3c3c3c; border-radius: 5px;
-      margin: 4px 0; overflow: hidden;
+      border-radius: 5px; padding: 5px 10px;
+      background-color: rgba(212, 160, 23, 0.1);
+      border: 1px solid rgba(212, 160, 23, 0.3);
+      color: #ccc; overflow: hidden; margin: 4px 0;
     }
     .ac-context-header {
       display: flex; align-items: center; gap: 6px;
-      padding: 6px 12px; background: #252526;
-      border-bottom: 1px solid #3c3c3c;
-      font-size: 12px; color: #888;
+      padding: 0; font-size: 13px; color: #d4a017;
     }
+    .ac-context-header i { font-size: 13px; flex-shrink: 0; }
     .ac-context-body {
-      margin: 0; padding: 10px 12px; font-size: 12px;
+      margin: 8px 0 0 0; padding: 0; font-size: 12px;
       line-height: 1.6; overflow-x: auto;
-      background: #1e1e1e; color: #abb2bf;
+      color: #999; max-height: 200px; overflow-y: auto;
+      white-space: pre-wrap; word-break: break-word;
       font-family: Consolas, 'Courier New', monospace;
     }
   `],

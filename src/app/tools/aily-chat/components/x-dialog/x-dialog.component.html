@@ -10,7 +10,12 @@
     }
   </div>
   @if(content==='[thinking...]'){
-    <div class="content thinking">Thinking...</div>
+    <div class="content thinking">
+      <span class="thinking-text">Thinking</span>
+      <span class="wave-dots">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      </span>
+    </div>
   }
   <div class="content">
     @if (streamContent()) {
