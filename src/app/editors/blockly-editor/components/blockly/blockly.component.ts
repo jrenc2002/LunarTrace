@@ -149,7 +149,9 @@ export class BlocklyComponent implements DoCheck, OnDestroy {
 
   // RxJS debounce optimization
   private codeGenerationSubject = new Subject<void>();
+  private minimapSyncSubject = new Subject<void>();
   private destroy$ = new Subject<void>();
+  private minimap: Minimap | null = null;
   // Track previous #include and #define for dependency change detection
   private previousDependencies = '';
   // Control bitmap upload handler visibility
@@ -266,6 +268,7 @@ export class BlocklyComponent implements DoCheck, OnDestroy {
     this.initDevMode();
     this.initPrompt();
     this.initCodeGenerationDebounce();
+    this.initMinimapSyncDebounce();
     this.bitmapUploadService.uploadRequestSubject.subscribe((request) => {
       const modalRef = this.modal.create({
         nzTitle: null,
@@ -441,8 +444,8 @@ export class BlocklyComponent implements DoCheck, OnDestroy {
       multiselectPlugin.init(this.options);
 
       if (this.configData.blockly.minimap) {
-        const minimap = new Minimap(this.workspace);
-        minimap.init();
+        this.minimap = new Minimap(this.workspace);
+        this.minimap.init();
       }
 
       // 动态连接块监听
@@ -459,6 +462,8 @@ export class BlocklyComponent implements DoCheck, OnDestroy {
       (window as any)['blocklyWorkspace'] = this.workspace;
       this.workspace.addChangeListener((event: any) => {
         this.codeGenerationSubject.next();
+        // 工作区变更时同步 Minimap（含 AI 批量修改 blocks 的场景）
+        this.minimapSyncSubject.next();
 
         // 监听 block 选中事件，更新 selectedBlockSubject
         if (event.type === Blockly.Events.SELECTED) {
@@ -576,6 +581,36 @@ export class BlocklyComponent implements DoCheck, OnDestroy {
     }.bind(this);
   }
 
+
+  /**
+   * 初始化 Minimap 同步防抖
+   * 工作区变更时（含 AI 批量修改）同步更新 Minimap，避免小地图不刷新
+   */
+  private initMinimapSyncDebounce(): void {
+    this.minimapSyncSubject.pipe(
+      debounceTime(300),
+      takeUntil(this.destroy$)
+    ).subscribe(() => this.syncMinimap());
+  }
+
+  /**
+   * 将主工作区状态全量同步到 Minimap
+   * 使用 Xml 路径加载，避免 serialization.load 触发的 BLOCK_MOVE 事件导致 "block could not be found" 错误
+   */
+  private syncMinimap(): void {
+    const m = this.minimap as any;
+    if (!m?.minimapWorkspace || !this.workspace) return;
+    try {
+      const xml = Blockly.Xml.workspaceToDom(this.workspace, true);
+      m.minimapWorkspace.clear();
+      Blockly.Xml.domToWorkspace(xml, m.minimapWorkspace);
+      Blockly.renderManagement.finishQueuedRenders().then(() => {
+        if (m.minimapWorkspace) m.minimapWorkspace.zoomToFit();
+      });
+    } catch (e) {
+      console.warn('[Blockly] Minimap sync failed:', e);
+    }
+  }
 
   /**
    * 初始化代码生成的防抖订阅

@@ -929,8 +929,8 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
     // 只处理代码块结束符号 ``` (不是开始符号)
     // 查找所有的 ``` 并判断是否为结束符号
     content = content.replace(/```([^\n`]*)/g, (match, afterBackticks) => {
-      // 如果 ``` 后面跟的是 aily 类型，说明这是开始符号，不需要换行
-      const isAilyStart = ailyTypes.some(type => afterBackticks.startsWith(type));
+      // 如果 ``` 后面跟的是 aily 类型或某类型的流式前缀（如 aily-），说明这是开始符号，不需要换行
+      const isAilyStart = ailyTypes.some(type => afterBackticks.startsWith(type) || type.startsWith(afterBackticks));
 
       if (isAilyStart) {
         // 这是 aily 代码块的开始，保持原样

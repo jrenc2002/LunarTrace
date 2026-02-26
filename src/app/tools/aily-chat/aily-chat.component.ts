@@ -1,6 +1,7 @@
 import { Component, ElementRef, ViewChild, OnDestroy } from '@angular/core';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { FormsModule } from '@angular/forms';
+import { XDialogComponent } from './components/x-dialog/x-dialog.component';
 import { DialogComponent } from './components/dialog/dialog.component';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { ToolContainerComponent } from '../../components/tool-container/tool-container.component';
@@ -82,6 +83,7 @@ import { NzModalService } from 'ng-zorro-antd/modal';
 import { ConfigService } from '../../services/config.service';
 import { createSecurityContext } from './services/security.service';
 import { AilyChatConfigService } from './services/aily-chat-config.service';
+import { MermaidCodeComponent } from 'ngx-x-markdown';
 
 export interface Tool {
   name: string;
@@ -146,6 +148,7 @@ import { absVersionControlHandler } from './tools/absVersionControlTool';
     NzInputModule,
     FormsModule,
     CommonModule,
+    XDialogComponent,
     DialogComponent,
     NzButtonModule,
     ToolContainerComponent,
@@ -259,6 +262,25 @@ export class AilyChatComponent implements OnDestroy {
 }
 \`\`\`\n\n
 `;
+
+    // 完成/错误/警告状态：从最近消息向前查找同 id 的块，原地替换，不追加新块
+    if (toolCallInfo.state !== ToolCallState.DOING) {
+      const idEscaped = toolCallInfo.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // [^`]* 限定只在单个代码块内匹配（不含反引号），避免跨越多个 ``` 块错误替换
+      const pattern = '`{3}aily-state[^`]*"id"\\s*:\\s*"' + idEscaped + '"[^`]*`{3}';
+      for (let i = this.list.length - 1; i >= 0; i--) {
+        if (this.list[i].role !== 'aily') continue;
+        if (new RegExp(pattern).test(this.list[i].content)) {
+          const newBlock =
+            '```aily-state\n{\n  "state": "' + toolCallInfo.state +
+            '",\n  "text": "' + this.makeJsonSafe(toolCallInfo.text) +
+            '",\n  "id": "' + toolCallInfo.id + '"\n}\n```';
+          this.list[i].content = this.list[i].content.replace(new RegExp(pattern, 'g'), newBlock);
+          this.chatService.historyChatMap.set(this.sessionId, this.list);
+          return;
+        }
+      }
+    }
 
     this.appendMessage('aily', stateMessage);
 
@@ -1091,6 +1113,11 @@ Do not create non-existent boards and libraries.
 
     this.prjPath = this.projectService.currentProjectPath === this.projectService.projectRootPath ? "" : this.projectService.currentProjectPath;
     this.prjRootPath = this.projectService.projectRootPath;
+
+    // 初始化 MermaidCodeComponent（x-dialog 中 aily-mermaid 使用）
+    import('mermaid').then(m => {
+      MermaidCodeComponent.setMermaidInstance(m.default, { startOnLoad: false });
+    });
 
     // 设置全局工具引用，供测试和调试使用
     (window as any)['editBlockTool'] = {
