@@ -236,7 +236,7 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
         nzBodyStyle: { padding: '0' },
         nzContent: MermaidComponent,
         nzData: { svg: enhancedSvg },
-        nzWidth: '90vw',
+        nzWidth: 'fit-content',
       });
     } catch (err) {
       console.warn('Mermaid fullscreen failed:', err);

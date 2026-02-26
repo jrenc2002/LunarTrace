@@ -314,6 +314,8 @@ nz-resize-handle {
     background-color: #3a3a3a;
     max-height: 500px;
     overflow: auto;
+    scrollbar-width: thin !important;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 
     > svg {
       user-select: none;
