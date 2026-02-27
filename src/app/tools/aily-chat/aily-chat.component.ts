@@ -65,7 +65,7 @@ import {
 import { syncAbsFileHandler } from './tools/syncAbsFileTool';
 import { getAbsSyntaxTool } from './tools/getAbsSyntaxTool';
 // 连线图工具
-import { generateConnectionGraphTool, getPinmapSummaryTool, validateConnectionGraphTool, getSensorPinmapCatalogTool, generatePinmapTool, savePinmapTool, getCurrentSchematicTool } from './tools/connectionGraphTool';
+import { generateConnectionGraphTool, getPinmapSummaryTool, validateConnectionGraphTool, getSensorPinmapCatalogTool, generatePinmapTool, savePinmapTool, getCurrentSchematicTool, applySchematicTool } from './tools/connectionGraphTool';
 import { ConnectionGraphService } from '../../services/connection-graph.service';
 // // 原子化块操作工具
 // import {
@@ -609,6 +609,8 @@ export class AilyChatComponent implements OnDestroy {
         return "读取当前连线图...";
       case 'validate_schematic':
         return "验证连线配置安全性...";
+      case 'apply_schematic':
+        return "解析 AWS 并保存连线图...";
       case 'generate_pinmap':
         return "获取 pinmap 生成参考信息...";
       case 'save_pinmap':
@@ -755,6 +757,8 @@ export class AilyChatComponent implements OnDestroy {
         return `当前连线图获取完成`;
       case 'validate_schematic':
         return `连线配置验证完成`;
+      case 'apply_schematic':
+        return `AWS 解析并保存完成`;
       case 'generate_pinmap':
         return `Pinmap 参考信息获取完成`;
       case 'save_pinmap':
@@ -3723,6 +3727,33 @@ ${JSON.stringify(errData)}
                         const parsed = JSON.parse(toolResult.content);
                         resultText = parsed.exists ? '当前连线图读取成功' : '当前项目没有连线图';
                       } catch { resultText = '连线图读取完成'; }
+                    }
+                    break;
+
+                  case 'apply_schematic':
+                    this.appendMessage('aily', `
+
+\`\`\`aily-state
+{
+  "state": "doing",
+  "text": "解析 AWS 并保存连线图...",
+  "id": "${toolCallId}"
+}
+\`\`\`\n\n
+                    `);
+                    toolResult = await applySchematicTool(
+                      this.connectionGraphService,
+                      this.projectService,
+                      toolArgs
+                    );
+                    if (toolResult?.is_error) {
+                      resultState = "error";
+                      resultText = 'AWS 解析失败';
+                    } else {
+                      try {
+                        const parsed = JSON.parse(toolResult.content);
+                        resultText = parsed.success ? `连线图保存成功（${parsed.summary?.connectionCount || 0} 条连线）` : 'AWS 处理完成';
+                      } catch { resultText = 'AWS 解析完成'; }
                     }
                     break;
                 }

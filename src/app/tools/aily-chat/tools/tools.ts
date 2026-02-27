@@ -2287,21 +2287,55 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
     },
     {
         name: 'validate_schematic',
-        description: `验证并保存接线图 JSON。检查安全性（短路、电压不匹配、引脚冲突、缺少电源/GND 等），通过后保存到项目文件并通知接线图界面刷新。
+        description: `验证并保存接线图。支持 JSON 和 AWS 两种格式输入。
 
-**调用时机：** generate_schematic 返回引脚摘要后，你生成 JSON 完毕，立即调用本工具。
+**JSON 格式：** 通过 connection_data 参数传入完整 JSON
+**AWS 格式：** 通过 aws 参数传入 AWS (Aily Wiring Syntax) 语法
+
+**调用时机：** generate_schematic 返回引脚摘要后，你生成连线后调用本工具。
 
 **推荐流程：**
 1. **get_component_catalog(includeBoards: true)**：获取开发板 + 组件的 pinmapId 列表
-2. **generate_schematic(pinmapIds: [...])**：传入 pinmapId，获取引脚摘要和连线规则
-3. **你生成连线 JSON**：根据返回的 pinSummaries 和 instructions
-4. **validate_schematic(connection_data: {...})**：验证并保存`,
+2. **generate_schematic(pinmapIds: [...])**：获取引脚摘要和连线规则
+3. **你生成连线**：输出 AWS 格式或 JSON 格式
+4. **validate_schematic**：验证并保存`,
         input_schema: {
             type: 'object',
             properties: {
                 connection_data: {
                     type: 'object',
-                    description: '要验证并保存的接线图 JSON（符合 connection_output.json 格式）。如果为空则验证项目中已保存的接线图。'
+                    description: 'JSON 格式的接线图数据（符合 connection_output.json 格式）。与 aws 参数二选一。'
+                },
+                aws: {
+                    type: 'string',
+                    description: 'AWS (Aily Wiring Syntax) 格式的接线描述。与 connection_data 参数二选一。'
+                }
+            },
+            required: []
+        },
+        agents: ["schematicAgent"]
+    },
+    {
+        name: 'apply_schematic',
+        description: `将 AWS 格式连线转换为 JSON 并保存。这是 AWS 工作流的核心工具。
+
+**功能：**
+- 不传参数：读取项目中的 connection.aws 文件，解析并保存到 connection_output.json
+- 传 aws 参数：直接解析传入的 AWS 内容，同时保存为 connection.aws 和 connection_output.json
+
+**成功：** 保存文件并通知接线图界面刷新
+**失败：** 返回解析错误 + 完整 AWS 语法参考
+
+**AWS 编辑流程（推荐）：**
+1. read_file 读取 connection.aws
+2. replace_string_in_file 修改 AWS 内容
+3. apply_schematic() 解析并保存`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                aws: {
+                    type: 'string',
+                    description: '可选。直接传入 AWS 内容（首次生成时使用）。不传则从项目中的 connection.aws 文件读取。'
                 }
             },
             required: []

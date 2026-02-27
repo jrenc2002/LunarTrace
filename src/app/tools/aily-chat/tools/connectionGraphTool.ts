@@ -127,6 +127,13 @@ export async function generateConnectionGraphTool(
             : `${ref.modelId}_${instanceIndex + 1}`;
         }
         
+        // 跳过开发板类型的 pinmapId（已在第一步通过 getBoardPinSummary 添加）
+        if (pinmapId.startsWith('board-')) {
+          // 开发板已通过 boardSummary 添加，跳过避免重复
+          loadedPinmapIds.push(pinmapId);
+          continue;
+        }
+        
         // 检测是否为软件组件（WiFi/MQTT等无引脚组件）
         const softwareCheck = connectionGraphService.checkSoftwareComponent(pinmapId, packagesBasePath);
         if (softwareCheck.isSoftware && softwareCheck.catalog) {
@@ -380,23 +387,82 @@ ${failedPinmapIds.map(f => `- ${f.pinmapId}: ${f.reason}`).join('\n')}
 这些组件无法生成连线，请先调用 get_component_catalog 确认其状态，再使用 generate_pinmap + save_pinmap 生成配置。`;
     }
 
+    // === 生成 AWS 格式的引脚摘要 ===
+    const { generatePinmapSummary, AWS_SYNTAX_REFERENCE } = await import('../../../services/connection-aws');
+    
+    // 构建 AWS 格式的组件摘要数组
+    const awsSummaryParts: string[] = [];
+    
+    // 添加开发板摘要
+    if (boardSummary) {
+      awsSummaryParts.push(generatePinmapSummary(boardSummary, 'board', 'board'));
+    }
+    
+    // 添加组件摘要
+    for (const ci of componentInstances) {
+      const summary = pinSummaries.find(ps => ps.componentId === ci.alias);
+      if (summary) {
+        awsSummaryParts.push(generatePinmapSummary(summary, ci.alias, ci.pinmapId));
+      }
+    }
+    
+    const awsPinmapSummary = awsSummaryParts.join('\n\n');
+
     const result: any = {
-      pinSummaries,
+      awsPinmapSummary,  // AWS 格式的引脚摘要（替代 pinSummaries JSON）
       loadedPinmapIds,
       failedPinmapIds: failedPinmapIds.length > 0 ? failedPinmapIds : undefined,
       componentInstances: componentInstances.length > 0 ? componentInstances : undefined,
       softwareComponents: softwareComponents.length > 0 ? softwareComponents : undefined,
       notFoundComponents: notFoundComponents.length > 0 ? notFoundComponents : undefined,
-      instructions: `请根据上面的引脚信息和分析规则，输出符合格式要求的连线 JSON。确保：
-1. 每条连线都有正确的 from/to 端点（ref + pinId + function）
-2. type 和 color 对应正确
-3. 电源、接地、通信线齐全
-4. components 数组中每个组件的 refId 使用指定的别名（如 "dht_indoor"）
-5. components 数组中的 pinmapId 字段使用完整标识符（如 "${loadedPinmapIds[0] || 'lib-dht:dht20:asair'}"）
-6. 多实例组件需设置 instance 字段（0-based）
-7. 连线的 from.ref / to.ref 使用组件的 refId（别名）
-8. 软件组件需设置 componentType: "software" 和 softwareConfig 字段（包含 libraryType、properties 等）
-9. 输出完成后请调用 validate_schematic 工具验证安全性。${multiInstanceNote}${softwareComponentNote}${failedComponentsWarning}`,
+      awsSyntax: AWS_SYNTAX_REFERENCE,
+      instructions: `请根据上面的引脚信息，使用 AWS 语法输出连线方案，然后调用 apply_schematic(aws: "...") 保存。
+
+### 预定义别名
+- \`board\` - 开发板（自动可用，无需 USE 声明）
+
+### AWS 输出格式
+\`\`\`aws
+# 组件声明（只声明外部组件，board 无需声明）
+USE <pinmapId> AS <别名> "<显示名称>"
+
+# 连线
+CONNECT <from别名>.<引脚名> -> <to别名>.<引脚名> @<类型>
+
+# 引脚重映射（可选）
+ASSIGN <别名>.<引脚名> AS <角色> @<类型>:<总线号>
+\`\`\`
+
+### 连接类型
+- @power (红色): 电源连接
+- @gnd (黑色): 接地连接
+- @i2c (紫色): I2C 数据线
+- @spi (橙色): SPI 数据线
+- @uart (青色): UART 数据线
+- @digital (蓝色): 数字信号
+- @analog (绿色): 模拟信号
+- @pwm (黄色): PWM 信号
+
+### 示例
+\`\`\`aws
+# board 是预定义别名，只需声明外部组件
+USE lib-dht:dht20:asair AS dht "温湿度传感器"
+
+# 电源连接
+CONNECT board.3V3 -> dht.VCC @power
+CONNECT board.GND -> dht.GND @gnd
+
+# I2C 连接
+CONNECT board.SDA -> dht.SDA @i2c
+CONNECT board.SCL -> dht.SCL @i2c
+\`\`\`
+
+### 注意事项
+1. \`board\` 是预定义别名，无需 USE 声明
+2. 引脚名使用 awsPinmapSummary 中列出的名称
+3. 所有组件都需要电源(power)和接地(gnd)连线
+4. I2C 设备需要 SDA 和 SCL 连线
+5. 输出完成后调用 apply_schematic(aws: "你的AWS代码") 保存${multiInstanceNote}${softwareComponentNote}${failedComponentsWarning}`,
     };
 
     const toolResult: ToolUseResult = {
@@ -964,7 +1030,7 @@ export async function generatePinmapTool(
 1. **id**: 使用 "component_${ref.modelId}_${ref.variantId}" 格式
 2. **name**: 组件的中文名称
 3. **width/height**: 组件图形的宽高（像素），建议 200x100 或根据引脚数量调整
-4. **images**: 组件图片数组（可以先用占位图 "images/placeholder.png"）
+4. **images**: 组件图片的base64编码，用于在连线图中展示组件图标
 5. **pins**: 引脚数组，每个引脚包含：
    - id: "pin_1", "pin_2" 等
    - x, y: 引脚在图形上的位置
@@ -1155,6 +1221,328 @@ export async function getCurrentSchematicTool(
     return {
       is_error: true,
       content: `读取当前连线图失败: ${error.message || error}`,
+    };
+  }
+}
+
+/**
+ * apply_schematic 工具
+ *
+ * 将 AWS (Aily Wiring Syntax) 格式连线转换为 JSON 并保存。
+ * 这是 AWS 工作流的核心工具。
+ * 
+ * 功能：
+ * - 不传参数：读取项目中的 connection.aws 文件，解析并保存
+ * - 传 aws 参数：直接解析传入的 AWS 内容，同时保存 .aws 和 .json
+ */
+export async function applySchematicTool(
+  connectionGraphService: ConnectionGraphService,
+  projectService: ProjectService,
+  input: { aws?: string }
+): Promise<ToolUseResult> {
+  try {
+    const currentProjectPath = projectService.currentProjectPath;
+    if (!currentProjectPath) {
+      return {
+        is_error: true,
+        content: '当前没有打开的项目，请先创建或打开一个项目。',
+      };
+    }
+
+    const boardPackagePath = await projectService.getBoardPackagePath();
+    if (!boardPackagePath) {
+      return {
+        is_error: true,
+        content: '当前项目没有配置开发板，请先选择开发板。',
+      };
+    }
+
+    // 导入 AWS 模块
+    const { parseAWS, hasErrors, formatErrors, AWS_SYNTAX_REFERENCE, CONNECTION_COLORS, generateAWS } = await import('../../../services/connection-aws');
+
+    let awsContent: string;
+    const awsFilePath = connectionGraphService.getAWSFilePath();
+    const jsonFilePath = connectionGraphService.getJSONFilePath();
+
+    // 1. 获取 AWS 内容
+    if (input.aws) {
+      awsContent = input.aws;
+      // 同时保存 .aws 文件
+      connectionGraphService.saveAWSFile(awsContent);
+    } else {
+      // 从文件读取
+      if (!connectionGraphService.hasAWSFile()) {
+        return {
+          is_error: true,
+          content: JSON.stringify({
+            error: '项目中没有 connection.aws 文件',
+            tip: '请先使用 generate_schematic 生成连线，然后输出 AWS 格式并调用 apply_schematic(aws: "...") 保存。',
+          }, null, 2),
+        };
+      }
+      awsContent = connectionGraphService.readAWSFile();
+    }
+
+    // 2. 解析 AWS
+    const parsed = parseAWS(awsContent);
+    
+    // 3. 检查解析错误
+    if (hasErrors(parsed)) {
+      const errorMsg = formatErrors(parsed);
+      return {
+        is_error: true,
+        content: JSON.stringify({
+          success: false,
+          errors: parsed.errors,
+          warnings: parsed.warnings,
+          errorMessage: errorMsg,
+          syntaxReference: AWS_SYNTAX_REFERENCE,
+          tip: '请根据上述错误信息修正 AWS 语法后重试。',
+        }, null, 2),
+      };
+    }
+
+    // 4. 加载组件配置
+    const packagesBasePath = `${currentProjectPath}/node_modules`;
+    const configMap = new Map<string, ComponentConfig>();
+    const loadErrors: Array<{ pinmapId: string; error: string; line: number }> = [];
+
+    // 预先添加开发板配置（board 是预定义别名，不需要 USE 声明）
+    const boardConfig = connectionGraphService.getBoardConfig(boardPackagePath);
+    if (boardConfig) {
+      configMap.set('board', boardConfig);
+    } else {
+      // 检查 AWS 中是否有使用 board.xxx 的连线
+      const usesBoardRef = parsed.connections.some(
+        conn => conn.fromRef === 'board' || conn.toRef === 'board'
+      );
+      if (usesBoardRef) {
+        return {
+          is_error: true,
+          content: JSON.stringify({
+            success: false,
+            error: '开发板引脚配置不存在',
+            tip: '请先使用 generate_pinmap + save_pinmap 为当前开发板生成 pinmap 配置，然后重新调用 apply_schematic。',
+            syntaxReference: AWS_SYNTAX_REFERENCE,
+          }, null, 2),
+        };
+      }
+    }
+
+    for (const use of parsed.uses) {
+      const config = connectionGraphService.loadPinmapById(use.pinmapId, packagesBasePath);
+      if (!config) {
+        // 尝试解析为开发板
+        if (use.pinmapId.startsWith('board:') || use.pinmapId.startsWith('board-')) {
+          const boardConfig = connectionGraphService.getBoardConfig(boardPackagePath);
+          if (boardConfig) {
+            configMap.set(use.alias, boardConfig);
+            continue;
+          }
+        }
+        loadErrors.push({
+          pinmapId: use.pinmapId,
+          error: `无法加载组件配置，请检查 pinmapId 是否正确或 pinmap 文件是否存在`,
+          line: use.line,
+        });
+        continue;
+      }
+      configMap.set(use.alias, config);
+    }
+
+    if (loadErrors.length > 0) {
+      return {
+        is_error: true,
+        content: JSON.stringify({
+          success: false,
+          loadErrors,
+          message: '部分组件配置加载失败',
+          tip: '请按以下步骤生成缺失的 pinmap 配置：\n1. 调用 get_component_catalog 确认组件状态\n2. 对于 status=needs_generation 的组件，调用 generate_pinmap(pinmapId: "...")\n3. 根据返回的参考信息生成 pinmap JSON\n4. 调用 save_pinmap 保存配置\n5. 重新调用 apply_schematic',
+          syntaxReference: AWS_SYNTAX_REFERENCE,
+        }, null, 2),
+      };
+    }
+
+    // 5. 解析引脚并构建连线
+    const { resolvePin } = await import('../../../services/connection-aws');
+    const connections: any[] = [];
+    const resolveErrors: Array<{ message: string; line: number; source: string }> = [];
+
+    let connIndex = 1;
+    for (const conn of parsed.connections) {
+      const fromConfig = configMap.get(conn.fromRef);
+      const toConfig = configMap.get(conn.toRef);
+
+      if (!fromConfig) {
+        resolveErrors.push({
+          message: `找不到组件 "${conn.fromRef}" 的配置`,
+          line: conn.line,
+          source: `${conn.fromRef}.${conn.fromPin}`,
+        });
+        continue;
+      }
+
+      if (!toConfig) {
+        resolveErrors.push({
+          message: `找不到组件 "${conn.toRef}" 的配置`,
+          line: conn.line,
+          source: `${conn.toRef}.${conn.toPin}`,
+        });
+        continue;
+      }
+
+      // 解析引脚
+      const fromResolved = resolvePin(fromConfig, conn.fromPin);
+      if (!fromResolved) {
+        resolveErrors.push({
+          message: `在组件 "${conn.fromRef}" (${fromConfig.name}) 中找不到引脚 "${conn.fromPin}"`,
+          line: conn.line,
+          source: `${conn.fromRef}.${conn.fromPin}`,
+        });
+        continue;
+      }
+
+      const toResolved = resolvePin(toConfig, conn.toPin);
+      if (!toResolved) {
+        resolveErrors.push({
+          message: `在组件 "${conn.toRef}" (${toConfig.name}) 中找不到引脚 "${conn.toPin}"`,
+          line: conn.line,
+          source: `${conn.toRef}.${conn.toPin}`,
+        });
+        continue;
+      }
+
+      // 构建连线
+      const connType = conn.type as keyof typeof CONNECTION_COLORS;
+      const color = CONNECTION_COLORS[connType] || CONNECTION_COLORS.other;
+      const label = conn.note || `${conn.type.toUpperCase()}: ${conn.fromPin} → ${conn.toPin}`;
+
+      connections.push({
+        id: `conn_${connIndex++}`,
+        from: {
+          ref: conn.fromRef,
+          pinId: fromResolved.pinId,
+          function: fromResolved.functionName,
+        },
+        to: {
+          ref: conn.toRef,
+          pinId: toResolved.pinId,
+          function: toResolved.functionName,
+        },
+        type: conn.type,
+        label,
+        color,
+        bus: conn.bus,
+      });
+    }
+
+    if (resolveErrors.length > 0) {
+      return {
+        is_error: true,
+        content: JSON.stringify({
+          success: false,
+          resolveErrors,
+          message: '引脚解析失败',
+          tip: '请检查引脚名称是否正确。可使用 generate_schematic 获取正确的引脚名称。',
+          syntaxReference: AWS_SYNTAX_REFERENCE,
+        }, null, 2),
+      };
+    }
+
+    // 6. 构建完整 JSON
+    const description = parsed.comments.length > 0
+      ? parsed.comments[0]
+      : `连线方案（${parsed.uses.map(u => u.label || u.alias).join(' + ')}）`;
+
+    // 先添加开发板组件
+    const components: any[] = [];
+    if (boardConfig) {
+      components.push({
+        refId: 'board',
+        componentId: boardConfig.id,
+        componentName: boardConfig.name,
+        pinmapId: `board-${boardConfig.id}:default`,
+        isBoard: true,
+      });
+    }
+
+    // 添加 USE 声明的组件
+    for (const [index, use] of parsed.uses.entries()) {
+      const config = configMap.get(use.alias)!;
+      const sameTypeCount = parsed.uses
+        .slice(0, index)
+        .filter(u => u.pinmapId === use.pinmapId)
+        .length;
+
+      components.push({
+        refId: use.alias,
+        componentId: config.id,
+        componentName: use.label || config.name,
+        pinmapId: use.pinmapId,
+        instance: sameTypeCount,
+      });
+    }
+
+    const jsonData = {
+      version: '1.0.0',
+      description,
+      components,
+      connections,
+    };
+
+    // 7. 执行安全校验
+    const validationResult = connectionGraphService.validateConnectionGraph(jsonData);
+
+    // 8. 保存 JSON
+    connectionGraphService.saveJSONFile(jsonData);
+
+    // 9. 同步保存 AWS（确保两个文件一致）
+    if (!input.aws) {
+      // 如果是从文件读取的，不需要再写
+    } else {
+      // 已经在步骤 1 保存过了
+    }
+
+    // 10. 通知 iframe 刷新
+    if (connectionGraphService.hasActiveIframe) {
+      try {
+        await connectionGraphService.iframeApi.receiveData({
+          componentConfigs: Object.fromEntries(configMap),
+          components: jsonData.components,
+          connections: jsonData.connections,
+        });
+      } catch (e) {
+        // iframe 通知失败不影响保存结果
+        console.warn('通知 iframe 刷新失败:', e);
+      }
+    }
+
+    // 11. 返回结果
+    const result = {
+      success: true,
+      message: 'AWS 解析成功，连线图已保存',
+      files: {
+        aws: awsFilePath,
+        json: jsonFilePath,
+      },
+      summary: {
+        componentCount: components.length,
+        connectionCount: connections.length,
+        components: components.map(c => ({ refId: c.refId, name: c.componentName })),
+      },
+      validation: validationResult,
+      warnings: parsed.warnings.length > 0 ? parsed.warnings : undefined,
+    };
+
+    const toolResult: ToolUseResult = {
+      is_error: false,
+      content: JSON.stringify(result, null, 2),
+    };
+    return injectTodoReminder(toolResult, 'apply_schematic');
+  } catch (error: any) {
+    return {
+      is_error: true,
+      content: `apply_schematic 执行失败: ${error.message || error}`,
     };
   }
 }

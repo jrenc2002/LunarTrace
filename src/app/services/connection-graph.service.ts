@@ -1165,6 +1165,78 @@ export class ConnectionGraphService {
   }
 
   // -------------------------------------------------
+  // AWS (Aily Wiring Syntax) 文件操作
+  // -------------------------------------------------
+
+  /**
+   * 获取 AWS 文件路径
+   */
+  getAWSFilePath(projectPath?: string): string {
+    const basePath = projectPath || this.projectService.currentProjectPath;
+    return this.electronService.pathJoin(basePath, 'connection.aws');
+  }
+
+  /**
+   * 获取 JSON 文件路径（统一使用 connection_output.json）
+   */
+  getJSONFilePath(projectPath?: string): string {
+    // 与 getConnectionGraphPath 保持一致，统一使用同一个文件
+    return this.getConnectionGraphPath(projectPath);
+  }
+
+  /**
+   * 保存 AWS 源文件
+   */
+  saveAWSFile(awsContent: string, projectPath?: string): boolean {
+    try {
+      const filePath = this.getAWSFilePath(projectPath);
+      this.electronService.writeFile(filePath, awsContent);
+      return true;
+    } catch (e) {
+      console.error('保存 AWS 文件失败:', e);
+      return false;
+    }
+  }
+
+  /**
+   * 读取 AWS 源文件
+   */
+  readAWSFile(projectPath?: string): string | null {
+    try {
+      const filePath = this.getAWSFilePath(projectPath);
+      if (!this.electronService.exists(filePath)) {
+        return null;
+      }
+      return this.electronService.readFile(filePath);
+    } catch (e) {
+      console.error('读取 AWS 文件失败:', e);
+      return null;
+    }
+  }
+
+  /**
+   * 检查是否存在 AWS 文件
+   */
+  hasAWSFile(projectPath?: string): boolean {
+    const filePath = this.getAWSFilePath(projectPath);
+    return this.electronService.exists(filePath);
+  }
+
+  /**
+   * 保存 AWS 编译后的 JSON 文件
+   */
+  saveJSONFile(data: any, projectPath?: string): boolean {
+    try {
+      const filePath = this.getJSONFilePath(projectPath);
+      this.electronService.writeFile(filePath, JSON.stringify(data, null, 2));
+      return true;
+    } catch (e) {
+      console.error('保存 JSON 文件失败:', e);
+      return false;
+    }
+  }
+
+  // -------------------------------------------------
   // 组件配置收集（供 iframe 使用）
   // -------------------------------------------------
 
