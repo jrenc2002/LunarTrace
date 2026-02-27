@@ -9,6 +9,12 @@
   &.user {
     background: none;
   }
+
+  // 子Agent消息样式：左侧彩色边条
+  &.subagent {
+    border-left: 3px solid #6366f1;
+    background: linear-gradient(90deg, rgba(99, 102, 241, 0.08) 0%, #2d2d2d 100%);
+  }
 }
 
 .username {
@@ -16,9 +22,31 @@
   border-bottom: 1px solid #444;
   font-size: 14px;
   color: #888;
+  display: flex;
+  align-items: center;
 
   i {
     font-size: 16px;
+  }
+
+  // 子Agent名称样式
+  .subagent-name {
+    color: #a5b4fc;
+    font-weight: 500;
+  }
+
+  // 子Agent标签
+  .subagent-badge {
+    margin-left: 8px;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 500;
+    color: #c4b5fd;
+    background: rgba(139, 92, 246, 0.2);
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    border-radius: 10px;
+    // text-transform: uppercase;
+    letter-spacing: 0.5px;
   }
 }
 

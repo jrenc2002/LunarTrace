@@ -18,7 +18,7 @@ interface ParsedComponentInstance {
 }
 
 /**
- * generate_connection_graph 工具
+ * generate_schematic 工具
  *
  * 读取开发板和外设的引脚信息，构建 prompt 返回给 Agent，
  * 让 Agent 根据引脚信息输出标准格式的连线 JSON。
@@ -41,12 +41,12 @@ export async function generateConnectionGraphTool(
       };
     }
 
-    // 检查 pinmap.json 是否存在
+    // 读取开发板 pinmap（支持旧版 pinmap.json 和新版 catalog + pinmaps/ 两种结构）
     const boardConfig = connectionGraphService.getBoardConfig(boardPackagePath);
     if (!boardConfig) {
       return {
         is_error: true,
-        content: '开发板引脚配置文件（pinmap.json）不存在，无法生成连线图。',
+        content: '开发板引脚配置不存在，无法生成连线图。请先使用 generate_pinmap + save_pinmap 为该开发板生成 pinmap 配置。',
       };
     }
 
@@ -68,6 +68,8 @@ export async function generateConnectionGraphTool(
       displayName: string;
       configTemplate?: any[];
     }> = [];
+    // 加载失败的 pinmapIds（pinmap 文件不存在或无法读取）
+    const failedPinmapIds: Array<{ pinmapId: string; reason: string }> = [];
 
     // 1. 添加开发板引脚摘要
     const boardSummary = connectionGraphService.getBoardPinSummary(boardPackagePath);
@@ -159,23 +161,77 @@ export async function generateConnectionGraphTool(
             label,
             instance: instanceIndex,
           });
+        } else {
+          // 记录加载失败的 pinmapId
+          failedPinmapIds.push({
+            pinmapId,
+            reason: 'pinmap 文件不存在或无法读取。请先使用 get_component_catalog 确认该组件的 pinmap 状态，如果状态为 needs_generation 或 missing_catalog，需先调用 generate_pinmap + save_pinmap 生成配置。',
+          });
         }
       }
     }
 
     // 3. 处理 components（旧版兼容 / fallback）
     const notFoundComponents: string[] = [];
-    // 确保 components 是数组
+    // 确保 components 是字符串数组（兼容 LLM 传入对象数组的情况）
     let componentList: string[] = [];
     if (input.components) {
+      let rawComponents: any[] = [];
       if (Array.isArray(input.components)) {
-        componentList = input.components;
+        rawComponents = input.components;
       } else if (typeof input.components === 'string') {
         try {
           const parsed = JSON.parse(input.components);
-          componentList = Array.isArray(parsed) ? parsed : [input.components];
+          rawComponents = Array.isArray(parsed) ? parsed : [input.components];
         } catch {
-          componentList = [input.components];
+          rawComponents = [input.components];
+        }
+      }
+      for (const item of rawComponents) {
+        if (typeof item === 'string') {
+          // 普通字符串：直接用作组件名
+          componentList.push(item);
+        } else if (item && typeof item === 'object') {
+          // 对象：优先取 pinmapId，其次取 componentId/componentName 用于搜索
+          if (item.pinmapId && typeof item.pinmapId === 'string') {
+            // 如果带完整 pinmapId，直接通过 pinmapId 路径加载，不走 catalog 搜索
+            if (!loadedPinmapIds.includes(item.pinmapId) && packagesBasePath) {
+              const softwareCheck = connectionGraphService.checkSoftwareComponent(item.pinmapId, packagesBasePath);
+              if (softwareCheck.isSoftware && softwareCheck.catalog) {
+                const catalog = softwareCheck.catalog;
+                const alias = item.refId || connectionGraphService.parsePinmapId(item.pinmapId).modelId;
+                softwareComponents.push({
+                  pinmapId: item.pinmapId,
+                  alias,
+                  label: item.componentName,
+                  libraryType: catalog.softwareMeta?.libraryType || 'other',
+                  displayName: catalog.displayName,
+                  configTemplate: catalog.softwareMeta?.configTemplate,
+                });
+                loadedPinmapIds.push(item.pinmapId);
+              } else {
+                const summary = connectionGraphService.loadPinSummaryById(item.pinmapId, packagesBasePath);
+                if (summary) {
+                  const alias = item.refId || connectionGraphService.parsePinmapId(item.pinmapId).modelId;
+                  pinSummaries.push({ ...summary, componentId: alias, componentName: item.componentName || summary.componentName });
+                  loadedPinmapIds.push(item.pinmapId);
+                  componentInstances.push({ pinmapId: item.pinmapId, alias, label: item.componentName, instance: 0 });
+                } else {
+                  // 记录加载失败
+                  failedPinmapIds.push({
+                    pinmapId: item.pinmapId,
+                    reason: 'pinmap 文件不存在',
+                  });
+                }
+              }
+            }
+          } else {
+            // 没有 pinmapId：降级使用 componentId 或 componentName 文本搜索
+            const name = item.componentId || item.componentName;
+            if (name && typeof name === 'string') {
+              componentList.push(name);
+            }
+          }
         }
       }
     }
@@ -206,34 +262,34 @@ export async function generateConnectionGraphTool(
       }
     }
 
-    // 构建 prompt
-    const { systemPrompt, userPrompt } = connectionGraphService.buildPrompt(
-      boardPackagePath,
-      undefined,
-      input.requirements
-    );
-
-    // 用收集到的 pinSummaries 重新构建 userPrompt
-    const actualUserPrompt = connectionGraphService.buildUserPrompt(pinSummaries, input.requirements);
+    // 不再返回完整的 systemPrompt/userPrompt，工具 description 已包含规则
+    // LLM 根据 pinSummaries + instructions 生成连线 JSON 即可
 
     // 如果只有开发板，没有硬件外设（但可能有软件组件）
     if (pinSummaries.length <= 1 && softwareComponents.length === 0) {
       let message = '当前只检测到开发板的引脚配置，未发现外设配置。';
+      if (failedPinmapIds.length > 0) {
+        message += `\n\n⚠️ 以下 pinmapId 加载失败（pinmap 文件不存在）：`;
+        for (const f of failedPinmapIds) {
+          message += `\n- ${f.pinmapId}: ${f.reason}`;
+        }
+      }
       if (notFoundComponents.length > 0) {
         message += `\n未找到以下组件的 pinmap: ${notFoundComponents.join(', ')}`;
       }
-      message += '\n\n提示：可以使用 get_sensor_pinmap_catalog 工具查看已安装库的可用传感器列表。';
+      message += '\n\n提示：请先使用 get_component_catalog 工具确认组件的 pinmap 状态（status 字段），只有 status=available 的组件才可用于生成连线。';
 
       return {
-        is_error: false,
+        is_error: failedPinmapIds.length > 0,  // 如果有加载失败则标记为错误
         content: JSON.stringify({
           message,
-          systemPrompt,
-          userPrompt: actualUserPrompt,
+          failedPinmapIds: failedPinmapIds.length > 0 ? failedPinmapIds : undefined,
           pinSummaries,
           loadedPinmapIds,
           componentInstances: componentInstances.length > 0 ? componentInstances : undefined,
-          instructions: '请根据上面的引脚信息和用户需求，输出符合 connection_output.json 格式的连线 JSON。输出完成后，请调用 validate_connection_graph 工具验证连线安全性。',
+          instructions: failedPinmapIds.length > 0
+            ? '请先调用 get_component_catalog 确认组件状态，再使用 generate_pinmap + save_pinmap 为缺失配置的组件生成 pinmap。'
+            : '请根据上面的引脚信息和用户需求，输出符合 connection_output.json 格式的连线 JSON。输出完成后，请调用 validate_schematic 工具验证连线安全性。',
         }, null, 2),
       };
     }
@@ -313,11 +369,21 @@ ${softwareDetails}
 `;
     }
 
+    // 构建失败组件警告
+    let failedComponentsWarning = '';
+    if (failedPinmapIds.length > 0) {
+      failedComponentsWarning = `
+
+### ⚠️ 以下组件的 pinmap 加载失败
+${failedPinmapIds.map(f => `- ${f.pinmapId}: ${f.reason}`).join('\n')}
+
+这些组件无法生成连线，请先调用 get_component_catalog 确认其状态，再使用 generate_pinmap + save_pinmap 生成配置。`;
+    }
+
     const result: any = {
-      systemPrompt,
-      userPrompt: actualUserPrompt,
       pinSummaries,
       loadedPinmapIds,
+      failedPinmapIds: failedPinmapIds.length > 0 ? failedPinmapIds : undefined,
       componentInstances: componentInstances.length > 0 ? componentInstances : undefined,
       softwareComponents: softwareComponents.length > 0 ? softwareComponents : undefined,
       notFoundComponents: notFoundComponents.length > 0 ? notFoundComponents : undefined,
@@ -330,14 +396,14 @@ ${softwareDetails}
 6. 多实例组件需设置 instance 字段（0-based）
 7. 连线的 from.ref / to.ref 使用组件的 refId（别名）
 8. 软件组件需设置 componentType: "software" 和 softwareConfig 字段（包含 libraryType、properties 等）
-9. 输出完成后请调用 validate_connection_graph 工具验证安全性。${multiInstanceNote}${softwareComponentNote}`,
+9. 输出完成后请调用 validate_schematic 工具验证安全性。${multiInstanceNote}${softwareComponentNote}${failedComponentsWarning}`,
     };
 
     const toolResult: ToolUseResult = {
       is_error: false,
       content: JSON.stringify(result, null, 2),
     };
-    return injectTodoReminder(toolResult, 'generate_connection_graph');
+    return injectTodoReminder(toolResult, 'generate_schematic');
   } catch (error: any) {
     return {
       is_error: true,
@@ -437,7 +503,7 @@ export async function getPinmapSummaryTool(
       const availableIds = connectionGraphService.getAvailablePinmapIds(packagesBasePath, { status: 'available' });
       if (availableIds.length > 0) {
         result.availableSensorPinmapIds = availableIds.slice(0, 10); // 最多显示 10 个
-        result.tip = '使用 get_sensor_pinmap_catalog 工具可查看完整的传感器目录。';
+        result.tip = '使用 get_component_catalog 工具可查看完整的组件目录。';
       }
     }
 
@@ -455,9 +521,9 @@ export async function getPinmapSummaryTool(
 }
 
 /**
- * get_sensor_pinmap_catalog 工具
+ * get_component_catalog 工具
  *
- * 获取已安装传感器库的 pinmap 目录，列出可用的传感器型号和变体。
+ * 获取当前项目的组件目录（开发板 + 传感器库 + 软件库）。
  * 对于没有 pinmap_catalog.json 的库，也会列出并标记为 needs_catalog_generation。
  */
 export async function getSensorPinmapCatalogTool(
@@ -498,6 +564,75 @@ export async function getSensorPinmapCatalogTool(
 
     // 构建输出结果
     const catalogsWithPinmap: any[] = [];  // 有 catalog 的硬件库
+    let boardCatalog: any = null;  // 当前开发板的 catalog
+
+    // 如果 includeBoards 为 true，获取当前项目的开发板 catalog
+    if (input.includeBoards) {
+      try {
+        const boardPackagePath = await projectService.getBoardPackagePath();
+        if (boardPackagePath) {
+          // 读取开发板的 pinmap_catalog.json
+          const catalog = connectionGraphService.readPinmapCatalog(boardPackagePath);
+          if (catalog) {
+            // 从包路径提取 packageSlug（如 board-xiao_esp32s3）
+            const boardPkgName = boardPackagePath.split(/[\\/]/).pop() || '';
+            boardCatalog = {
+              packageSlug: boardPkgName,
+              displayName: catalog.displayName,
+              type: 'board',
+              icon: catalog.icon,
+              catalogStatus: 'available',
+              isCurrentBoard: true,
+              models: catalog.models.map(model => ({
+                id: model.id,
+                name: model.name,
+                description: model.description,
+                defaultVariant: model.defaultVariant,
+                variants: model.variants
+                  .filter(v => input.includeNeedsGeneration !== false || v.status === 'available')
+                  .map(v => ({
+                    id: v.id,
+                    name: v.name,
+                    fullId: v.fullId,
+                    protocol: v.protocol,
+                    manufacturer: v.manufacturer,
+                    status: v.status,
+                    isDefault: v.isDefault,
+                    previewPins: v.previewPins,
+                  })),
+              })).filter(m => m.variants.length > 0),
+            };
+          } else {
+            // 开发板没有 pinmap_catalog.json，检查是否有 pinmap.json（旧版格式）
+            const boardConfig = connectionGraphService.getBoardConfig(boardPackagePath);
+            const boardPkgName = boardPackagePath.split(/[\\/]/).pop() || '';
+            if (boardConfig) {
+              boardCatalog = {
+                packageSlug: boardPkgName,
+                displayName: boardConfig.name || boardPkgName,
+                type: 'board',
+                catalogStatus: 'legacy_pinmap',
+                isCurrentBoard: true,
+                tip: '该开发板使用旧版 pinmap.json 格式，可直接使用。如需更新可使用 generate_pinmap 工具。',
+                pinmapId: `${boardPkgName}:${boardConfig.id || 'default'}:default`,
+              };
+            } else {
+              // 开发板既没有 catalog 也没有 pinmap.json
+              boardCatalog = {
+                packageSlug: boardPkgName,
+                displayName: boardPkgName,
+                type: 'board',
+                catalogStatus: 'missing',
+                isCurrentBoard: true,
+                tip: `当前开发板缺少 pinmap 配置，使用 generate_pinmap 工具生成配置，pinmapId 格式：${boardPkgName}:{modelId}:default`,
+              };
+            }
+          }
+        }
+      } catch (e) {
+        console.error('获取开发板 catalog 失败:', e);
+      }
+    }
     const softwareLibraries: any[] = [];   // 软件类型的库（WiFi/MQTT等）
     const librariesMissingCatalog: any[] = [];  // 没有 catalog 的库
 
@@ -565,15 +700,20 @@ export async function getSensorPinmapCatalogTool(
     // 构建结果
     const resultContent: any = {};
 
+    // 添加开发板 catalog（如果有）
+    if (boardCatalog) {
+      resultContent.currentBoard = boardCatalog;
+    }
+
     if (validCatalogs.length > 0) {
       resultContent.catalogCount = validCatalogs.length;
       resultContent.catalogs = validCatalogs;
-      resultContent.usage = '使用 fullId（如 "lib-dht:dht20:asair"）作为 generate_connection_graph 的 pinmapIds 参数';
+      resultContent.usage = '使用 fullId（如 "lib-dht:dht20:asair"）作为 generate_schematic 的 pinmapIds 参数';
     }
 
     if (softwareLibraries.length > 0) {
       resultContent.softwareLibraries = softwareLibraries;
-      resultContent.softwareUsage = '软件库（WiFi/MQTT/HTTP等）不需要物理引脚连接。在连线图中以信息卡片形式展示，使用 packageSlug 作为 generate_connection_graph 的 pinmapIds 参数（格式：{packageSlug}:default:default）';
+      resultContent.softwareUsage = '软件库（WiFi/MQTT/HTTP等）不需要物理引脚连接。在连线图中以信息卡片形式展示，使用 packageSlug 作为 generate_schematic 的 pinmapIds 参数（格式：{packageSlug}:default:default）';
     }
 
     if (librariesMissingCatalog.length > 0) {
@@ -600,7 +740,7 @@ export async function getSensorPinmapCatalogTool(
       is_error: false,
       content: JSON.stringify(resultContent, null, 2),
     };
-    return injectTodoReminder(toolResult, 'get_sensor_pinmap_catalog');
+    return injectTodoReminder(toolResult, 'get_component_catalog');
   } catch (error: any) {
     return {
       is_error: true,
@@ -610,7 +750,7 @@ export async function getSensorPinmapCatalogTool(
 }
 
 /**
- * validate_connection_graph 工具
+ * validate_schematic 工具
  *
  * 验证连线配置的安全性，检查短路、电压不匹配、引脚冲突等问题。
  * 如果传入 connection_data 则验证该数据并保存；否则验证项目中已保存的连线。
@@ -632,7 +772,7 @@ export async function validateConnectionGraphTool(
     if (!data) {
       return {
         is_error: true,
-        content: '没有可验证的连线数据。请先使用 generate_connection_graph 工具生成连线，或传入 connection_data 参数。',
+        content: '没有可验证的连线数据。请先使用 generate_schematic 工具生成连线，或传入 connection_data 参数。',
       };
     }
 
@@ -685,7 +825,7 @@ export async function validateConnectionGraphTool(
       is_error: false,
       content: JSON.stringify(result, null, 2),
     };
-    return injectTodoReminder(toolResult, 'validate_connection_graph');
+    return injectTodoReminder(toolResult, 'validate_schematic');
   } catch (error: any) {
     return {
       is_error: true,
@@ -735,7 +875,7 @@ function findComponentInCatalogs(
 /**
  * generate_pinmap 工具
  *
- * 为缺失 pinmap 的传感器生成配置。返回库文档、示例代码和模板，供 LLM 生成完整的 pinmap JSON。
+ * 为缺失 pinmap 的组件（开发板、传感器、模块等）生成配置。返回包文档、示例代码和模板，供 LLM 生成完整的 pinmap JSON。
  */
 export async function generatePinmapTool(
   connectionGraphService: ConnectionGraphService,
@@ -756,7 +896,7 @@ export async function generatePinmapTool(
     if (!packagesBasePath) {
       return {
         is_error: true,
-        content: '当前没有打开的项目，无法定位传感器库。',
+        content: '当前没有打开的项目，无法定位组件包。',
       };
     }
 
@@ -943,7 +1083,7 @@ export async function savePinmapTool(
       pinmapId: input.pinmapId,
       filePath: saveResult.filePath,
       message: `Pinmap 配置已保存到 ${saveResult.filePath}，catalog 状态已更新为 "available"。`,
-      tip: '现在可以在 generate_connection_graph 工具中使用此 pinmapId 了。',
+      tip: '现在可以在 generate_schematic 工具中使用此 pinmapId 了。',
     };
 
     const toolResult: ToolUseResult = {

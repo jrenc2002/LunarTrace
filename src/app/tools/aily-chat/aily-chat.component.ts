@@ -109,6 +109,8 @@ export interface ChatMessage {
   role: string;
   content: string;
   state: 'doing' | 'done';
+  /** 消息来源，mainAgent 为主Agent，其他值为子Agent名称 */
+  source?: string;
 }
 
 export enum ToolCallState {
@@ -601,8 +603,8 @@ export class AilyChatComponent implements OnDestroy {
         return "分析引脚信息，准备连线方案...";
       case 'get_pinmap_summary':
         return "获取引脚摘要信息...";
-      case 'get_sensor_pinmap_catalog':
-        return "扫描传感器库 pinmap 目录...";
+      case 'get_component_catalog':
+        return "扫描项目组件目录...";
       case 'validate_schematic':
         return "验证连线配置安全性...";
       case 'generate_pinmap':
@@ -745,8 +747,8 @@ export class AilyChatComponent implements OnDestroy {
         return `连线方案生成完成`;
       case 'get_pinmap_summary':
         return `引脚摘要获取成功`;
-      case 'get_sensor_pinmap_catalog':
-        return `传感器目录获取完成`;
+      case 'get_component_catalog':
+        return `组件目录获取完成`;
       case 'validate_schematic':
         return `连线配置验证完成`;
       case 'generate_pinmap':
@@ -1544,8 +1546,15 @@ Do not create non-existent boards and libraries.
     return -1;
   }
 
-  setLastMsgContent(role, text) {
-    if (this.list.length > 0 && this.list[this.list.length - 1].role === role) {
+  /** 当前消息来源：mainAgent 为主Agent，其他值为子Agent名称 */
+  currentMessageSource: string = 'mainAgent';
+
+  setLastMsgContent(role, text, source?: string) {
+    const msgSource = source || this.currentMessageSource;
+    // 检查是否可以合并消息：同角色且同来源
+    if (this.list.length > 0 && 
+        this.list[this.list.length - 1].role === role &&
+        this.list[this.list.length - 1].source === msgSource) {
       this.list[this.list.length - 1].content += text;
       // 如果是AI角色且正在输出，保持doing状态
       if (role === 'aily' && this.isWaiting) {
@@ -1555,7 +1564,8 @@ Do not create non-existent boards and libraries.
       this.list.push({
         "role": role,
         "content": text,
-        "state": (role === 'aily' && this.isWaiting) ? 'doing' : 'done'
+        "state": (role === 'aily' && this.isWaiting) ? 'doing' : 'done',
+        "source": msgSource
       });
     }
     this.chatService.historyChatMap.set(this.sessionId, this.list);
@@ -1563,8 +1573,8 @@ Do not create non-existent boards and libraries.
 
   terminateTemp = '';
 
-  appendMessage(role, text) {
-    // console.log("添加消息: ", role, text);
+  appendMessage(role, text, source?: string) {
+    // console.log("添加消息: ", role, text, "source:", source);
 
     try {
       const parsedText = JSON.parse(text);
@@ -1585,7 +1595,7 @@ Do not create non-existent boards and libraries.
       if (terminateText.startsWith(this.terminateTemp)) {
         return;
       }
-      this.setLastMsgContent(role, this.terminateTemp);
+      this.setLastMsgContent(role, this.terminateTemp, source);
       this.terminateTemp = '';
       return;
     }
@@ -1593,11 +1603,11 @@ Do not create non-existent boards and libraries.
     if (prefixStart >= 0) {
       this.terminateTemp += text.substring(prefixStart);
       text = text.substring(0, prefixStart);
-      this.setLastMsgContent(role, text);
+      this.setLastMsgContent(role, text, source);
       return;
     }
 
-    this.setLastMsgContent(role, text);
+    this.setLastMsgContent(role, text, source);
     this.terminateTemp = '';
   }
 
@@ -1898,6 +1908,8 @@ ${JSON.stringify(errData)}
     }
 
     this.isWaiting = true;
+    // 重置消息来源为主Agent，每次新对话都从主Agent开始
+    this.currentMessageSource = 'mainAgent';
 
     this.sendMessageWithRetry(this.sessionId, text, sender, clear, 3);
   }
@@ -2024,13 +2036,27 @@ ${JSON.stringify(errData)}
           return; // 如果不在等待状态，直接返回
         }
 
-        console.log("Recv: ", data);
+        // console.log("Recv: ", data);
+
+        // 更新当前消息来源
+        const messageSource = data.source || 'mainAgent';
+        
+        // 检测 source 变更，如果变更则将上一条消息的 doing 状态设为 done
+        if (messageSource !== this.currentMessageSource) {
+          // source 变更：mainAgent -> subAgent 或 subAgent -> mainAgent
+          // 将当前最后一条 AI 消息的状态设为 done
+          if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
+            this.list[this.list.length - 1].state = 'done';
+          }
+          console.log(`Source changed: ${this.currentMessageSource} -> ${messageSource}`);
+        }
+        this.currentMessageSource = messageSource;
 
         try {
           if (data.type === 'ModelClientStreamingChunkEvent') {
             // 处理流式数据
             if (data.content) {
-              this.appendMessage('aily', data.content);
+              this.appendMessage('aily', data.content, messageSource);
             }
           } else if (data.type === 'TextMessage') {
             // 每条完整的对话信息
@@ -2047,7 +2073,7 @@ ${JSON.stringify(errData)}
                     this.completeToolCall(result.call_id, result.name || 'unknown', resultState, resultText);
                   }
                 } else {
-                  this.appendMessage('aily', "\n\n");
+                  this.appendMessage('aily', "\n\n", messageSource);
                 }
               }
             }
@@ -2062,7 +2088,7 @@ ${JSON.stringify(errData)}
   "id": "${data.id}"
 }
 \`\`\`\n\n
-`);
+`, messageSource);
             } else {
               this.appendMessage('aily', `\n\n
 \`\`\`aily-state
@@ -2072,7 +2098,7 @@ ${JSON.stringify(errData)}
   "id": "${data.id}"
 }
 \`\`\`\n\n
-`);
+`, messageSource);
               newConnect = true;
             }
           } else if (data.type === 'error') {
@@ -2091,7 +2117,7 @@ ${JSON.stringify(errData)}
 [{"text":"重试","action":"retry","type":"primary"}]
 \`\`\`
 
-`);
+`, messageSource);
             this.isWaiting = false;
           } else if (data.type === 'tool_call_request') {
             let toolArgs;
@@ -3597,13 +3623,13 @@ ${JSON.stringify(errData)}
                     }
                     break;
 
-                  case 'get_sensor_pinmap_catalog':
+                  case 'get_component_catalog':
                     this.appendMessage('aily', `
 
 \`\`\`aily-state
 {
   "state": "doing",
-  "text": "扫描传感器库 pinmap 目录...",
+  "text": "扫描项目组件目录...",
   "id": "${toolCallId}"
 }
 \`\`\`\n\n
@@ -3615,9 +3641,9 @@ ${JSON.stringify(errData)}
                     );
                     if (toolResult?.is_error) {
                       resultState = "error";
-                      resultText = '传感器目录获取失败';
+                      resultText = '组件目录获取失败';
                     } else {
-                      resultText = '传感器目录获取完成';
+                      resultText = '组件目录获取完成';
                     }
                     break;
 

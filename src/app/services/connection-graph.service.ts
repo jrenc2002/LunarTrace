@@ -442,36 +442,68 @@ export class ConnectionGraphService {
   }
 
   /**
-   * 读取开发板 pinmap.json 并提取引脚摘要
-   * @param boardPackagePath 开发板包路径
-   * @returns 开发板的引脚摘要，如果不存在则返回 null
+   * 从开发板包目录解析 pinmap 文件路径。
+   * 优先使用根目录 pinmap.json（旧版），找不到时回退到 pinmap_catalog.json 中的默认变体文件。
+   */
+  private resolveBoardPinmapPath(boardPackagePath: string): string | null {
+    // 1. 旧版：根目录 pinmap.json
+    const legacyPath = this.electronService.pathJoin(boardPackagePath, 'pinmap.json');
+    if (this.electronService.exists(legacyPath)) {
+      return legacyPath;
+    }
+
+    // 2. 新版：pinmap_catalog.json + pinmaps/ 目录
+    const catalog = this.readPinmapCatalog(boardPackagePath);
+    if (!catalog || !catalog.models || catalog.models.length === 0) {
+      return null;
+    }
+
+    // 取第一个 model 的默认 variant（isDefault 或第一个）
+    const model = catalog.models[0];
+    const variant =
+      model.variants.find(v => v.isDefault) ||
+      model.variants.find(v => v.status === 'available') ||
+      model.variants[0];
+
+    if (!variant?.pinmapFile) {
+      return null;
+    }
+
+    const resolvedPath = this.electronService.pathJoin(boardPackagePath, variant.pinmapFile);
+    return this.electronService.exists(resolvedPath) ? resolvedPath : null;
+  }
+
+  /**
+   * 读取开发板 pinmap 并提取引脚摘要。
+   * 支持旧版 pinmap.json 和新版 catalog + pinmaps/ 结构。
    */
   getBoardPinSummary(boardPackagePath: string): PinSummary | null {
-    const pinmapPath = this.electronService.pathJoin(boardPackagePath, 'pinmap.json');
-    if (!this.electronService.exists(pinmapPath)) {
+    const pinmapPath = this.resolveBoardPinmapPath(boardPackagePath);
+    if (!pinmapPath) {
       return null;
     }
     try {
       const config: ComponentConfig = JSON.parse(this.electronService.readFile(pinmapPath));
       return this.extractPinSummary(config);
     } catch (e) {
-      console.error('读取 pinmap.json 失败:', e);
+      console.error('读取开发板 pinmap 失败:', e);
       return null;
     }
   }
 
   /**
-   * 读取开发板 pinmap.json 的完整配置
+   * 读取开发板 pinmap 的完整配置。
+   * 支持旧版 pinmap.json 和新版 catalog + pinmaps/ 结构。
    */
   getBoardConfig(boardPackagePath: string): ComponentConfig | null {
-    const pinmapPath = this.electronService.pathJoin(boardPackagePath, 'pinmap.json');
-    if (!this.electronService.exists(pinmapPath)) {
+    const pinmapPath = this.resolveBoardPinmapPath(boardPackagePath);
+    if (!pinmapPath) {
       return null;
     }
     try {
       return JSON.parse(this.electronService.readFile(pinmapPath));
     } catch (e) {
-      console.error('读取 pinmap.json 失败:', e);
+      console.error('读取开发板 pinmap 失败:', e);
       return null;
     }
   }
@@ -1580,7 +1612,7 @@ export class ConnectionGraphService {
         model = {
           id: ref.modelId,
           name: componentConfig?.name || ref.modelId.toUpperCase(),
-          description: `${ref.modelId} 传感器/模块`,
+          description: `${ref.packageSlug}:${ref.modelId}`,
           defaultVariant: ref.variantId,
           variants: []
         };

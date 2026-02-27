@@ -28,7 +28,8 @@ export const TOOLS = [
                 board: { type: 'string', description: '开发板名称' },
             },
             required: ['board']
-        }
+        },
+        agents: ["mainAgent"]
     },
     {
         name: 'execute_command',
@@ -40,7 +41,8 @@ export const TOOLS = [
                 cwd: { type: 'string', description: '工作目录，可选' }
             },
             required: ['command']
-        }
+        },
+        agents: ["mainAgent"]
     },
     {
         name: "get_context",
@@ -56,7 +58,8 @@ export const TOOLS = [
                 }
             },
             required: ['info_type']
-        }
+        },
+        agents: ["mainAgent", "schematicAgent"]
     },
     {
         name: "get_project_info",
@@ -71,7 +74,8 @@ export const TOOLS = [
                 }
             },
             required: []
-        }
+        },
+        agents: ["mainAgent", "schematicAgent"]
     },
     // {
     //     name: "list_directory",
@@ -156,7 +160,8 @@ export const TOOLS = [
                 }
             },
             required: ['path']
-        }
+        },
+        agents: ["mainAgent", "schematicAgent"]
     },
     {
         name: "create_file",
@@ -185,7 +190,8 @@ export const TOOLS = [
                 }
             },
             required: ['path']
-        }
+        },
+        agents: ["mainAgent", "schematicAgent"]
     },
     {
         name: "create_folder",
@@ -204,7 +210,8 @@ export const TOOLS = [
                 }
             },
             required: ['path']
-        }
+        },
+        agents: ["mainAgent", "schematicAgent"]
     },
     {
         name: "edit_file",
@@ -313,7 +320,8 @@ editFileTool({
                 }
             },
             required: ['path']
-        }
+        },
+        agents: ["mainAgent", "schematicAgent"]
     },
     {
         name: "delete_file",
@@ -332,7 +340,8 @@ editFileTool({
                 }
             },
             required: ['path']
-        }
+        },
+        agents: ["mainAgent", "schematicAgent"]
     },
     {
         name: "delete_folder",
@@ -356,7 +365,8 @@ editFileTool({
                 }
             },
             required: ['path']
-        }
+        },
+        agents: ["mainAgent", "schematicAgent"]
     },
     // {
     //     name: "check_exists",
@@ -538,7 +548,8 @@ editFileTool({
                 }
             },
             required: ['filters']
-        }
+        },
+        agents: ["mainAgent"]
     },
     {
         name: "get_hardware_categories",
@@ -614,7 +625,8 @@ editFileTool({
                 }
             },
             required: ['type', 'dimension']
-        }
+        },
+        agents: ["mainAgent"]
     },
     {
         name: "get_board_parameters",
@@ -684,7 +696,8 @@ editFileTool({
                 }
             },
             required: []
-        }
+        },
+        agents: ["mainAgent", "schematicAgent"]
     },
     {
         name: "grep_tool",
@@ -769,7 +782,8 @@ Query and return specific content (for detailed info)
                 // }
             },
             required: ['pattern']
-        }
+        },
+        agents: ["mainAgent", "schematicAgent"]
     },
     {
         name: "glob_tool",
@@ -823,7 +837,8 @@ Query and return specific content (for detailed info)
                 }
             },
             required: ['pattern']
-        }
+        },
+        agents: ["mainAgent", "schematicAgent"]
     },
     {
         name: "fetch",
@@ -867,7 +882,8 @@ Query and return specific content (for detailed info)
                 }
             },
             required: ['url']
-        }
+        },
+        agents: ["mainAgent", "schematicAgent"]
     },
     {
         name: "web_search",
@@ -893,7 +909,8 @@ Query and return specific content (for detailed info)
                 }
             },
             required: ['query']
-        }
+        },
+        agents: ["mainAgent"]
     },
     // {
     //     name: "reload_abi_json",
@@ -2108,7 +2125,8 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
                 }
             },
             required: ['operation']
-        }
+        },
+        agents: ["mainAgent"]
     },
     {
         name: 'analyze_library_blocks',
@@ -2123,7 +2141,8 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
                 }
             },
             required: ['libraryNames']
-        }
+        },
+        agents: ["mainAgent"]
     },
     {
         name: 'get_abs_syntax',
@@ -2132,59 +2151,47 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
             type: 'object',
             properties: {},
             required: []
-        }
+        },
+        agents: ["mainAgent"]
     },
     // =============================================================================
-    // 连线图工具 (Connection Graph)
+    // 硬件接线图工具 (Schematic / Wiring Diagram)
     // =============================================================================
     {
-        name: 'generate_connection_graph',
-        description: `根据用户描述的硬件连接需求，分析开发板和外设的引脚信息，生成连接配置。工具会返回引脚摘要和提示词规则，你需要根据这些信息输出标准格式的连线 JSON，然后调用 validate_connection_graph 工具验证和保存。
+        name: 'generate_schematic',
+        description: `生成硬件接线图的核心工具。分析开发板与外设的引脚映射，返回引脚摘要和生成规则，你需要根据返回内容输出标准格式的接线图 JSON，再调用 validate_schematic 保存。
 
-适用场景：
-- 用户说"帮我连线"、"怎么接 DHT20"、"生成接线图"等
-- 用户描述了硬件连接需求
+**完整工作流：**
+1. （可选）不知道有哪些组件可用时，先调用 get_component_catalog 获取 pinmapId
+2. 调用本工具，传入 pinmapIds
+3. 工具返回引脚摘要（pinSummaries）和生成规则（instructions），你根据此生成接线图 JSON
+4. 调用 validate_schematic 验证并保存
 
-**组件类型支持：**
-1. **硬件组件**（如传感器、显示屏）：有物理引脚，需要生成连线
-2. **软件组件**（如 WiFi/MQTT/HTTP）：无物理引脚，以信息卡片形式展示
+**触发时机：** 用户说"帮我接线"、"怎么接 DHT20"、"生成接线图"、"连接传感器"等
 
-**多实例支持：**
-- 同一传感器需要多个实例时（如两个 DHT20），使用对象格式指定别名
-- 示例：[{ "id": "lib-dht:dht20:asair", "alias": "dht_indoor", "label": "室内" }, { "id": "lib-dht:dht20:asair", "alias": "dht_outdoor", "label": "室外" }]
+**组件类型：**
+- **硬件组件**（传感器、显示屏、执行器）：有物理引脚，需分配引脚并生成连线
+- **软件组件**（WiFi/MQTT/HTTP）：无物理引脚，以信息卡片形式展示
 
-**软件组件输出格式：**
-软件组件在 components 数组中需设置 componentType: "software" 和 softwareConfig 字段：
+**多实例（同型号多个）：** 使用对象格式指定别名
+\`{ "id": "lib-dht:dht20:asair", "alias": "dht_indoor", "label": "室内" }\`
+
+**软件组件 JSON 格式：**
 \`\`\`json
 {
-  "refId": "wifi",
-  "componentId": "WiFi",
-  "componentName": "WiFi 连接",
-  "pinmapId": "lib-wifi:default:default",
-  "componentType": "software",
-  "softwareConfig": {
-    "libraryType": "wifi",
-    "icon": "wifi",
-    "properties": { "ssid": "MyNetwork" }
-  }
+  "refId": "wifi", "componentId": "WiFi", "componentName": "WiFi 连接",
+  "pinmapId": "lib-wifi:default:default", "componentType": "software",
+  "softwareConfig": { "libraryType": "wifi", "icon": "wifi", "properties": { "ssid": "MyNetwork" } }
 }
-\`\`\`
-
-提示：如果不确定传感器有哪些变体可用，先调用 get_sensor_pinmap_catalog 工具查询。`,
+\`\`\``,
         input_schema: {
             type: 'object',
             properties: {
                 pinmapIds: {
                     type: 'array',
                     description: `组件的 pinmapId 列表。支持两种格式：
-1. 字符串：直接使用 pinmapId（如 "lib-dht:dht20:asair"）
-2. 对象：带别名和标签（如 { "id": "lib-dht:dht20:asair", "alias": "dht_indoor", "label": "室内温湿度" }）
-
-多实例示例（两个 DHT20）：
-[
-  { "id": "lib-dht:dht20:asair", "alias": "dht_indoor", "label": "室内" },
-  { "id": "lib-dht:dht20:asair", "alias": "dht_outdoor", "label": "室外" }
-]`,
+- 字符串：\`"lib-dht:dht20:asair"\`
+- 对象（多实例/自定义别名）：\`{ "id": "lib-dht:dht20:asair", "alias": "dht_indoor", "label": "室内温湿度" }\``,
                     items: {
                         oneOf: [
                             { type: 'string' },
@@ -2192,7 +2199,7 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
                                 type: 'object',
                                 properties: {
                                     id: { type: 'string', description: 'pinmapId 完整标识符' },
-                                    alias: { type: 'string', description: '用户定义的别名（用于 refId），如 "dht_indoor"' },
+                                    alias: { type: 'string', description: '别名，用作 refId，如 "dht_indoor"' },
                                     label: { type: 'string', description: '显示名称，如 "室内温湿度"' }
                                 },
                                 required: ['id']
@@ -2202,51 +2209,60 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
                 },
                 components: {
                     type: 'array',
-                    description: '（旧版兼容）组件简称列表，如 ["dht20", "servo"]。优先使用 pinmapIds 参数。',
+                    description: '（旧版兼容）组件简称列表，优先使用 pinmapIds。',
                     items: { type: 'string' }
                 },
                 requirements: {
                     type: 'string',
-                    description: '用户的特殊连接需求，如"DHT20 用 3.3V 供电"、"舵机接 D0"等'
+                    description: '特殊连接需求，如"DHT20 用 3.3V 供电"、"舵机接 D0"等'
                 }
             },
             required: []
-        }
+        },
+        agents: ["schematicAgent"]
     },
     {
         name: 'get_pinmap_summary',
-        description: `获取当前项目所用开发板和外设的引脚摘要信息，包括每个引脚的功能列表和类型。同时返回已有的连线图摘要（如果存在）。
+        description: `获取指定组件的完整引脚详情（功能列表、引脚类型、位置等）。
 
-支持通过 pinmapIds 参数指定具体的传感器变体，适用于多变体传感器（如 DHT20 有 Asair/Seeed 不同版本）。`,
+**使用场景：**
+- 用户询问某个组件具体有哪些引脚、支持哪些功能
+- 需要查看某个传感器的详细引脚规格
+- 调试或验证 pinmap 配置内容
+
+**注意：** 连线流程中通常不需要单独调用——generate_schematic 内部已包含引脚摘要。`,
         input_schema: {
             type: 'object',
             properties: {
                 pinmapIds: {
                     type: 'array',
-                    description: '可选，指定要获取摘要的组件 pinmapId 列表（如 ["lib-dht:dht20:asair"]）。如果为空则返回开发板引脚摘要。',
+                    description: '要查询的组件 pinmapId 列表（如 ["lib-dht:dht20:asair"]）。如果为空则返回当前开发板的引脚摘要。',
                     items: { type: 'string' }
                 }
             },
             required: []
-        }
+        },
+        agents: ["schematicAgent"]
     },
     {
-        name: 'get_sensor_pinmap_catalog',
-        description: `获取已安装传感器库的 pinmap 目录，列出可用的传感器型号和变体。用于发现项目中可用的传感器及其 pinmapId。
+        name: 'get_component_catalog',
+        description: `获取当前项目的组件目录：开发板 + 已安装的传感器/外设库 + 软件库，列出所有可用型号和 pinmapId。
 
-**返回信息包括：**
+**⭐ 连线流程第一步：** 在生成接线图前，先调用本工具了解项目中有哪些组件可用。
 
-1. **有 pinmap_catalog.json 的库（catalogs）：**
-   - 库名称和显示名
-   - 传感器型号列表（如 DHT11、DHT20、DHT22）
-   - 每个型号的变体（协议、厂家、分辨率等）
-   - 变体的 pinmapId（用于 generate_connection_graph）
-   - 变体状态（available/needs_generation）
+**在以下情况调用：**
+- 开始连线任务时，获取项目的完整组件列表
+- 用户没有指定具体型号，需要先看看有哪些可用
+- 不确定某个组件的 pinmapId 格式
 
-2. **没有 pinmap_catalog.json 的库（librariesMissingCatalog）：**
-   - 库名称和显示名
-   - catalogStatus: "missing_catalog"
-   - 使用 generate_pinmap 工具为这些库生成配置`,
+**返回数据：**
+1. **currentBoard**（当前开发板）：开发板的 pinmap 状态和 pinmapId
+   - \`catalogStatus: "available"\`：有 pinmap_catalog.json，包含 models/variants
+   - \`catalogStatus: "legacy_pinmap"\`：使用旧版 pinmap.json，可直接使用
+   - \`catalogStatus: "missing"\`：缺少 pinmap 配置，需用 generate_pinmap 生成
+2. **catalogs**（传感器/外设库）：型号列表 + 变体 + pinmapId。状态 \`available\` 可直接用于 generate_schematic
+3. **softwareLibraries**（软件库）：WiFi/MQTT/HTTP 等，无物理引脚，用 \`{packageSlug}:default:default\` 作为 pinmapId
+4. **librariesMissingCatalog**（缺少配置的库）：需用 generate_pinmap 生成配置`,
         input_schema: {
             type: 'object',
             properties: {
@@ -2261,56 +2277,55 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
                 },
                 includeBoards: {
                     type: 'boolean',
-                    description: '是否包含开发板',
-                    default: false
+                    description: '是否包含当前项目开发板的 pinmap catalog 信息（推荐设为 true）',
+                    default: true
                 }
             },
             required: []
-        }
+        },
+        agents: ["schematicAgent"]
     },
     {
-        name: 'validate_connection_graph',
-        description: `验证连线配置的安全性（短路、电压不匹配、引脚冲突、缺少电源/接地等），并将连线数据保存到项目文件。如果传入 connection_data 参数则验证并保存该数据；否则验证项目中已保存的连线。
+        name: 'validate_schematic',
+        description: `验证并保存接线图 JSON。检查安全性（短路、电压不匹配、引脚冲突、缺少电源/GND 等），通过后保存到项目文件并通知接线图界面刷新。
 
-使用流程：generate_connection_graph → 你生成 JSON → validate_connection_graph(connection_data=JSON) → 验证+保存`,
+**调用时机：** generate_schematic 返回引脚摘要后，你生成 JSON 完毕，立即调用本工具。
+
+**推荐流程：**
+1. **get_component_catalog(includeBoards: true)**：获取开发板 + 组件的 pinmapId 列表
+2. **generate_schematic(pinmapIds: [...])**：传入 pinmapId，获取引脚摘要和连线规则
+3. **你生成连线 JSON**：根据返回的 pinSummaries 和 instructions
+4. **validate_schematic(connection_data: {...})**：验证并保存`,
         input_schema: {
             type: 'object',
             properties: {
                 connection_data: {
                     type: 'object',
-                    description: '要验证并保存的连线数据 JSON（符合 connection_output.json 格式）。如果为空则验证项目中已保存的连线。'
+                    description: '要验证并保存的接线图 JSON（符合 connection_output.json 格式）。如果为空则验证项目中已保存的接线图。'
                 }
             },
             required: []
-        }
+        },
+        agents: ["schematicAgent"]
     },
     {
         name: 'generate_pinmap',
-        description: `为缺失 pinmap 配置的传感器/模块生成引脚配置文件。
+        description: `为缺少引脚配置的组件（开发板、传感器、模块等任意类型）准备生成素材。返回 README、示例代码和 pinmap 模板，供你生成 pinmap JSON，再调用 save_pinmap 保存。
 
-**适用场景：**
-1. get_sensor_pinmap_catalog 返回的变体 status 为 "needs_generation"
-2. get_sensor_pinmap_catalog 返回的库 catalogStatus 为 "missing_catalog"（库没有 pinmap_catalog.json）
+**适用范围：** 开发板、传感器、执行器、显示屏、模块——任何需要 pinmap 的组件均可使用本工具。
 
-工具会返回：
-- 库的 README.md 文档内容（如果存在）
-- 示例代码
-- 参考的 pinmap 模板
-- 生成规则和格式说明
+**触发条件（满足其一即可）：**
+- get_component_catalog 返回变体 \`status: "needs_generation"\`
+- get_component_catalog 返回库 \`catalogStatus: "missing_catalog"\`
+- 用户明确要求为某个开发板或组件生成 / 更新 pinmap
 
-你需要根据这些信息输出标准格式的 pinmap JSON（ComponentConfig 格式），然后工具会将其保存到对应库的 pinmaps 目录。
-
-使用流程：
-1. get_sensor_pinmap_catalog 发现 status=needs_generation 的变体或 catalogStatus=missing_catalog 的库
-2. 调用本工具获取库文档和模板
-3. 你生成 pinmap JSON
-4. 调用 save_pinmap 工具保存（会自动创建/更新 pinmap_catalog.json）`,
+**流程：** get_component_catalog（可选）→ 本工具（获取素材）→ 你生成 pinmap JSON → save_pinmap`,
         input_schema: {
             type: 'object',
             properties: {
                 pinmapId: {
                     type: 'string',
-                    description: '目标组件的 fullId（如 "lib-servo:sg90:default"）'
+                    description: '目标组件的 fullId。传感器/模块示例：`"lib-servo:sg90:default"`；开发板示例：`"board-xiao_esp32s3:xiao_esp32s3:default"`'
                 },
                 referenceSource: {
                     type: 'string',
@@ -2320,13 +2335,12 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
                 }
             },
             required: ['pinmapId']
-        }
+        },
+        agents: ["schematicAgent"]
     },
     {
         name: 'save_pinmap',
-        description: `保存 LLM 生成的 pinmap 配置到传感器库。配合 generate_pinmap 工具使用。
-
-保存成功后会自动更新 pinmap_catalog.json 中的 status 为 "available"。`,
+        description: `保存你生成的 pinmap JSON 到库目录，并自动创建/更新 pinmap_catalog.json，将状态置为 "available"。配合 generate_pinmap 使用，是该流程的最后一步。`,
         input_schema: {
             type: 'object',
             properties: {
@@ -2340,7 +2354,8 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
                 }
             },
             required: ['pinmapId', 'pinmapConfig']
-        }
+        },
+        agents: ["schematicAgent"]
     }
     // {
     //     name: 'verify_block_existence',
