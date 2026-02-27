@@ -22,6 +22,22 @@ const DOCUMENT_EXTENSIONS = new Set([
   '.odt', '.ods', '.odp', '.rtf', '.epub',
 ]);
 
+/** 已知的文本文件扩展名（用于处理服务器返回 octet-stream 的情况） */
+const TEXT_FILE_EXTENSIONS = new Set([
+  '.md', '.markdown', '.txt', '.text', '.log',
+  '.json', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf',
+  '.xml', '.html', '.htm', '.xhtml', '.svg',
+  '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
+  '.css', '.scss', '.sass', '.less',
+  '.py', '.pyw', '.pyi', '.rb', '.php', '.java', '.c', '.cpp', '.h', '.hpp',
+  '.cs', '.go', '.rs', '.swift', '.kt', '.kts', '.scala', '.clj',
+  '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd',
+  '.sql', '.graphql', '.gql',
+  '.vue', '.svelte', '.astro',
+  '.env', '.gitignore', '.dockerignore', '.editorconfig',
+  '.ino', '.pde', // Arduino
+]);
+
 /** 允许的文本类 Content-Type */
 const ALLOWED_CONTENT_TYPES = [
   'text/', 'application/json', 'application/xml', 'application/xhtml',
@@ -381,11 +397,20 @@ export class FetchToolService {
       );
 
       const contentType = headResponse.headers.get('content-type') || '';
+      // 检查 Content-Type 是否为文本类型
+      // 特殊处理：如果服务器返回 octet-stream 但 URL 路径是已知文本文件扩展名，仍然允许
       if (contentType && !this.isTextContentType(contentType)) {
-        return {
-          content: `该 URL 返回的内容类型为 "${contentType}"，不是文本类型，无法作为上下文提供给 AI。请使用 web_search 工具搜索相关信息。`,
-          is_error: true
-        };
+        const isOctetStream = contentType.toLowerCase().includes('application/octet-stream');
+        const urlExt = this.getFileExtension(new URL(url).pathname.toLowerCase());
+        const isKnownTextExt = urlExt && TEXT_FILE_EXTENSIONS.has(urlExt);
+        
+        if (!(isOctetStream && isKnownTextExt)) {
+          return {
+            content: `该 URL 返回的内容类型为 "${contentType}"，不是文本类型，无法作为上下文提供给 AI。请使用 web_search 工具搜索相关信息。`,
+            is_error: true
+          };
+        }
+        // isOctetStream && isKnownTextExt: 服务器 MIME 配置不当，但 URL 是文本文件，允许继续
       }
 
       const cl = headResponse.headers.get('content-length');
