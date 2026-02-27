@@ -244,10 +244,14 @@ export class XDialogComponent implements OnChanges {
     const ailyTypes = ['aily-blockly', 'aily-board', 'aily-library', 'aily-state',
       'aily-button', 'aily-error', 'aily-mermaid', 'aily-task-action', 'aily-think', 'aily-context'];
 
-    // 保留 match：当 after 为完整 aily 类型，或为某类型的流式前缀（如 aily-）时
-    content = content.replace(/```([^\n`]*)/g, (match, after) =>
-      ailyTypes.some(t => after.startsWith(t) || t.startsWith(after)) ? match : (after === '' ? '```\n' : '```\n' + after)
-    );
+    // 保留 match：当 after 为完整 aily 类型、流式前缀、或有效语言标识符（如 json、typescript）时
+    // 若将 ```json 误改为 ```\njson，会导致 lang 解析错误、内容多出 "json" 文字
+    const isValidLang = (s: string) => /^[a-zA-Z0-9+#_.-]+$/.test(s.trim()) && s.trim().length > 0;
+    content = content.replace(/```([^\n`]*)/g, (match, after) => {
+      if (ailyTypes.some(t => after.startsWith(t) || t.startsWith(after))) return match;
+      if (isValidLang(after)) return match; // 保留 ```json、```typescript 等标准代码块
+      return after === '' ? '```\n' : '```\n' + after;
+    });
     if (content.endsWith('```')) content += '\n';
 
     return content

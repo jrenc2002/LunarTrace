@@ -109,7 +109,7 @@ const AILY_TYPES = [
     }
   `,
   styles: [`
-    :host { display: block; }
+    :host { display: block; padding: 0.5em 0; }
     .aily-mermaid-clickable {
       cursor: pointer;
       transition: opacity 0.2s;

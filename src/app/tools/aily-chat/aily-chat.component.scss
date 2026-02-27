@@ -305,9 +305,13 @@ nz-resize-handle {
     }
   
     pre {
-      padding: 0.5em;
+      padding: 0;
       margin: 0;
     }
+  }
+
+  .x-mermaid-placeholder {
+    background-color: #3a3a3a !important;
   }
 
   .x-mermaid-diagram {

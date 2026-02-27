@@ -9,15 +9,15 @@
       <i class="fa-light fa-user-astronaut"></i>&nbsp;&nbsp;aily
     }
   </div>
-  @if(content==='[thinking...]'){
-    <div class="content thinking">
-      <span class="thinking-text">Thinking</span>
-      <span class="wave-dots">
-        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-      </span>
-    </div>
-  }
-  <div class="content">
+  <div class="content" [class.thinking]="content==='[thinking...]'">
+    @if(content==='[thinking...]'){
+      <div class="thinking">
+        <span class="thinking-text">Thinking</span>
+        <span class="wave-dots">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        </span>
+      </div>
+    }
     @if (streamContent()) {
       <x-markdown
         [content]="streamContent()"
