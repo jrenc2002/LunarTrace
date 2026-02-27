@@ -65,7 +65,7 @@ import {
 import { syncAbsFileHandler } from './tools/syncAbsFileTool';
 import { getAbsSyntaxTool } from './tools/getAbsSyntaxTool';
 // 连线图工具
-import { generateConnectionGraphTool, getPinmapSummaryTool, validateConnectionGraphTool, getSensorPinmapCatalogTool, generatePinmapTool, savePinmapTool } from './tools/connectionGraphTool';
+import { generateConnectionGraphTool, getPinmapSummaryTool, validateConnectionGraphTool, getSensorPinmapCatalogTool, generatePinmapTool, savePinmapTool, getCurrentSchematicTool } from './tools/connectionGraphTool';
 import { ConnectionGraphService } from '../../services/connection-graph.service';
 // // 原子化块操作工具
 // import {
@@ -605,6 +605,8 @@ export class AilyChatComponent implements OnDestroy {
         return "获取引脚摘要信息...";
       case 'get_component_catalog':
         return "扫描项目组件目录...";
+      case 'get_current_schematic':
+        return "读取当前连线图...";
       case 'validate_schematic':
         return "验证连线配置安全性...";
       case 'generate_pinmap':
@@ -749,6 +751,8 @@ export class AilyChatComponent implements OnDestroy {
         return `引脚摘要获取成功`;
       case 'get_component_catalog':
         return `组件目录获取完成`;
+      case 'get_current_schematic':
+        return `当前连线图获取完成`;
       case 'validate_schematic':
         return `连线配置验证完成`;
       case 'generate_pinmap':
@@ -3692,6 +3696,33 @@ ${JSON.stringify(errData)}
                       resultText = 'Pinmap 配置保存失败';
                     } else {
                       resultText = 'Pinmap 配置保存成功';
+                    }
+                    break;
+
+                  case 'get_current_schematic':
+                    this.appendMessage('aily', `
+
+\`\`\`aily-state
+{
+  "state": "doing",
+  "text": "读取当前连线图...",
+  "id": "${toolCallId}"
+}
+\`\`\`\n\n
+                    `);
+                    toolResult = await getCurrentSchematicTool(
+                      this.connectionGraphService,
+                      this.projectService,
+                      toolArgs
+                    );
+                    if (toolResult?.is_error) {
+                      resultState = "error";
+                      resultText = '连线图读取失败';
+                    } else {
+                      try {
+                        const parsed = JSON.parse(toolResult.content);
+                        resultText = parsed.exists ? '当前连线图读取成功' : '当前项目没有连线图';
+                      } catch { resultText = '连线图读取完成'; }
                     }
                     break;
                 }

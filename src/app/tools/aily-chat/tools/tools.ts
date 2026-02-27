@@ -2309,6 +2309,29 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
         agents: ["schematicAgent"]
     },
     {
+        name: 'get_current_schematic',
+        description: `读取当前项目已保存的连线图完整内容。
+
+**用于编辑流程：** 用户想修改/添加/删除连线时，先调用本工具获取当前完整 JSON，修改后发给 validate_schematic 保存。
+
+**典型编辑场景：**
+- “删除 DHT20 的 VCC 连线”
+- “把舍口改接到 D3 引脚”
+- “再添加一个 LED”
+
+**编辑流程：**
+1. **get_current_schematic()**：获取当前连线图完整 JSON（schematicData）
+2. **修改 schematicData**：加创改删其中的 components 和 connections
+   - 新增组件时：先调用 generate_schematic 获取新组件引脚信息
+3. **validate_schematic(connection_data: modifiedData)**：验证并保存`,
+        input_schema: {
+            type: 'object',
+            properties: {},
+            required: []
+        },
+        agents: ["schematicAgent"]
+    },
+    {
         name: 'generate_pinmap',
         description: `为缺少引脚配置的组件（开发板、传感器、模块等任意类型）准备生成素材。返回 README、示例代码和 pinmap 模板，供你生成 pinmap JSON，再调用 save_pinmap 保存。
 

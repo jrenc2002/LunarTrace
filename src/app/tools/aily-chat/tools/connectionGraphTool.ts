@@ -1098,3 +1098,63 @@ export async function savePinmapTool(
     };
   }
 }
+
+/**
+ * get_current_schematic 工具
+ *
+ * 读取当前项目中已保存的连线图 JSON 完整内容。
+ * 用于编辑/删除/添加连线前获取当前状态。
+ */
+export async function getCurrentSchematicTool(
+  connectionGraphService: ConnectionGraphService,
+  projectService: ProjectService,
+  input: {}
+): Promise<ToolUseResult> {
+  try {
+    const data = connectionGraphService.getConnectionGraph();
+
+    if (!data) {
+      return {
+        is_error: false,
+        content: JSON.stringify({
+          exists: false,
+          message: '当前项目没有已保存的连线图。',
+          tip: '请先调用 get_component_catalog + generate_schematic 生成连线方案。',
+        }, null, 2),
+      };
+    }
+
+    const result = {
+      exists: true,
+      description: data.description,
+      summary: {
+        componentCount: data.components.length,
+        connectionCount: data.connections.length,
+        components: data.components.map(c => ({
+          refId: c.refId,
+          componentName: c.componentName,
+          pinmapId: c.pinmapId,
+          componentType: c.componentType || 'hardware',
+        })),
+      },
+      // 完整的连线图 JSON，可直接修改后传入 validate_schematic
+      schematicData: data,
+      editingTip: [
+        '如需修改连线：直接修改 schematicData.connections 中的连线内容',
+        '如需添加组件：啄 schematicData.components 进行连线同时调用 generate_schematic 获取新组件的引脚摘要',
+        '修改完成后：把修改后的完整 JSON 传入 validate_schematic(connection_data) 保存',
+      ],
+    };
+
+    const toolResult: ToolUseResult = {
+      is_error: false,
+      content: JSON.stringify(result, null, 2),
+    };
+    return injectTodoReminder(toolResult, 'get_current_schematic');
+  } catch (error: any) {
+    return {
+      is_error: true,
+      content: `读取当前连线图失败: ${error.message || error}`,
+    };
+  }
+}
