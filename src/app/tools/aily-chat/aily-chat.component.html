@@ -40,9 +40,20 @@
       @if(list.length > 0){
       <!-- <ngx-simplebar #simplebarRef [options]="options"> -->
       <div class="dialogs">
-        @for (item of list; track item) {
-        <aily-dialog [role]="item.role" [content]="item.content" [doing]="item.state=='doing'"></aily-dialog>
-        }
+        <!-- @for(item of list; track sessionId + '-' + $index){
+        <aily-dialog
+          [role]="item.role"
+          [content]="item.content"
+          [doing]="item.state === 'doing'">
+        </aily-dialog>
+        } -->
+        @for(item of list; track sessionId + '-' + $index){
+          <aily-x-dialog
+            [role]="item.role"
+            [content]="item.content"
+            [doing]="item.state === 'doing'">
+          </aily-x-dialog>
+          }
       </div>
       <!-- </ngx-simplebar> -->
       }@else{

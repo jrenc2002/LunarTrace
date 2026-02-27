@@ -296,3 +296,31 @@ nz-resize-handle {
     }
   }
 }
+
+::ng-deep {
+  .x-markdown {
+    p {
+      margin-top: 0.5em;
+      margin-bottom: 0.5em;
+    }
+  
+    pre {
+      margin-bottom: 0.5em;
+    }
+  }
+
+  .x-mermaid-diagram {
+    border-radius: 5px;
+    background-color: #3a3a3a;
+    max-height: 500px;
+    overflow: auto;
+
+    > svg {
+      user-select: none;
+    }
+  }
+
+  pre, code, kbd, samp, label, span {
+    font-family: "MiSans Regular", "FiraCode Regular";
+  }
+}
