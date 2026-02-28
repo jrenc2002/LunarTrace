@@ -358,6 +358,26 @@ function registerWindowHandlers(mainWindow) {
         console.log('state-update: ', data);
         mainWindow.webContents.send('state-update', data);
     });
+
+    // 连线图数据更新通知 - 从主窗口转发给所有子窗口
+    ipcMain.on('connection-graph-updated', (event, payload) => {
+        console.log('[IPC] connection-graph-updated, 转发给', openWindows.size, '个子窗口');
+        openWindows.forEach((subWindow, windowUrl) => {
+            try {
+                if (subWindow && !subWindow.isDestroyed() && subWindow.webContents && !subWindow.webContents.isDestroyed()) {
+                    subWindow.webContents.send('connection-graph-updated', payload);
+                }
+            } catch (error) {
+                console.error('[IPC] 转发 connection-graph-updated 失败:', error.message);
+            }
+        });
+    });
+
+    // 子窗口请求主窗口保存连线图数据
+    ipcMain.on('save-connection-graph', (event, data) => {
+        console.log('[IPC] save-connection-graph, 转发给主窗口');
+        mainWindow.webContents.send('save-connection-graph', data);
+    });
 }
 
 

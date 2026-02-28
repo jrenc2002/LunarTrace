@@ -21,6 +21,23 @@ export class XDialogComponent implements OnChanges {
   @Input() role = 'user';
   @Input() content = '';
   @Input() doing = false;
+  /** 消息来源：mainAgent 为主Agent，其他值为子Agent名称 */
+  @Input() source: string = 'mainAgent';
+
+  /** 判断是否为子Agent消息 */
+  get isSubagent(): boolean {
+    return this.source && this.source !== 'mainAgent';
+  }
+
+  /** 获取子Agent显示名称 */
+  get subagentDisplayName(): string {
+    if (!this.isSubagent) return '';
+    // 将 camelCase 转换为更可读的格式，如 schematicAgent -> Schematic Agent
+    return this.source
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, str => str.toUpperCase())
+      .trim();
+  }
 
   streamContent = signal('');
   streamingConfig = signal<StreamingOption>({ hasNextChunk: false, enableAnimation: false });

@@ -170,6 +170,15 @@ export class _UploaderService {
           return;
         }
 
+        // 提前捕获串口号，避免 build 期间设备重新插拔导致端口变化的竞态条件
+        const capturedSerialPort = this.serialService.currentPort;
+        if (!capturedSerialPort) {
+          this.uploadInProgress = false;
+          this.handleUploadError('请先选择串口', '未选择串口');
+          reject({ state: 'error', text: '请先选择串口' });
+          return;
+        }
+
         // 第一步：检查是否需要编译
         const code = arduinoGenerator.workspaceToCode(this.blocklyService.workspace);
         const buildPath = await this.projectService.getBuildPath();
@@ -278,7 +287,7 @@ export class _UploaderService {
           buildPath,
           boardModule,
           appDataPath: window['path'].getAppDataPath(),
-          serialPort: this.serialService.currentPort,
+          serialPort: capturedSerialPort,
           uploadParam: cleanParam, // 传递清理后的上传参数
           use_1200bps_touch,
           wait_for_upload

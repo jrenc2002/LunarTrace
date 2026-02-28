@@ -8,6 +8,7 @@ import { filter } from 'rxjs/operators';
 import { ElectronService } from '../../services/electron.service';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { UiService } from '../../services/ui.service';
+import { ConnectionGraphService } from '../../services/connection-graph.service';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { ImageViewerComponent } from '../image-viewer/image-viewer.component';
 @Component({
@@ -34,6 +35,7 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
     private electronService: ElectronService,
     private message: NzMessageService,
     private uiService: UiService,
+    private connectionGraphService: ConnectionGraphService,
     private translate: TranslateService
   ) { }
 
@@ -125,16 +127,27 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
   }
 
   showCircuit() {
-    this.message.info(this.translate.instant('FLOAT_SIDER.CIRCUIT') + ' ' + this.translate.instant('COMMON.FEATURE_COMING_SOON'));
+    this.message.warning(this.translate.instant('COMING SOON'));
     return;
-    if (this.electronService.isElectron) {
-      this.uiService.openWindow({
-        // path: `iframe?url=${encodeURIComponent('https://tool.aily.pro/connection-graph?type=json&theme=dark')}`,
-        path: `iframe?url=${encodeURIComponent('http://localhost:4201/connection-graph?type=json&theme=dark')}`,
-        data: { a: 1, b: 2 },
-        width: 800,
-        height: 600
-      });
-    }
+    // if (!this.electronService.isElectron || !this.boardPackagePath) {
+    //   this.message.warning(this.translate.instant('FLOAT_SIDER.NO_PINMAP'));
+    //   return;
+    // }
+
+    // // 构建连线图 payload
+    // const payload = this.connectionGraphService.buildPayload(this.boardPackagePath);
+    // console.log('[showCircuit] payload:', payload ? JSON.stringify(payload).slice(0, 500) + '...' : 'null');
+    // if (!payload) {
+    //   this.message.info('当前项目暂无连线数据，请先通过 AI 助手生成连线方案');
+    //   return;
+    // }
+
+    // this.uiService.openWindow({
+    //   path: `iframe?url=${encodeURIComponent('https://tool.aily.pro/connection-graph?type=json&theme=dark')}`,
+    //   // path: `iframe?url=${encodeURIComponent('http://localhost:4201/connection-graph?type=json&theme=dark')}`,
+    //   data: payload,
+    //   width: 900,
+    //   height: 700,
+    // });
   }
 }

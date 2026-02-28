@@ -37,6 +37,16 @@ export interface ModelConfigOption {
 }
 
 /**
+ * 按Agent分类的工具配置
+ */
+export interface AgentToolsConfig {
+    /** 启用的工具列表 */
+    enabledTools: string[];
+    /** 禁用的工具列表 */
+    disabledTools: string[];
+}
+
+/**
  * Aily Chat 配置接口
  */
 export interface AilyChatConfig {
@@ -48,10 +58,16 @@ export interface AilyChatConfig {
     apiKey?: string;
     /** 最大循环次数 */
     maxCount?: number;
-    /** 启用的工具列表 */
+    /** 启用的工具列表（兼容旧版本，mainAgent） */
     enabledTools?: string[];
-    /** 禁用的工具列表（用于区分新工具和被用户禁用的工具） */
+    /** 禁用的工具列表（兼容旧版本，mainAgent） */
     disabledTools?: string[];
+    /** 按Agent分类的工具配置 */
+    agentTools?: {
+        mainAgent?: AgentToolsConfig;
+        schematicAgent?: AgentToolsConfig;
+        [agentName: string]: AgentToolsConfig | undefined;
+    };
     /** 安全工作区配置 */
     securityWorkspaces?: {
         /** 是否允许访问项目文件 */
@@ -283,6 +299,47 @@ export class AilyChatConfigService {
 
     set disabledTools(value: string[]) {
         this.config.disabledTools = value;
+    }
+
+    /**
+     * 获取指定Agent的工具配置
+     * @param agentName Agent名称（如 'mainAgent', 'schematicAgent'）
+     */
+    getAgentToolsConfig(agentName: string): AgentToolsConfig {
+        // 优先从 agentTools 获取
+        const agentConfig = this.config.agentTools?.[agentName];
+        if (agentConfig) {
+            return {
+                enabledTools: agentConfig.enabledTools ?? [],
+                disabledTools: agentConfig.disabledTools ?? []
+            };
+        }
+        // 兼容旧版本：mainAgent 使用顶层的 enabledTools/disabledTools
+        if (agentName === 'mainAgent') {
+            return {
+                enabledTools: this.config.enabledTools ?? [],
+                disabledTools: this.config.disabledTools ?? []
+            };
+        }
+        // 其他Agent默认返回空配置
+        return { enabledTools: [], disabledTools: [] };
+    }
+
+    /**
+     * 设置指定Agent的工具配置
+     * @param agentName Agent名称
+     * @param config 工具配置
+     */
+    setAgentToolsConfig(agentName: string, config: AgentToolsConfig): void {
+        if (!this.config.agentTools) {
+            this.config.agentTools = {};
+        }
+        this.config.agentTools[agentName] = config;
+        // 同步更新顶层配置（兼容旧版本）
+        if (agentName === 'mainAgent') {
+            this.config.enabledTools = config.enabledTools;
+            this.config.disabledTools = config.disabledTools;
+        }
     }
 
     /**

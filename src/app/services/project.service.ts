@@ -235,6 +235,10 @@ export class ProjectService {
     this.save(path);
     // 修改package.json文件
     const packageJson = JSON.parse(window['fs'].readFileSync(`${path}/package.json`));
+    // 另存为时去掉cloudId
+    if (packageJson.cloudId) {
+      delete packageJson.cloudId;
+    }
     // 获取新的项目名称
     let name = path.split('\\').pop();
     if (this.containsChineseCharacters(name)) {

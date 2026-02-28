@@ -14,5 +14,12 @@
     <iframe [src]="iframeSrc" (load)="onIframeLoad($event)" (error)="handleLoadError()"
       [style.display]="isLoading || showEmptyState ? 'none' : 'block'"></iframe>
     }
+    <!-- 自动更新提示 -->
+    @if(hasUpdate) {
+    <div class="update-banner" (click)="dismissUpdate()">
+      <span class="update-icon">✅</span>
+      <span class="update-text">连线图已自动更新</span>
+    </div>
+    }
   </div>
 </app-sub-window>

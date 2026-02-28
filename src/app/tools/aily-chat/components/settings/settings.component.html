@@ -122,22 +122,38 @@
                 <span>可用工具</span>
                 <i class="fa-light fa-circle-question help-icon" (click)="openHelpUrl('tools')"></i>
             </div>
+            
+            <!-- Agent 标签页 -->
+            <div class="agent-tabs">
+                @for (agent of agentConfigs; track agent.name) {
+                <div class="agent-tab" 
+                     [class.active]="selectedAgent === agent.name"
+                     (click)="selectedAgent = agent.name"
+                     [title]="agent.description">
+                    {{ agent.displayName }}
+                </div>
+                }
+            </div>
+            
             <div class="items-list">
                 <div class="items-header">
                     <label nz-checkbox [(ngModel)]="allChecked" [nzIndeterminate]="indeterminate"
                         (ngModelChange)="onAllCheckedChange($event)">
                         全选
                     </label>
-                    <span class="items-count">{{ enabledToolsCount }} / {{ availableTools.length }} 已启用</span>
+                    <span class="items-count">{{ enabledToolsCount }} / {{ totalToolsCount }} 已启用</span>
                 </div>
                 <div class="items-container sscroll">
-                    @for (tool of availableTools; track tool.displayName) {
+                    @for (tool of currentAgentTools; track tool.name) {
                     <div class="item-wrapper">
                         <label nz-checkbox [(ngModel)]="tool.enabled" (ngModelChange)="onToolCheckedChange()"
                             class="list-item">
                             {{ tool.displayName }}
                         </label>
                     </div>
+                    }
+                    @if (currentAgentTools.length === 0) {
+                    <div class="empty-tools-tip">该 Agent 暂无可配置的工具</div>
                     }
                 </div>
             </div>

@@ -64,6 +64,9 @@ import {
 // import { insertDslHandler, getDslHelpHandler } from './tools/dslTool';
 import { syncAbsFileHandler } from './tools/syncAbsFileTool';
 import { getAbsSyntaxTool } from './tools/getAbsSyntaxTool';
+// 连线图工具
+import { generateConnectionGraphTool, getPinmapSummaryTool, validateConnectionGraphTool, getSensorPinmapCatalogTool, generatePinmapTool, savePinmapTool, getCurrentSchematicTool, applySchematicTool } from './tools/connectionGraphTool';
+import { ConnectionGraphService } from '../../services/connection-graph.service';
 // // 原子化块操作工具
 // import {
 //   createSingleBlockTool,
@@ -106,6 +109,8 @@ export interface ChatMessage {
   role: string;
   content: string;
   state: 'doing' | 'done';
+  /** 消息来源，mainAgent 为主Agent，其他值为子Agent名称 */
+  source?: string;
 }
 
 export enum ToolCallState {
@@ -138,6 +143,7 @@ import { OnboardingService } from '../../services/onboarding.service';
 import { AILY_CHAT_ONBOARDING_CONFIG } from '../../configs/onboarding.config';
 import { AbsAutoSyncService } from './services/abs-auto-sync.service';
 import { absVersionControlHandler } from './tools/absVersionControlTool';
+import { RepetitionDetectionService } from './services/repetition-detection.service';
 
 // import { reloadAbiJsonTool, reloadAbiJsonToolSimple } from './tools';
 
@@ -593,6 +599,23 @@ export class AilyChatComponent implements OnDestroy {
         return "查询块定义信息...";
       case 'getBlockConnectionCompatibilityTool':
         return "分析块连接兼容性...";
+      // 连线图工具
+      case 'generate_schematic':
+        return "分析引脚信息，准备连线方案...";
+      case 'get_pinmap_summary':
+        return "获取引脚摘要信息...";
+      case 'get_component_catalog':
+        return "扫描项目组件目录...";
+      case 'get_current_schematic':
+        return "读取当前连线图...";
+      case 'validate_schematic':
+        return "验证连线配置安全性...";
+      case 'apply_schematic':
+        return "解析 AWS 并保存连线图...";
+      case 'generate_pinmap':
+        return "获取 pinmap 生成参考信息...";
+      case 'save_pinmap':
+        return "保存 pinmap 配置...";
       default:
         return `执行工具: ${cleanToolName}`;
     }
@@ -725,6 +748,22 @@ export class AilyChatComponent implements OnDestroy {
         return `块定义查询完成`;
       case 'getBlockConnectionCompatibilityTool':
         return `块连接兼容性分析完成`;
+      case 'generate_schematic':
+        return `连线方案生成完成`;
+      case 'get_pinmap_summary':
+        return `引脚摘要获取成功`;
+      case 'get_component_catalog':
+        return `组件目录获取完成`;
+      case 'get_current_schematic':
+        return `当前连线图获取完成`;
+      case 'validate_schematic':
+        return `连线配置验证完成`;
+      case 'apply_schematic':
+        return `AWS 解析并保存完成`;
+      case 'generate_pinmap':
+        return `Pinmap 参考信息获取完成`;
+      case 'save_pinmap':
+        return `Pinmap 配置保存成功`;
       default:
         return `${cleanToolName} 执行成功`;
     }
@@ -1101,7 +1140,9 @@ Do not create non-existent boards and libraries.
     private electronService: ElectronService,
     private ailyChatConfigService: AilyChatConfigService,
     private onboardingService: OnboardingService,
-    private absAutoSyncService: AbsAutoSyncService
+    private absAutoSyncService: AbsAutoSyncService,
+    private connectionGraphService: ConnectionGraphService,
+    private repetitionDetectionService: RepetitionDetectionService
   ) {
     // securityContext 改为 getter，每次使用时动态获取当前项目路径
   }
@@ -1515,8 +1556,15 @@ Do not create non-existent boards and libraries.
     return -1;
   }
 
-  setLastMsgContent(role, text) {
-    if (this.list.length > 0 && this.list[this.list.length - 1].role === role) {
+  /** 当前消息来源：mainAgent 为主Agent，其他值为子Agent名称 */
+  currentMessageSource: string = 'mainAgent';
+
+  setLastMsgContent(role, text, source?: string) {
+    const msgSource = source || this.currentMessageSource;
+    // 检查是否可以合并消息：同角色且同来源
+    if (this.list.length > 0 && 
+        this.list[this.list.length - 1].role === role &&
+        this.list[this.list.length - 1].source === msgSource) {
       this.list[this.list.length - 1].content += text;
       // 如果是AI角色且正在输出，保持doing状态
       if (role === 'aily' && this.isWaiting) {
@@ -1526,7 +1574,8 @@ Do not create non-existent boards and libraries.
       this.list.push({
         "role": role,
         "content": text,
-        "state": (role === 'aily' && this.isWaiting) ? 'doing' : 'done'
+        "state": (role === 'aily' && this.isWaiting) ? 'doing' : 'done',
+        "source": msgSource
       });
     }
     this.chatService.historyChatMap.set(this.sessionId, this.list);
@@ -1534,8 +1583,8 @@ Do not create non-existent boards and libraries.
 
   terminateTemp = '';
 
-  appendMessage(role, text) {
-    // console.log("添加消息: ", role, text);
+  appendMessage(role, text, source?: string) {
+    // console.log("添加消息: ", role, text, "source:", source);
 
     try {
       const parsedText = JSON.parse(text);
@@ -1556,7 +1605,7 @@ Do not create non-existent boards and libraries.
       if (terminateText.startsWith(this.terminateTemp)) {
         return;
       }
-      this.setLastMsgContent(role, this.terminateTemp);
+      this.setLastMsgContent(role, this.terminateTemp, source);
       this.terminateTemp = '';
       return;
     }
@@ -1564,11 +1613,11 @@ Do not create non-existent boards and libraries.
     if (prefixStart >= 0) {
       this.terminateTemp += text.substring(prefixStart);
       text = text.substring(0, prefixStart);
-      this.setLastMsgContent(role, text);
+      this.setLastMsgContent(role, text, source);
       return;
     }
 
-    this.setLastMsgContent(role, text);
+    this.setLastMsgContent(role, text, source);
     this.terminateTemp = '';
   }
 
@@ -1634,6 +1683,9 @@ Do not create non-existent boards and libraries.
     // 清空会话期间的额外允许路径
     this.sessionAllowedPaths = [];
 
+    // 重置重复检测状态
+    this.repetitionDetectionService.resetAll();
+
     if (!this.mcpInitialized) {
       this.mcpInitialized = true;
       await this.mcpService.init();
@@ -1656,10 +1708,20 @@ Do not create non-existent boards and libraries.
     // tools + mcp tools
     this.isCompleted = false;
 
-    // 根据配置过滤启用的工具
-    const enabledToolNames = this.ailyChatConfigService.enabledTools;
-    const disabledToolNames = this.ailyChatConfigService.disabledTools || [];
-    const hasEnabledToolsConfig = enabledToolNames && enabledToolNames.length > 0;
+    // 根据配置过滤启用的工具（合并所有 Agent 的启用工具）
+    const mainAgentConfig = this.ailyChatConfigService.getAgentToolsConfig('mainAgent');
+    const schematicAgentConfig = this.ailyChatConfigService.getAgentToolsConfig('schematicAgent');
+    
+    // 合并所有 Agent 的启用和禁用工具
+    const enabledToolNames = [
+      ...(mainAgentConfig?.enabledTools || []),
+      ...(schematicAgentConfig?.enabledTools || [])
+    ];
+    const disabledToolNames = [
+      ...(mainAgentConfig?.disabledTools || []),
+      ...(schematicAgentConfig?.disabledTools || [])
+    ];
+    const hasEnabledToolsConfig = enabledToolNames.length > 0;
 
     // 过滤工具逻辑：
     // 1. 如果没有配置，使用全部工具
@@ -1847,6 +1909,9 @@ ${JSON.stringify(errData)}
         return;
       }
 
+      // 重置流式文本检测状态（新消息开始）
+      this.repetitionDetectionService.resetStreamTokens();
+
       // 将用户输入的文本包裹在<user-query>标签中
       text = `<user-query>${text}</user-query>`;
 
@@ -1869,6 +1934,8 @@ ${JSON.stringify(errData)}
     }
 
     this.isWaiting = true;
+    // 重置消息来源为主Agent，每次新对话都从主Agent开始
+    this.currentMessageSource = 'mainAgent';
 
     this.sendMessageWithRetry(this.sessionId, text, sender, clear, 3);
   }
@@ -1997,11 +2064,36 @@ ${JSON.stringify(errData)}
 
         // console.log("Recv: ", data);
 
+        // 更新当前消息来源
+        const messageSource = data.source || 'mainAgent';
+        
+        // 检测 source 变更，如果变更则将上一条消息的 doing 状态设为 done
+        if (messageSource !== this.currentMessageSource) {
+          // source 变更：mainAgent -> subAgent 或 subAgent -> mainAgent
+          // 将当前最后一条 AI 消息的状态设为 done
+          if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
+            this.list[this.list.length - 1].state = 'done';
+          }
+          // 重置流式文本检测状态（新 Agent 开始输出）
+          this.repetitionDetectionService.resetStreamTokens();
+          console.log(`Source changed: ${this.currentMessageSource} -> ${messageSource}`);
+        }
+        this.currentMessageSource = messageSource;
+
         try {
           if (data.type === 'ModelClientStreamingChunkEvent') {
             // 处理流式数据
             if (data.content) {
-              this.appendMessage('aily', data.content);
+              // 检测流式文本重复
+              const streamRepetitionCheck = this.repetitionDetectionService.checkStreamRepetition(data.content);
+              if (streamRepetitionCheck.isRepetitive) {
+                console.warn('[重复检测] 流式文本重复:', streamRepetitionCheck.pattern);
+                // 显示提示并终止响应
+                this.appendMessage('aily', `\n\n> ⚠️ ${streamRepetitionCheck.pattern}，已自动终止响应。\n\n`, messageSource);
+                this.stop();
+                return;
+              }
+              this.appendMessage('aily', data.content, messageSource);
             }
           } else if (data.type === 'TextMessage') {
             // 每条完整的对话信息
@@ -2018,7 +2110,7 @@ ${JSON.stringify(errData)}
                     this.completeToolCall(result.call_id, result.name || 'unknown', resultState, resultText);
                   }
                 } else {
-                  this.appendMessage('aily', "\n\n");
+                  this.appendMessage('aily', "\n\n", messageSource);
                 }
               }
             }
@@ -2033,7 +2125,7 @@ ${JSON.stringify(errData)}
   "id": "${data.id}"
 }
 \`\`\`\n\n
-`);
+`, messageSource);
             } else {
               this.appendMessage('aily', `\n\n
 \`\`\`aily-state
@@ -2043,7 +2135,7 @@ ${JSON.stringify(errData)}
   "id": "${data.id}"
 }
 \`\`\`\n\n
-`);
+`, messageSource);
               newConnect = true;
             }
           } else if (data.type === 'error') {
@@ -2062,7 +2154,7 @@ ${JSON.stringify(errData)}
 [{"text":"重试","action":"retry","type":"primary"}]
 \`\`\`
 
-`);
+`, messageSource);
             this.isWaiting = false;
           } else if (data.type === 'tool_call_request') {
             let toolArgs;
@@ -2116,7 +2208,21 @@ ${JSON.stringify(errData)}
             let resultState = "done";
             let resultText = '';
 
-            // console.log("工具调用请求: ", data.tool_name, toolArgs);
+            console.log("工具调用请求: ", data.tool_name, toolArgs);
+
+            // 检测重复工具调用
+            const toolRepetitionCheck = this.repetitionDetectionService.checkToolCallRepetition(data.tool_name, toolArgs);
+            if (toolRepetitionCheck.isRepetitive) {
+              console.warn('[重复检测] 工具调用重复:', toolRepetitionCheck.pattern);
+              // 返回错误让 Agent 反思
+              this.send("tool", JSON.stringify({
+                "type": "tool_result",
+                "tool_id": data.tool_id,
+                "content": `检测到重复调用模式 (${toolRepetitionCheck.pattern})。${toolRepetitionCheck.suggestion || '请重新思考解决方案。'}`,
+                "is_error": true
+              }, null, 2), false);
+              return;
+            }
 
             // 定义 block 工具列表
             const blockTools = [
@@ -3495,6 +3601,204 @@ ${JSON.stringify(errData)}
                   //                       resultText = 'Arduino代码语法检查通过';
                   //                     }
                   //                     break;
+
+                  case 'generate_schematic':
+                    this.appendMessage('aily', `
+
+\`\`\`aily-state
+{
+  "state": "doing",
+  "text": "分析引脚信息，准备连线方案...",
+  "id": "${toolCallId}"
+}
+\`\`\`\n\n
+                    `);
+                    toolResult = await generateConnectionGraphTool(
+                      this.connectionGraphService,
+                      this.projectService,
+                      toolArgs
+                    );
+                    if (toolResult?.is_error) {
+                      resultState = "error";
+                      resultText = '连线方案生成失败';
+                    } else {
+                      resultText = '连线方案生成完成';
+                    }
+                    break;
+
+                  case 'get_pinmap_summary':
+                    this.appendMessage('aily', `
+
+\`\`\`aily-state
+{
+  "state": "doing",
+  "text": "获取引脚摘要信息...",
+  "id": "${toolCallId}"
+}
+\`\`\`\n\n
+                    `);
+                    toolResult = await getPinmapSummaryTool(
+                      this.connectionGraphService,
+                      this.projectService,
+                      toolArgs
+                    );
+                    if (toolResult?.is_error) {
+                      resultState = "error";
+                      resultText = '引脚摘要获取失败';
+                    } else {
+                      resultText = '引脚摘要获取成功';
+                    }
+                    break;
+
+                  case 'validate_schematic':
+                    this.appendMessage('aily', `
+
+\`\`\`aily-state
+{
+  "state": "doing",
+  "text": "验证连线配置安全性...",
+  "id": "${toolCallId}"
+}
+\`\`\`\n\n
+                    `);
+                    toolResult = await validateConnectionGraphTool(
+                      this.connectionGraphService,
+                      this.projectService,
+                      toolArgs
+                    );
+                    if (toolResult?.is_error) {
+                      resultState = "error";
+                      resultText = '连线配置验证失败';
+                    } else {
+                      resultText = '连线配置验证完成';
+                    }
+                    break;
+
+                  case 'get_component_catalog':
+                    this.appendMessage('aily', `
+
+\`\`\`aily-state
+{
+  "state": "doing",
+  "text": "扫描项目组件目录...",
+  "id": "${toolCallId}"
+}
+\`\`\`\n\n
+                    `);
+                    toolResult = await getSensorPinmapCatalogTool(
+                      this.connectionGraphService,
+                      this.projectService,
+                      toolArgs
+                    );
+                    if (toolResult?.is_error) {
+                      resultState = "error";
+                      resultText = '组件目录获取失败';
+                    } else {
+                      resultText = '组件目录获取完成';
+                    }
+                    break;
+
+                  case 'generate_pinmap':
+                    this.appendMessage('aily', `
+
+\`\`\`aily-state
+{
+  "state": "doing",
+  "text": "获取 pinmap 生成参考信息...",
+  "id": "${toolCallId}"
+}
+\`\`\`\n\n
+                    `);
+                    toolResult = await generatePinmapTool(
+                      this.connectionGraphService,
+                      this.projectService,
+                      toolArgs
+                    );
+                    if (toolResult?.is_error) {
+                      resultState = "error";
+                      resultText = 'Pinmap 参考信息获取失败';
+                    } else {
+                      resultText = 'Pinmap 参考信息获取完成';
+                    }
+                    break;
+
+                  case 'save_pinmap':
+                    this.appendMessage('aily', `
+
+\`\`\`aily-state
+{
+  "state": "doing",
+  "text": "保存 pinmap 配置...",
+  "id": "${toolCallId}"
+}
+\`\`\`\n\n
+                    `);
+                    toolResult = await savePinmapTool(
+                      this.connectionGraphService,
+                      this.projectService,
+                      toolArgs
+                    );
+                    if (toolResult?.is_error) {
+                      resultState = "error";
+                      resultText = 'Pinmap 配置保存失败';
+                    } else {
+                      resultText = 'Pinmap 配置保存成功';
+                    }
+                    break;
+
+                  case 'get_current_schematic':
+                    this.appendMessage('aily', `
+
+\`\`\`aily-state
+{
+  "state": "doing",
+  "text": "读取当前连线图...",
+  "id": "${toolCallId}"
+}
+\`\`\`\n\n
+                    `);
+                    toolResult = await getCurrentSchematicTool(
+                      this.connectionGraphService,
+                      this.projectService,
+                      toolArgs
+                    );
+                    if (toolResult?.is_error) {
+                      resultState = "error";
+                      resultText = '连线图读取失败';
+                    } else {
+                      try {
+                        const parsed = JSON.parse(toolResult.content);
+                        resultText = parsed.exists ? '当前连线图读取成功' : '当前项目没有连线图';
+                      } catch { resultText = '连线图读取完成'; }
+                    }
+                    break;
+
+                  case 'apply_schematic':
+                    this.appendMessage('aily', `
+
+\`\`\`aily-state
+{
+  "state": "doing",
+  "text": "解析 AWS 并保存连线图...",
+  "id": "${toolCallId}"
+}
+\`\`\`\n\n
+                    `);
+                    toolResult = await applySchematicTool(
+                      this.connectionGraphService,
+                      this.projectService,
+                      toolArgs
+                    );
+                    if (toolResult?.is_error) {
+                      resultState = "error";
+                      resultText = 'AWS 解析失败';
+                    } else {
+                      try {
+                        const parsed = JSON.parse(toolResult.content);
+                        resultText = parsed.success ? `连线图保存成功（${parsed.summary?.connectionCount || 0} 条连线）` : 'AWS 处理完成';
+                      } catch { resultText = 'AWS 解析完成'; }
+                    }
+                    break;
                 }
               }
 
@@ -3517,12 +3821,21 @@ ${JSON.stringify(errData)}
             // 获取keyinfo
             // const keyInfo = await this.getKeyInfo();
 
-            // 集中注入 todo 提醒 - 对所有非 todo 工具的结果统一注入
-            if (toolResult && data.tool_name !== 'todo_write_tool') {
+            // 判断是否为子Agent
+            const isSubagent = messageSource !== 'mainAgent';
+
+            // 集中注入 todo 提醒 - 仅对 mainAgent 的非 todo 工具结果注入
+            if (toolResult && data.tool_name !== 'todo_write_tool' && !isSubagent) {
+              console.log('=============================🔔 注入 TODO 提醒=============================');
               toolResult = injectTodoReminder(toolResult, data.tool_name);
             }
 
             let toolContent = '';
+            
+            // 根据 Agent 类型生成不同的提示信息
+            const agentInfoTip = isSubagent 
+              ? '<info>如果子任务已完成，请返回结果给主Agent</info>'
+              : '<info>如果想结束对话，转交给用户，可以使用[to_xxx]，这里的xxx为user</info>';
 
             // 拼接到工具结果中返回
             if (toolResult?.content && this.chatService.currentMode === 'agent') {
@@ -3563,15 +3876,16 @@ ${JSON.stringify(errData)}
                 'reload_abi_json'
               ].includes(data.tool_name);
 
-              // 只在 Blockly 工具失败或警告时添加规则提示
-              const needsRules = isBlocklyTool && (toolResult?.is_error || resultState === 'warn');
+              // 只在 Blockly 工具失败或警告时添加规则提示（仅限 mainAgent）
+              const needsRules = !isSubagent && isBlocklyTool && (toolResult?.is_error || resultState === 'warn');
 
               // console.log('needsRules:', needsRules, 'isBlocklyTool:', isBlocklyTool, 'needsPathInfo:', needsPathInfo, 'resultState:', resultState, 'toolResult.is_error:', toolResult?.is_error);
 
               // 智能决定是否包含 keyInfo：需要路径信息的工具 或 工具失败/警告时
               const shouldIncludeKeyInfo = needsPathInfo || toolResult?.is_error || resultState === 'warn';
-
-              if (needsRules || newConnect || newProject) {
+              
+              // 规则提示仅对 mainAgent 生效
+              if (!isSubagent && (needsRules || newConnect || newProject)) {
                 console.log('======================================包含规则提示======================================');
                 newConnect = false;
                 newProject = false;
@@ -3652,20 +3966,20 @@ ${JSON.stringify(errData)}
 - 深入分析嵌入式代码逻辑和硬件特性，确保逻辑正确。
 - ABS代码保持清晰的缩进和换行，便于阅读和调试。
 </rules>
-<toolResult>${toolResult?.content}</toolResult>\n<info>如果想结束对话，转交给用户，可以使用[to_xxx]，这里的xxx为user</info>`;
+<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
               } else if (shouldIncludeKeyInfo) {
                 // 需要路径信息的工具 或 工具失败时：只包含 keyInfo
-                // toolContent += `\n${keyInfo}\n<toolResult>${toolResult?.content}</toolResult>\n<info>如果想结束对话，转交给用户，可以使用[to_xxx]，这里的xxx为user</info>`;
-                toolContent += `\n<toolResult>${toolResult?.content}</toolResult>\n<info>如果想结束对话，转交给用户，可以使用[to_xxx]，这里的xxx为user</info>`;
+                // toolContent += `\n${keyInfo}\n<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
+                toolContent += `\n<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
               } else {
                 // 其他成功的工具：不包含 keyInfo
-                // toolContent += `\n<toolResult>${toolResult?.content}</toolResult>\n<info>如果想结束对话，转交给用户，可以使用[to_xxx]，这里的xxx为user</info>`;
-                toolContent += `<toolResult>${toolResult?.content}</toolResult>\n<info>如果想结束对话，转交给用户，可以使用[to_xxx]，这里的xxx为user</info>`;
+                // toolContent += `\n<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
+                toolContent += `<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
               }
             } else {
               toolContent = `
 Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendations, and guidance ONLY. You do NOT execute actual tasks or changes.
-<toolResult>${toolResult?.content || '工具执行完成，无返回内容'}</toolResult>\n<info>如果想结束对话，转交给用户，可以使用[to_xxx]，这里的xxx为user</info>`;
+<toolResult>${toolResult?.content || '工具执行完成，无返回内容'}</toolResult>\n${agentInfoTip}`;
             }
 
             // 显示工具完成状态（除了 todo_write_tool，以及 resultText 为空的情况）
@@ -3686,7 +4000,7 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
               this.completeToolCall(data.tool_id, data.tool_name, finalState, resultText);
             }
 
-            // console.log(`工具调用结果: `, toolResult, resultText);
+            console.log(`工具调用结果: `, toolResult, resultText);
 
             this.send("tool", JSON.stringify({
               "type": "tool",

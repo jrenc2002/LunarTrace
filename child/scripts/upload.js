@@ -275,19 +275,40 @@ async function main() {
         let finalSerialPort = initialSerialPort;
         
         if (use_1200bps_touch) {
+            // 记录 touch 前的端口列表，用于检测 bootloader 新端口
+            const portsBefore1200 = await getPortsList();
             try {
                 await perform1200bpsTouch(finalSerialPort);
             } catch (err) {
-                throw new Error('串口连接失败: ' + err.message);
+                // touch 失败时仅警告，不终止流程，让上传工具自行处理端口
+                logger.warn('1200bps touch 警告（将继续尝试上传）:', err.message);
+            }
+            // 等待 bootloader 枚举
+            await delay(2000);
+            const portsAfter1200 = await getPortsList();
+            const newBootloaderPorts = portsAfter1200.filter(
+                p => !portsBefore1200.some(ep => ep.path === p.path)
+            );
+            if (newBootloaderPorts.length > 0) {
+                finalSerialPort = newBootloaderPorts[0].path;
+                logger.log('1200bps touch 后检测到新 bootloader 端口:', finalSerialPort);
+            } else {
+                logger.log('1200bps touch 后未检测到新端口，继续使用原端口:', finalSerialPort);
             }
         }
 
-        if (wait_for_upload) {
+        if (wait_for_upload && !use_1200bps_touch) {
+            // 仅在未执行 use_1200bps_touch 的情况下才执行 wait_for_upload
+            // 避免双重 1200bps 触发导致设备状态异常
             try {
                 finalSerialPort = await performWaitForUpload(finalSerialPort);
             } catch (err) {
                 throw new Error('串口操作失败: ' + err.message);
             }
+        } else if (wait_for_upload && use_1200bps_touch) {
+            // use_1200bps_touch 已完成触发和端口检测，此处仅额外等待确保 bootloader 就绪
+            await delay(1000);
+            logger.log('use_1200bps_touch 已处理端口切换，跳过 wait_for_upload 的重复触发步骤');
         }
 
         logger.log('使用串口:', finalSerialPort);
