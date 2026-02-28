@@ -126,7 +126,7 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
 
   showCircuit() {
     this.message.info(this.translate.instant('FLOAT_SIDER.CIRCUIT') + ' ' + this.translate.instant('COMMON.FEATURE_COMING_SOON'));
-    // return;
+    return;
     if (this.electronService.isElectron) {
       this.uiService.openWindow({
         // path: `iframe?url=${encodeURIComponent('https://tool.aily.pro/connection-graph?type=json&theme=dark')}`,
