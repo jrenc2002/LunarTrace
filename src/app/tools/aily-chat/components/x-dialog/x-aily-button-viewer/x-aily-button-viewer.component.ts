@@ -10,6 +10,8 @@ interface ButtonData {
   icon?: string;
   disabled?: boolean;
   loading?: boolean;
+  size?: 'small' | 'default' | 'large';
+  danger?: boolean;
 }
 
 @Component({
@@ -25,7 +27,8 @@ interface ButtonData {
             nz-button
             [nzType]="btn.type"
             [disabled]="isDisabled || btn.disabled"
-            [nzSize]="'small'"
+            [nzSize]="btn.size"
+            [nzDanger]="btn.danger"
             (click)="onButtonClick(btn)"
           >
             @if (btn.icon) { <i class="fa-light" [class]="btn.icon"></i> }
@@ -39,10 +42,13 @@ interface ButtonData {
     .ac-btns { display: flex; flex-wrap: wrap; gap: 5px; padding: 2px 0; }
     .ac-btn {
       align-items: center;
-      min-width: 80px; height: 32px; padding: 0 12px;
-      border-radius: 6px; font-size: 14px;
+      border-radius: 6px;
       cursor: pointer;
       transition: all 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+
+      > i {
+        margin-right: 6px;
+      }
     }
     .ac-btn:hover:not(:disabled) {
       transform: translateY(-1px);
@@ -94,10 +100,12 @@ export class XAilyButtonViewerComponent implements OnChanges {
     return {
       text: b.text ?? b.label ?? '按钮',
       action: b.action ?? b.command ?? b.value ?? '',
-      type: b.type ?? 'default',
+      type: b.type ?? 'primary',
       icon: b.icon,
       disabled: b.disabled,
       loading: b.loading,
+      size: b.size ?? 'default',
+      danger: b.danger ?? false,
     };
   }
 
