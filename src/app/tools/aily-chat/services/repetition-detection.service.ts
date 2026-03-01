@@ -80,7 +80,42 @@ export class RepetitionDetectionService {
   /** 最小检测 token 数量 */
   private readonly MIN_TOKENS_FOR_DETECTION = 15;
 
+  /**
+   * 白名单模式：这些模式即使重复出现也不应该被当作异常
+   * 主要是格式化标记、代码块语法等
+   */
+  private readonly WHITELIST_PATTERNS: RegExp[] = [
+    // aily 代码块标记
+    /^[\s\*]*```aily-/,
+    /aily-button/,
+    /aily-state/,
+    /aily-error/,
+    /aily-mermaid/,
+    /aily-todo/,
+    // JSON 数组/对象开头
+    /^\s*\[\s*\{/,
+    /^\s*\{\s*"/,
+    // markdown 代码块
+    /^[\s\*]*```/,
+    // 常见格式化标记
+    /^\s*\*\*\s*$/,
+    /^\s*---\s*$/,
+    /^\s*\*\s*$/,
+    // 列表标记
+    /^\s*[-\*]\s+/,
+    /^\s*\d+\.\s+/,
+  ];
+
   constructor() {}
+
+  /**
+   * 检查文本是否匹配白名单模式
+   * 如果匹配，则不应该被当作异常重复
+   */
+  private isWhitelisted(text: string): boolean {
+    const trimmed = text.trim();
+    return this.WHITELIST_PATTERNS.some(pattern => pattern.test(trimmed));
+  }
 
   // ==================== 工具调用重复检测 ====================
 
@@ -333,6 +368,11 @@ export class RepetitionDetectionService {
       return null;
     }
     
+    // 跳过白名单中的模式（如代码块标记、格式化标记等）
+    if (this.isWhitelisted(pattern)) {
+      return null;
+    }
+    
     // 从末尾往前检测连续重复次数
     let consecutiveCount = 0;
     let pos = text.length;
@@ -407,6 +447,9 @@ export class RepetitionDetectionService {
     
     // 查找重复的长句子
     for (const [sentence, count] of sentenceCount.entries()) {
+      // 跳过白名单中的模式（如代码块标记、格式化标记等）
+      if (this.isWhitelisted(sentence)) continue;
+      
       // 根据句子长度调整阈值
       // 长句子只需重复 2 次就很可疑
       const threshold = sentence.length >= 30 ? 2 : 3;
@@ -457,6 +500,9 @@ export class RepetitionDetectionService {
       
       // 跳过空白或太简单的内容
       if (phrase.trim().length < minLen * 0.8) continue;
+      
+      // 跳过白名单中的模式（如代码块标记、格式化标记等）
+      if (this.isWhitelisted(phrase)) continue;
       
       // 在前面的文本中查找这个片段
       const searchArea = text.slice(0, startPos - 10); // 在更早的文本中搜索，留一点间隔
@@ -561,7 +607,8 @@ export class RepetitionDetectionService {
     let maxCount = 0;
     let mostRepeated = '';
     for (const [line, count] of lineCount.entries()) {
-      if (count > maxCount && line.length > 10) { // 忽略太短的行
+      // 忽略太短的行和白名单中的行
+      if (count > maxCount && line.length > 10 && !this.isWhitelisted(line)) {
         maxCount = count;
         mostRepeated = line;
       }
