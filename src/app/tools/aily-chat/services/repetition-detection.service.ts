@@ -450,13 +450,16 @@ export class RepetitionDetectionService {
       // 跳过白名单中的模式（如代码块标记、格式化标记等）
       if (this.isWhitelisted(sentence)) continue;
       
-      // 根据句子长度调整阈值
-      // 长句子只需重复 2 次就很可疑
-      const threshold = sentence.length >= 30 ? 2 : 3;
+      // 跳过看起来像 JSON 的内容
+      if (/^\s*[\{\[\"\']/.test(sentence) || /[\}\]\"\']\s*$/.test(sentence)) {
+        continue;
+      }
       
-      if (count >= threshold) {
-        const displaySentence = sentence.length > 25 
-          ? sentence.substring(0, 25) + '...' 
+      // 要求更严格：句子要足够长且重复次数足够多
+      // 只有 40+ 字符的句子重复 3+ 次才触发
+      if (sentence.length >= 40 && count >= 3) {
+        const displaySentence = sentence.length > 30 
+          ? sentence.substring(0, 30) + '...' 
           : sentence;
         return {
           isRepetitive: true,
@@ -477,19 +480,19 @@ export class RepetitionDetectionService {
 
   /**
    * 检测较长短语的重复（不要求连续）
-   * 用于检测如 "我在一次回复中生成了多个版本" 这样的长短语重复
+   * 用于检测完整段落的重复输出，要求更严格以避免误报
    */
   private checkLongPhraseRepetition(text: string): RepetitionCheckResult {
-    if (text.length < 100) {
+    // 要求更长的文本才检测
+    if (text.length < 200) {
       return { isRepetitive: false };
     }
     
-    // 提取 20-50 字符长度的子串，检测是否重复
-    const minLen = 20;
-    const maxLen = 50;
-    const checkStart = Math.max(0, text.length - 200); // 只检查最后 200 个字符区域
+    // 只检测较长的片段（60-100 字符），避免 JSON 属性等短片段误报
+    const minLen = 60;
+    const maxLen = 100;
     
-    for (let len = maxLen; len >= minLen; len -= 5) {
+    for (let len = maxLen; len >= minLen; len -= 10) {
       // 从末尾取一个片段
       const endPos = text.length;
       const startPos = endPos - len;
@@ -501,24 +504,27 @@ export class RepetitionDetectionService {
       // 跳过空白或太简单的内容
       if (phrase.trim().length < minLen * 0.8) continue;
       
-      // 跳过白名单中的模式（如代码块标记、格式化标记等）
-      if (this.isWhitelisted(phrase)) continue;
+      // 跳过看起来像 JSON 的内容
+      if (/^\s*[\{\[\"\']/.test(phrase) || /[\}\]\"\']\s*$/.test(phrase)) {
+        continue;
+      }
       
       // 在前面的文本中查找这个片段
-      const searchArea = text.slice(0, startPos - 10); // 在更早的文本中搜索，留一点间隔
-      const firstOccurrence = searchArea.indexOf(phrase);
+      const searchArea = text.slice(0, startPos - 20); // 在更早的文本中搜索，留更大间隔
       
-      if (firstOccurrence !== -1) {
-        // 找到重复，计算出现次数
-        let count = 1;
-        let pos = firstOccurrence;
-        while ((pos = searchArea.indexOf(phrase, pos + 1)) !== -1) {
-          count++;
-        }
-        count++; // 加上末尾的那个
-        
-        const displayPhrase = phrase.length > 30 
-          ? phrase.substring(0, 30) + '...' 
+      // 计算出现次数
+      let count = 0;
+      let pos = 0;
+      while ((pos = searchArea.indexOf(phrase, pos)) !== -1) {
+        count++;
+        pos += phrase.length; // 不允许重叠匹配
+      }
+      count++; // 加上末尾的那个
+      
+      // 要求至少重复 3 次才触发
+      if (count >= 3) {
+        const displayPhrase = phrase.length > 35 
+          ? phrase.substring(0, 35) + '...' 
           : phrase;
         return {
           isRepetitive: true,
