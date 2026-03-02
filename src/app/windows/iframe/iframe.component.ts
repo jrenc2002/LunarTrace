@@ -7,6 +7,7 @@ import { ConnectionGraphService } from '../../services/connection-graph.service'
 import { SubWindowComponent } from '../../components/sub-window/sub-window.component';
 import { CommonModule } from '@angular/common';
 import { WindowMessenger, connect, Connection } from 'penpal';
+import { ProgressEvent } from '../../services/background-agent.service';
 
 export interface IframeModalData {
   /** 要加载的 iframe URL */
@@ -47,6 +48,20 @@ export class IframeComponent implements OnInit, OnDestroy {
   isLoading = true;
   // 文件更新提示
   hasUpdate = false;
+
+  // ===== 连线图自动生成相关 =====
+  /** 是否为连线图窗口 */
+  isConnectionGraphWindow = false;
+  /** 是否正在生成中 */
+  isGenerating = false;
+  /** 当前通知文本 */
+  noticeText = '';
+  /** 当前通知状态: doing / done / error */
+  noticeState: 'doing' | 'done' | 'error' | '' = '';
+  /** 进度 IPC 监听清理函数 */
+  private progressIpcCleanup: (() => void) | null = null;
+  /** 自动隐藏通知的定时器 */
+  private noticeTimer: any = null;
 
   constructor(
     @Optional() @Inject(NZ_MODAL_DATA) public data: IframeModalData | null,
@@ -95,6 +110,19 @@ export class IframeComponent implements OnInit, OnDestroy {
           } catch {
             this.allowedOrigins = ['*'];
           }
+
+          // 检测是否为连线图窗口
+          if (url.includes('connection-graph')) {
+            this.isConnectionGraphWindow = true;
+          }
+        }
+
+        // 检测生成模式
+        const mode = params['mode'];
+        if (mode === 'generating') {
+          this.isGenerating = true;
+          this.safeUpdateNotice('正在准备生成连线图...', 'doing');
+          this.startProgressIpcListener();
         }
 
         const filePath = params['filePath'];
@@ -292,6 +320,7 @@ export class IframeComponent implements OnInit, OnDestroy {
     }
     // 停止 IPC 监听
     this.stopIpcListener();
+    this.stopProgressIpcListener();
   }
 
   // =====================================================
@@ -369,5 +398,124 @@ export class IframeComponent implements OnInit, OnDestroy {
    */
   dismissUpdate(): void {
     this.hasUpdate = false;
+  }
+
+  // =====================================================
+  // 连线图自动生成 - 进度监听 & 操作按钮
+  // =====================================================
+
+  /**
+   * 开始监听生成进度 IPC
+   */
+  private startProgressIpcListener(): void {
+    if (!this.electronService.isElectron || !window['ipcRenderer']) return;
+
+    console.log('[IframeComponent] 开始监听 schematic-generation-progress');
+
+    const handler = (_event: any, data: ProgressEvent) => {
+      this.ngZone.run(() => {
+        this.handleProgressEvent(data);
+      });
+    };
+
+    window['ipcRenderer'].on('schematic-generation-progress', handler);
+
+    this.progressIpcCleanup = () => {
+      window['ipcRenderer'].removeListener('schematic-generation-progress', handler);
+    };
+  }
+
+  /**
+   * 停止生成进度 IPC 监听
+   */
+  private stopProgressIpcListener(): void {
+    if (this.progressIpcCleanup) {
+      this.progressIpcCleanup();
+      this.progressIpcCleanup = null;
+    }
+  }
+
+  /**
+   * 处理进度事件 → 更新 notice 通知栏
+   */
+  private handleProgressEvent(event: ProgressEvent): void {
+    if (!event) return;
+
+    switch (event.type) {
+      case 'thinking':
+        this.safeUpdateNotice(event.content || '正在分析项目...', 'doing');
+        break;
+      case 'tool_call':
+        this.safeUpdateNotice(event.content || '正在执行工具...', 'doing');
+        break;
+      case 'tool_result':
+        this.safeUpdateNotice(event.content || '工具执行完成', 'doing');
+        break;
+      case 'complete':
+        this.isGenerating = false;
+        this.safeUpdateNotice('连线图生成完成', 'done', 3000);
+        break;
+      case 'error':
+        this.isGenerating = false;
+        this.safeUpdateNotice(event.content || '生成失败', 'error', 5000);
+        break;
+      default:
+        if (event.content) {
+          this.safeUpdateNotice(event.content, 'doing');
+        }
+    }
+  }
+
+  /**
+   * 安全更新通知栏
+   * @param text 通知文本
+   * @param state 通知状态
+   * @param autoHideMs 自动隐藏毫秒数，0 表示不自动隐藏
+   */
+  private safeUpdateNotice(text: string, state: 'doing' | 'done' | 'error', autoHideMs = 0): void {
+    this.noticeText = text;
+    this.noticeState = state;
+
+    // 清除之前的自动隐藏定时器
+    if (this.noticeTimer) {
+      clearTimeout(this.noticeTimer);
+      this.noticeTimer = null;
+    }
+
+    if (autoHideMs > 0) {
+      this.noticeTimer = setTimeout(() => {
+        this.ngZone.run(() => {
+          this.noticeText = '';
+          this.noticeState = '';
+        });
+      }, autoHideMs);
+    }
+  }
+
+  /**
+   * 操作按钮: 重新生成
+   */
+  onRegenerate(): void {
+    this.isGenerating = true;
+    this.safeUpdateNotice('正在重新生成连线图...', 'doing');
+
+    // 开始监听进度（如果之前已停止）
+    if (!this.progressIpcCleanup) {
+      this.startProgressIpcListener();
+    }
+
+    // 发送 IPC 到主窗口触发 BackgroundAgentService 重新生成
+    if (this.electronService.isElectron && window['ipcRenderer']) {
+      window['ipcRenderer'].send('schematic-regenerate-request');
+    }
+  }
+
+  /**
+   * 操作按钮: 同步到代码
+   */
+  onSyncToCode(): void {
+    if (this.electronService.isElectron && window['ipcRenderer']) {
+      window['ipcRenderer'].send('schematic-sync-to-code-request');
+    }
   }
 }

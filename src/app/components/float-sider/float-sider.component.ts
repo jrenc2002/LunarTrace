@@ -9,6 +9,7 @@ import { ElectronService } from '../../services/electron.service';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { UiService } from '../../services/ui.service';
 import { ConnectionGraphService } from '../../services/connection-graph.service';
+import { BackgroundAgentService } from '../../services/background-agent.service';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { ImageViewerComponent } from '../image-viewer/image-viewer.component';
 @Component({
@@ -36,6 +37,7 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
     private message: NzMessageService,
     private uiService: UiService,
     private connectionGraphService: ConnectionGraphService,
+    private backgroundAgent: BackgroundAgentService,
     private translate: TranslateService
   ) { }
 
@@ -127,27 +129,40 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
   }
 
   showCircuit() {
-    this.message.warning(this.translate.instant('COMING SOON'));
-    return;
-    // if (!this.electronService.isElectron || !this.boardPackagePath) {
-    //   this.message.warning(this.translate.instant('FLOAT_SIDER.NO_PINMAP'));
-    //   return;
-    // }
+    // this.message.warning(this.translate.instant('COMING SOON'));
+    // return;
+    if (!this.electronService.isElectron || !this.boardPackagePath) {
+      this.message.warning(this.translate.instant('FLOAT_SIDER.NO_PINMAP'));
+      return;
+    }
 
-    // // 构建连线图 payload
-    // const payload = this.connectionGraphService.buildPayload(this.boardPackagePath);
-    // console.log('[showCircuit] payload:', payload ? JSON.stringify(payload).slice(0, 500) + '...' : 'null');
-    // if (!payload) {
-    //   this.message.info('当前项目暂无连线数据，请先通过 AI 助手生成连线方案');
-    //   return;
-    // }
+    const windowUrl = 'https://tool.aily.pro/connection-graph?type=json&theme=dark';
+    // const windowUrl = 'http://localhost:4201/connection-graph?type=json&theme=dark';
 
-    // this.uiService.openWindow({
-    //   path: `iframe?url=${encodeURIComponent('https://tool.aily.pro/connection-graph?type=json&theme=dark')}`,
-    //   // path: `iframe?url=${encodeURIComponent('http://localhost:4201/connection-graph?type=json&theme=dark')}`,
-    //   data: payload,
-    //   width: 900,
-    //   height: 700,
-    // });
+    // 构建连线图 payload
+    const payload = this.connectionGraphService.buildPayload(this.boardPackagePath);
+    console.log('[showCircuit] payload:', payload ? JSON.stringify(payload).slice(0, 500) + '...' : 'null');
+
+    if (payload) {
+      // 场景1: 有连线数据 → 直接展示 + 显示操作按钮
+      this.uiService.openWindow({
+        path: `iframe?url=${encodeURIComponent(windowUrl)}`,
+        data: payload,
+        width: 900,
+        height: 700,
+      });
+    } else {
+      // 场景2: 无连线数据 → 打开窗口 + 启动后台 Agent 自动生成
+      this.uiService.openWindow({
+        path: `iframe?url=${encodeURIComponent(windowUrl)}&mode=generating`,
+        data: null,
+        width: 900,
+        height: 700,
+      });
+      // 延迟确保子窗口已打开并注册 IPC 监听，再启动生成
+      setTimeout(() => {
+        this.backgroundAgent.generateSchematic();
+      }, 800);
+    }
   }
 }

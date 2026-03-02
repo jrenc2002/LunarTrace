@@ -1406,6 +1406,11 @@ Do not create non-existent boards and libraries.
         textarea.focus();
         textarea.setSelectionRange(textarea.value.length, textarea.value.length);
       }
+
+      // autoSend：自动发送（延迟确保输入框已更新）
+      if (options?.autoSend) {
+        this.send('user', this.inputValue, true);
+      }
     }, 100);
   }
 
@@ -2074,8 +2079,7 @@ ${JSON.stringify(errData)}
           if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
             this.list[this.list.length - 1].state = 'done';
           }
-          // 重置流式文本检测状态（新 Agent 开始输出）
-          this.repetitionDetectionService.resetStreamTokens();
+          // 注意：不在 source 变更时重置流式检测状态，以便检测跨工具调用的重复内容
           console.log(`Source changed: ${this.currentMessageSource} -> ${messageSource}`);
         }
         this.currentMessageSource = messageSource;
@@ -2084,12 +2088,21 @@ ${JSON.stringify(errData)}
           if (data.type === 'ModelClientStreamingChunkEvent') {
             // 处理流式数据
             if (data.content) {
+              // 检测 <think> 标签作为内容边界
+              if (data.content.includes('<think>')) {
+                this.repetitionDetectionService.markBoundary('think_start');
+              }
+              // 检测 </think> 结束标签，丢弃 think 内容块
+              if (data.content.includes('</think>')) {
+                this.repetitionDetectionService.markBoundary('think_end');
+              }
+
               // 检测流式文本重复
               const streamRepetitionCheck = this.repetitionDetectionService.checkStreamRepetition(data.content);
               if (streamRepetitionCheck.isRepetitive) {
                 console.warn('[重复检测] 流式文本重复:', streamRepetitionCheck.pattern);
                 // 显示提示并终止响应
-                this.appendMessage('aily', `\n\n> ⚠️ ${streamRepetitionCheck.pattern}，已自动终止响应。\n\n`, messageSource);
+                this.appendMessage('aily', data.content, messageSource);
                 this.stop();
                 return;
               }
@@ -2157,6 +2170,9 @@ ${JSON.stringify(errData)}
 `, messageSource);
             this.isWaiting = false;
           } else if (data.type === 'tool_call_request') {
+            // 标记内容边界：工具调用前的文本块存为一个完整块
+            this.repetitionDetectionService.markBoundary('tool_call');
+
             let toolArgs;
 
             if (typeof data.tool_args === 'string') {
@@ -2208,7 +2224,7 @@ ${JSON.stringify(errData)}
             let resultState = "done";
             let resultText = '';
 
-            console.log("工具调用请求: ", data.tool_name, toolArgs);
+            // console.log("工具调用请求: ", data.tool_name, toolArgs);
 
             // 检测重复工具调用
             const toolRepetitionCheck = this.repetitionDetectionService.checkToolCallRepetition(data.tool_name, toolArgs);
@@ -3826,7 +3842,7 @@ ${JSON.stringify(errData)}
 
             // 集中注入 todo 提醒 - 仅对 mainAgent 的非 todo 工具结果注入
             if (toolResult && data.tool_name !== 'todo_write_tool' && !isSubagent) {
-              console.log('=============================🔔 注入 TODO 提醒=============================');
+              // console.log('=============================🔔 注入 TODO 提醒=============================');
               toolResult = injectTodoReminder(toolResult, data.tool_name);
             }
 
@@ -3930,7 +3946,7 @@ ${JSON.stringify(errData)}
 // - 复杂结构分步创建，先创建外层再填充内层
 // - 使用get_abs_syntax工具了解ABS语法规范，确保代码符合要求
                 toolContent += `
-<rules>
+<rules>Blockly代码编辑流程:
 【需求分析】
 仔细分析用户需求，理解要实现的功能和目标。对于不明确的需求，提出澄清问题。
 
@@ -4000,7 +4016,7 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
               this.completeToolCall(data.tool_id, data.tool_name, finalState, resultText);
             }
 
-            console.log(`工具调用结果: `, toolResult, resultText);
+            // console.log(`工具调用结果: `, toolResult, resultText);
 
             this.send("tool", JSON.stringify({
               "type": "tool",

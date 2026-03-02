@@ -378,6 +378,35 @@ function registerWindowHandlers(mainWindow) {
         console.log('[IPC] save-connection-graph, 转发给主窗口');
         mainWindow.webContents.send('save-connection-graph', data);
     });
+
+    // =====================================================
+    // 连线图自动生成 - IPC 中继
+    // =====================================================
+
+    // 主窗口 → 子窗口：生成进度事件广播
+    ipcMain.on('schematic-generation-progress', (event, data) => {
+        openWindows.forEach((subWindow, windowUrl) => {
+            try {
+                if (subWindow && !subWindow.isDestroyed() && subWindow.webContents && !subWindow.webContents.isDestroyed()) {
+                    subWindow.webContents.send('schematic-generation-progress', data);
+                }
+            } catch (error) {
+                console.error('[IPC] 转发 schematic-generation-progress 失败:', error.message);
+            }
+        });
+    });
+
+    // 子窗口 → 主窗口：重新生成请求
+    ipcMain.on('schematic-regenerate-request', (event) => {
+        console.log('[IPC] schematic-regenerate-request, 转发给主窗口');
+        mainWindow.webContents.send('schematic-regenerate-request');
+    });
+
+    // 子窗口 → 主窗口：同步到代码请求
+    ipcMain.on('schematic-sync-to-code-request', (event) => {
+        console.log('[IPC] schematic-sync-to-code-request, 转发给主窗口');
+        mainWindow.webContents.send('schematic-sync-to-code-request');
+    });
 }
 
 
