@@ -32,7 +32,7 @@ import { CommonModule } from '@angular/common';
       code {
         font-size: 12px;
         color: #ffbd08;
-        padding: 1px 4px;
+        padding: 0;
         border-radius: 3px;
       }
     `,

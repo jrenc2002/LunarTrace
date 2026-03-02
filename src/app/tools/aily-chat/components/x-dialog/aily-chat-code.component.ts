@@ -19,6 +19,7 @@ import { XAilyBlocklyViewerComponent } from './x-aily-blockly-viewer/x-aily-bloc
 import { XAilyErrorViewerComponent } from './x-aily-error-viewer/x-aily-error-viewer.component';
 import { XAilyTaskActionViewerComponent } from './x-aily-task-action-viewer/x-aily-task-action-viewer.component';
 import { XAilyCodeViewerComponent } from './x-aily-code-viewer/x-aily-code-viewer.component';
+import { XAilyDefaultViewerComponent } from './x-aily-default-viewer/x-aily-default-viewer.component';
 import { NzModalService } from 'ng-zorro-antd/modal';
 import { MermaidComponent } from '../aily-mermaid-viewer/mermaid/mermaid.component';
 import mermaid from 'mermaid';
@@ -63,6 +64,7 @@ const AILY_TYPES = [
     XAilyErrorViewerComponent,
     XAilyTaskActionViewerComponent,
     XAilyCodeViewerComponent,
+    XAilyDefaultViewerComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -107,6 +109,9 @@ const AILY_TYPES = [
     @if (isRegularCode) {
       <x-aily-code-viewer [children]="children" [block]="block" [lang]="lang" />
     }
+    @if (isDefaultBlock) {
+      <x-aily-default-viewer [content]="children" />
+    }
   `,
   styles: [`
     :host { display: block; padding: 0.5em 0; }
@@ -145,12 +150,18 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
   isType(t: string): boolean { return this.block && this.lang === t; }
 
   get isRegularCode(): boolean {
-    if (!this.block) return true;
+    if (!this.block) return false;
     if (this.isMermaidStd) return false;
     return !AILY_TYPES.includes(this.lang as any);
   }
 
   get isMermaidStd(): boolean { return this.block && this.lang === 'mermaid'; }
+
+  /** 非支持的 block 类型时使用默认 viewer 渲染（如 inline、aily-* 解析失败等） */
+  get isDefaultBlock(): boolean {
+    if (!this.block) return true;
+    return false;
+  }
 
   get mermaidData(): { code?: string } | null {
     if (this.isMermaidStd) {
