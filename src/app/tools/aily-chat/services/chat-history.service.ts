@@ -97,7 +97,6 @@ export class ChatHistoryService implements OnDestroy {
   private sessionCache = new Map<string, SessionData>();
 
   // ===== 路径常量 =====
-  private readonly AILY_DIR = '.aily';
   private readonly INDEX_FILE = 'chat_history_index.json';
   private readonly CHAT_DATA_DIR = 'chat_history';
   private readonly PROJECT_CHAT_DIR = '.chat_history';
@@ -611,22 +610,8 @@ export class ChatHistoryService implements OnDestroy {
     return parts.join('/').replace(/\/+/g, '/');
   }
 
-  private getHomedir(): string {
-    try {
-      if (window['os']?.homedir) {
-        return window['os'].homedir();
-      }
-    } catch { }
-    try {
-      if (typeof process !== 'undefined' && process.env) {
-        return process.env['HOME'] || process.env['USERPROFILE'] || '';
-      }
-    } catch { }
-    return '';
-  }
-
   private getGlobalAilyDir(): string {
-    return this.joinPath(this.getHomedir(), this.AILY_DIR);
+    return window['path']?.getAppDataPath?.() || '';
   }
 
   private getGlobalIndexPath(): string {
