@@ -48,8 +48,10 @@ export class HeaderComponent implements OnDestroy {
     return this.platformService.isMac();
   }
 
+  private _isWindowFullScreen = false;
+
   get isWindowFullScreen() {
-    return this.electronService.isWindowFullScreen();
+    return this._isWindowFullScreen;
   }
 
   isMacFullScreen = false;
@@ -114,6 +116,9 @@ export class HeaderComponent implements OnDestroy {
 
   async ngAfterViewInit() {
     if (this.electronService.isElectron) {
+      // 初始化窗口最大化状态缓存
+      this._isWindowFullScreen = this.electronService.isWindowFullScreen();
+
       // 监听窗口全屏状态变化
       this.unsubscribeFullScreenChanged = this.electronService.onWindowFullScreenChanged((isFullScreen: boolean) => {
         this.isMacFullScreen = isFullScreen;
@@ -125,6 +130,7 @@ export class HeaderComponent implements OnDestroy {
 
       // 监听窗口最大化状态变化（用于更新图标）
       this.unsubscribeMaximizeChanged = this.electronService.onWindowMaximizeChanged((isMaximized: boolean) => {
+        this._isWindowFullScreen = isMaximized;
         // 使用 setTimeout 将变更检测推迟到下一个变更检测周期，避免 ExpressionChangedAfterItHasBeenCheckedError
         setTimeout(() => {
           this.cd.detectChanges();
@@ -477,7 +483,8 @@ export class HeaderComponent implements OnDestroy {
     } else {
       window['iWindow'].maximize();
     }
-    // 状态会通过事件监听器自动更新
+    // 立即更新缓存状态，避免 UI 延迟
+    this._isWindowFullScreen = window['iWindow'].isMaximized();
   }
 
   ngOnDestroy() {
