@@ -1557,42 +1557,13 @@ Do not create non-existent boards and libraries.
   /**
    * 清理最后一条 AI 消息中的流式残留内容
    *
-   * 由于流式传输的延迟，agent 输出的终止标记（如 TERMINATE、[to_user]）
-   * 和未完成的特殊代码块可能残留在消息中。此方法在对话终止时统一清理。
+   * 注意：原有的「未闭合 ``` 修复」逻辑已移除。
+   * 该逻辑会把整条 aily 消息（含 aily-state 块）中的所有 ``` 一起计数，
+   * 导致在 AI 文本有未闭合 ``` 时误删 aily-state 块的关闭符，造成状态块截断。
+   * TERMINATE 残留文字已由 appendMessage 的 terminateTemp 机制处理，此处无需重复清理。
    */
   private cleanupLastAiMessage(): void {
-    if (this.list.length === 0) return;
-    const lastMsg = this.list[this.list.length - 1];
-    if (lastMsg.role !== 'aily' || !lastMsg.content) return;
-
-    let content = lastMsg.content as string;
-    const originalLength = content.length;
-
-    // 1. 移除终止标记及其前后空白（完整或部分）
-    //    匹配 TERMINATE 的完整或部分出现（流式可能只传了前几个字符）
-    // content = content.replace(/\s*\[?TERMINATE\]?\s*$/i, '');
-    // content = content.replace(/\s*\[to_user\]\s*$/i, '');
-    // // 部分终止标记（如 "TERMI", "TERMINA" 等出现在末尾）
-    // const terminatePartials = ['TERMINAT', 'TERMINA', 'TERMIN', 'TERMI', 'TERM'];
-    // for (const partial of terminatePartials) {
-    //   if (content.trimEnd().endsWith(partial)) {
-    //     content = content.substring(0, content.lastIndexOf(partial)).trimEnd();
-    //     break;
-    //   }
-    // }
-
-    // 2. 检查三个连续 ``` 的组数，若为单数则移除最后一个 ``` 及其后面的内容（未闭合的代码块）
-    const tripleBacktickGroups = content.match(/```/g);
-    const groupCount = tripleBacktickGroups ? tripleBacktickGroups.length : 0;
-    if (groupCount % 2 === 1) {
-      const lastIndex = content.lastIndexOf('```');
-      content = content.substring(0, lastIndex).trimEnd();
-    }
-
-    // 只在内容实际发生变化时更新
-    if (content.length !== originalLength) {
-      lastMsg.content = content;
-    }
+    // no-op: cleanup logic removed to prevent aily-state block corruption
   }
 
   /**
