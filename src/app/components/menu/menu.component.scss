@@ -76,6 +76,34 @@
       right: 5px;
       color: #f7ce42;
     }
+
+    .item-actions {
+      margin-left: auto;
+      display: none;
+      align-items: center;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+
+    &:hover .item-actions {
+      display: flex;
+    }
+
+    .item-action-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border-radius: 3px;
+      color: #aaa;
+      font-size: 12px;
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.15);
+        color: #fff;
+      }
+    }
   }
 
   .sep {

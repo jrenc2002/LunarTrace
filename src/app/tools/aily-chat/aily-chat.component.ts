@@ -1,8 +1,10 @@
-import { Component, ElementRef, ViewChild, OnDestroy } from '@angular/core';
+import { Component, ElementRef, ViewChild, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { FormsModule } from '@angular/forms';
 import { XDialogComponent } from './components/x-dialog/x-dialog.component';
 import { DialogComponent } from './components/dialog/dialog.component';
+import { ChatRenameDialogComponent } from './components/chat-rename-dialog/chat-rename-dialog.component';
+import { ChatDeleteDialogComponent } from './components/chat-delete-dialog/chat-delete-dialog.component';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { ToolContainerComponent } from '../../components/tool-container/tool-container.component';
 import { UiService } from '../../services/ui.service';
@@ -315,7 +317,6 @@ export class AilyChatComponent implements OnDestroy {
             '",\n  "text": "' + this.makeJsonSafe(toolCallInfo.text) +
             '",\n  "id": "' + toolCallInfo.id + '"\n}\n```';
           this.list[i].content = this.list[i].content.replace(new RegExp(pattern, 'g'), newBlock);
-          this.chatService.historyChatMap.set(this.sessionId, this.list);
           if (this.sessionId) {
             this.chatHistoryService.markDirty(this.sessionId);
           }
@@ -1185,7 +1186,8 @@ Do not create non-existent boards and libraries.
     private repetitionDetectionService: RepetitionDetectionService,
     private contextBudgetService: ContextBudgetService,
     private subagentSessionService: SubagentSessionService,
-    private chatHistoryService: ChatHistoryService
+    private chatHistoryService: ChatHistoryService,
+    private cdr: ChangeDetectorRef,
   ) {
     // securityContext 改为 getter，每次使用时动态获取当前项目路径
   }
@@ -1266,10 +1268,7 @@ Do not create non-existent boards and libraries.
         this.prjPath = newPath === this.projectService.projectRootPath ? '' : newPath;
         this.prjRootPath = this.projectService.projectRootPath;
 
-        // 根据新的项目路径重新加载聊天历史 + 迁移旧格式
-        const targetPath = newPath || this.projectService.projectRootPath;
-        this.chatHistoryService.migrateFromLegacy(targetPath);
-        this.chatService.openHistoryFile(targetPath);
+        // 根据新的项目路径重新加载聊天历史
         this.refreshHistoryList();
 
         // 初始化 ABS 自动同步服务
@@ -1500,11 +1499,7 @@ Do not create non-existent boards and libraries.
   }
 
   ngAfterViewInit(): void {
-    // 初始化历史管理：从旧格式迁移 + 加载索引
-    const initialProjectPath = this.projectService.currentProjectPath || this.projectService.projectRootPath;
-    this.chatHistoryService.migrateFromLegacy(initialProjectPath);
-    // 同时仍加载旧格式以保持向后兼容（过渡期间）
-    this.chatService.openHistoryFile(initialProjectPath);
+    // 初始化历史管理
     this.refreshHistoryList();
     this.scrollToBottom();
 
@@ -1602,7 +1597,6 @@ Do not create non-existent boards and libraries.
         "source": msgSource
       });
     }
-    this.chatService.historyChatMap.set(this.sessionId, this.list);
     // 标记脏数据，由 30s 兜底定时器保存（不在每次流式 token 时写磁盘）
     if (this.sessionId) {
       this.chatHistoryService.markDirty(this.sessionId);
@@ -1687,16 +1681,6 @@ Do not create non-existent boards and libraries.
         }
       );
 
-      // 同时保持旧格式索引写入（过渡期间向后兼容，仅写 .chat 索引文件，不写 session 数据文件以避免覆盖新格式）
-      if (prjPath) {
-        let historyData = this.chatService.historyList.find(h => h.sessionId === this.sessionId);
-        if (!historyData) {
-          const title = this.sessionTitle || 'q' + Date.now();
-          this.chatService.historyList.push({ sessionId: this.sessionId, name: title });
-        }
-        this.chatService.saveHistoryFile(prjPath);
-      }
-
       // 刷新UI历史列表
       this.refreshHistoryList();
     } catch (error) {
@@ -1705,24 +1689,23 @@ Do not create non-existent boards and libraries.
   }
 
   /**
-   * 刷新历史列表UI（合并新旧两种数据源）
+   * 刷新历史列表UI
    */
   private refreshHistoryList(): void {
-    // 优先使用新索引
-    const newEntries = this.chatHistoryService.getHistoryList('current-project',
+    const historyActions = [
+      { icon: 'fa-light fa-pen', action: 'rename-history', title: '重命名' },
+      { icon: 'fa-light fa-trash', action: 'delete-history', title: '删除' },
+    ];
+
+    const entries = this.chatHistoryService.getHistoryList('current-project',
       this.projectService.currentProjectPath || this.projectService.projectRootPath
     );
 
-    if (newEntries.length > 0) {
-      // 转换为旧格式以兼容模板
-      this.HistoryList = newEntries.map(e => ({
-        sessionId: e.sessionId,
-        name: e.title || 'q' + e.createdAt,
-      }));
-    } else {
-      // 降级使用旧格式
-      this.HistoryList = [...this.chatService.historyList].reverse();
-    }
+    this.HistoryList = entries.map(e => ({
+      sessionId: e.sessionId,
+      name: e.title || 'q' + e.createdAt,
+      actions: historyActions,
+    }));
   }
 
   debug = false; // TODO 用于测试本地流式数据，生产不要提交true！！！
@@ -4670,6 +4653,11 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
         return item;
       });
 
+      // ★ 恢复标题（防止进入历史会话后发消息再次触发标题生成）
+      if (sessionData.metadata?.title) {
+        this.chatService.currentSessionTitle = sessionData.metadata.title;
+      }
+
       // ★ 恢复对话上下文 conversationMessages（核心：支持继续对话）
       if (sessionData.conversationMessages && sessionData.conversationMessages.length > 0) {
         this.conversationMessages = sessionData.conversationMessages;
@@ -4680,35 +4668,6 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
         console.log(`[AilyChat] 旧格式历史数据，无法恢复对话上下文（仅显示聊天记录）`);
       }
 
-      // 同时更新旧缓存（兼容其他引用 historyChatMap 的地方）
-      this.chatService.historyChatMap.set(this.sessionId, this.list);
-      this.scrollToBottom('auto');
-      return;
-    }
-
-    // ===== 2. 降级：从旧内存缓存获取 =====
-    if (this.chatService.historyChatMap.get(this.sessionId)) {
-      const cachedHistory = this.chatService.historyChatMap.get(this.sessionId);
-      this.list = cachedHistory.map(item => {
-        if (item.content && typeof item.content === 'string') {
-          return { ...item, content: this.markContentAsHistory(item.content) };
-        }
-        return item;
-      });
-      this.scrollToBottom('auto');
-      return;
-    }
-
-    // ===== 3. 降级：从旧格式文件加载 =====
-    const localChatHistory = this.chatService.loadSessionChatHistory(currentPrjPath, this.sessionId);
-    if (localChatHistory && localChatHistory.length > 0) {
-      this.list = localChatHistory.map(item => {
-        if (item.content && typeof item.content === 'string') {
-          return { ...item, content: this.markContentAsHistory(item.content) };
-        }
-        return item;
-      });
-      this.chatService.historyChatMap.set(this.sessionId, this.list);
       this.scrollToBottom('auto');
       return;
     }
@@ -5339,9 +5298,10 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
   modelListPosition = { x: 0, y: 0 };
 
   openHistoryChat(e) {
+    // 每次展开时刷新列表，确保删除/重命名后数据始终是最新的
+    this.refreshHistoryList();
     // 设置菜单的位置
     this.historyListPosition = { x: window.innerWidth - 302, y: 72 };
-    // console.log(this.historyListPosition);
 
     this.showHistoryList = !this.showHistoryList;
   }
@@ -5364,6 +5324,65 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
       this.getHistory();
       this.isCompleted = true;
       this.closeMenu();
+    }
+  }
+
+  /**
+   * 历史记录列表的行内操作（重命名 / 删除）
+   */
+  historyActionClick(e: { action: string; data: any }) {
+    const { action, data } = e;
+    const sessionId = data?.sessionId;
+    if (!sessionId) return;
+
+    if (action === 'rename-history') {
+      const modalRef = this.modal.create({
+        nzTitle: null,
+        nzFooter: null,
+        nzClosable: false,
+        nzBodyStyle: { padding: '0' },
+        nzWidth: 340,
+        nzContent: ChatRenameDialogComponent,
+        nzData: { currentName: data?.name || '' },
+      });
+      modalRef.afterClose.subscribe((result: { result: string } | null) => {
+        if (!result?.result) return;
+        this.chatHistoryService.updateTitle(sessionId, result.result);
+        if (sessionId === this.sessionId) {
+          this.chatService.currentSessionTitle = result.result;
+        }
+        this.refreshHistoryList();
+        this.cdr.detectChanges();
+      });
+    } else if (action === 'delete-history') {
+      const name = data?.name || sessionId;
+      const modalRef = this.modal.create({
+        nzTitle: null,
+        nzFooter: null,
+        nzClosable: false,
+        nzBodyStyle: { padding: '0' },
+        nzWidth: 340,
+        nzContent: ChatDeleteDialogComponent,
+        nzData: { name },
+      });
+      modalRef.afterClose.subscribe((result: { confirmed: boolean } | null) => {
+        if (!result?.confirmed) return;
+        const isDeletingCurrent = sessionId === this.sessionId;
+        this.chatHistoryService.deleteSession(sessionId);
+        this.refreshHistoryList();
+        this.cdr.detectChanges();
+        if (isDeletingCurrent) {
+          const remaining = this.HistoryList[0];
+          if (remaining?.sessionId) {
+            this.chatService.currentSessionId = remaining.sessionId;
+            const entry = this.chatHistoryService.findEntry(remaining.sessionId);
+            this.chatService.currentSessionPath = entry?.projectPath || this.projectService.currentProjectPath || this.projectService.projectRootPath;
+            this.getHistory();
+          } else {
+            this.newChat();
+          }
+        }
+      });
     }
   }
 

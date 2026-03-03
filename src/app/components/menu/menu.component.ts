@@ -37,6 +37,8 @@ export class MenuComponent {
 
   @Output() subItemClickEvent = new EventEmitter();
 
+  @Output() actionClickEvent = new EventEmitter();
+
   @Output() closeEvent = new EventEmitter();
 
   @Input() keywords = [];
@@ -64,6 +66,11 @@ export class MenuComponent {
     if (item.disabled) return;
     if (item.children) return;
     this.itemClickEvent.emit(item);
+  }
+
+  actionClick(event: MouseEvent, action: { icon: string; action: string }, item: any) {
+    event.stopPropagation();
+    this.actionClickEvent.emit({ action: action.action, data: item });
   }
 
   handleDocumentClick = (event: MouseEvent) => {

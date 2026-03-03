@@ -196,7 +196,7 @@
 
 @if (showHistoryList) {
 <app-menu [menuList]="HistoryList" [position]="historyListPosition" [width]="300" (closeEvent)="closeMenu()"
-  (itemClickEvent)="menuClick($event)"></app-menu>
+  (itemClickEvent)="menuClick($event)" (actionClickEvent)="historyActionClick($event)"></app-menu>
 }
 
 @if(showMode){
@@ -208,3 +208,5 @@
 <app-menu class="model-menu" [menuList]="ModelList" [position]="modelListPosition" (closeEvent)="closeMenu()"
   (itemClickEvent)="modelMenuClick($event)"></app-menu>
 }
+
+

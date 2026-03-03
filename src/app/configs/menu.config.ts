@@ -16,6 +16,8 @@ export interface IMenuItem {
   extra?: any,
   check?: boolean,
   key?: string; // 用于标识编译和上传配置
+  /** 行内操作按钮，如重命名/删除 */
+  actions?: { icon: string; action: string; title?: string }[];
 }
 
 export let HEADER_BTNS: IMenuItem[] = [
