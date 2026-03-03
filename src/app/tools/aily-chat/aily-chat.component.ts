@@ -145,6 +145,8 @@ import { AbsAutoSyncService } from './services/abs-auto-sync.service';
 import { absVersionControlHandler } from './tools/absVersionControlTool';
 import { RepetitionDetectionService } from './services/repetition-detection.service';
 import { ContextBudgetService, ContextBudgetSnapshot } from './services/context-budget.service';
+import { SubagentSessionService } from './services/subagent-session.service';
+import { ChatHistoryService, SessionIndexEntry } from './services/chat-history.service';
 
 // import { reloadAbiJsonTool, reloadAbiJsonToolSimple } from './tools';
 
@@ -314,6 +316,9 @@ export class AilyChatComponent implements OnDestroy {
             '",\n  "id": "' + toolCallInfo.id + '"\n}\n```';
           this.list[i].content = this.list[i].content.replace(new RegExp(pattern, 'g'), newBlock);
           this.chatService.historyChatMap.set(this.sessionId, this.list);
+          if (this.sessionId) {
+            this.chatHistoryService.markDirty(this.sessionId);
+          }
           return;
         }
       }
@@ -1141,10 +1146,14 @@ Do not create non-existent boards and libraries.
     });
   }
 
-  // generate title
+  // generate title — 标题生成完成后立即更新索引并刷新 UI
   generateTitle(content: string) {
     if (this.sessionTitle) return;
-    this.chatService.generateTitle(this.sessionId, content);
+    this.chatService.generateTitle(this.sessionId, content, (title: string) => {
+      // 标题就绪回调：立即更新全局索引 + 刷新历史列表
+      this.chatHistoryService.updateTitle(this.sessionId, title);
+      this.refreshHistoryList();
+    });
   }
 
   isLoggedIn = false;
@@ -1174,7 +1183,9 @@ Do not create non-existent boards and libraries.
     private absAutoSyncService: AbsAutoSyncService,
     private connectionGraphService: ConnectionGraphService,
     private repetitionDetectionService: RepetitionDetectionService,
-    private contextBudgetService: ContextBudgetService
+    private contextBudgetService: ContextBudgetService,
+    private subagentSessionService: SubagentSessionService,
+    private chatHistoryService: ChatHistoryService
   ) {
     // securityContext 改为 getter，每次使用时动态获取当前项目路径
   }
@@ -1255,10 +1266,11 @@ Do not create non-existent boards and libraries.
         this.prjPath = newPath === this.projectService.projectRootPath ? '' : newPath;
         this.prjRootPath = this.projectService.projectRootPath;
 
-        // 根据新的项目路径重新加载聊天历史
+        // 根据新的项目路径重新加载聊天历史 + 迁移旧格式
         const targetPath = newPath || this.projectService.projectRootPath;
+        this.chatHistoryService.migrateFromLegacy(targetPath);
         this.chatService.openHistoryFile(targetPath);
-        this.HistoryList = [...this.chatService.historyList].reverse();
+        this.refreshHistoryList();
 
         // 初始化 ABS 自动同步服务
         if (newPath && newPath !== this.projectService.projectRootPath) {
@@ -1488,8 +1500,12 @@ Do not create non-existent boards and libraries.
   }
 
   ngAfterViewInit(): void {
-    this.chatService.openHistoryFile(this.projectService.currentProjectPath || this.projectService.projectRootPath);
-    this.HistoryList = [...this.chatService.historyList].reverse();
+    // 初始化历史管理：从旧格式迁移 + 加载索引
+    const initialProjectPath = this.projectService.currentProjectPath || this.projectService.projectRootPath;
+    this.chatHistoryService.migrateFromLegacy(initialProjectPath);
+    // 同时仍加载旧格式以保持向后兼容（过渡期间）
+    this.chatService.openHistoryFile(initialProjectPath);
+    this.refreshHistoryList();
     this.scrollToBottom();
 
     // this.mcpService.init().then(() => {
@@ -1616,6 +1632,10 @@ Do not create non-existent boards and libraries.
       });
     }
     this.chatService.historyChatMap.set(this.sessionId, this.list);
+    // 标记脏数据，由 30s 兜底定时器保存（不在每次流式 token 时写磁盘）
+    if (this.sessionId) {
+      this.chatHistoryService.markDirty(this.sessionId);
+    }
   }
 
   terminateTemp = '';
@@ -1659,8 +1679,8 @@ Do not create non-existent boards and libraries.
   }
 
   /**
-   * 保存当前会话数据到文件
-   * 在创建新对话、关闭对话、组件销毁时调用
+   * 保存当前会话数据到文件（使用新 ChatHistoryService）
+   * 在创建新对话、关闭对话、组件销毁、每轮对话结束时调用
    */
   private saveCurrentSession(): void {
     if (!this.sessionId || this.list.length === 0) {
@@ -1668,32 +1688,70 @@ Do not create non-existent boards and libraries.
     }
 
     try {
-      // 使用会话创建时记录的路径，确保历史记录保存到发起会话的位置
-      // 如果没有记录的路径，才使用当前项目路径作为后备
-      const prjPath = this.chatService.currentSessionPath || this.projectService.currentProjectPath || this.projectService.projectRootPath;
+      // 确定项目路径：优先使用会话创建时的路径，其次当前项目路径，最后全局兜底（null）
+      const prjPath = this.chatService.currentSessionPath
+        || this.projectService.currentProjectPath
+        || this.projectService.projectRootPath
+        || null;
 
-      if (!prjPath) {
-        console.warn('无法获取项目路径，跳过保存会话');
-        return;
+      // 获取上下文预算快照
+      const budgetSnapshot = this.contextBudgetService?.getSnapshot();
+
+      this.chatHistoryService.saveSession(
+        this.sessionId,
+        this.list,
+        this.conversationMessages || [],
+        {
+          sessionId: this.sessionId,
+          title: this.sessionTitle || '',
+          projectPath: prjPath,
+          mode: this.currentMode,
+          model: this.currentModel?.model || null,
+          contextBudget: budgetSnapshot ? {
+            currentTokens: budgetSnapshot.currentTokens,
+            maxContextTokens: budgetSnapshot.maxContextTokens,
+            usagePercent: budgetSnapshot.usagePercent,
+          } : undefined,
+          toolCallingIteration: this.toolCallingIteration || 0,
+        }
+      );
+
+      // 同时保持旧格式写入（过渡期间向后兼容）
+      if (prjPath) {
+        let historyData = this.chatService.historyList.find(h => h.sessionId === this.sessionId);
+        if (!historyData) {
+          const title = this.sessionTitle || 'q' + Date.now();
+          this.chatService.historyList.push({ sessionId: this.sessionId, name: title });
+        }
+        this.chatService.saveHistoryFile(prjPath);
+        this.chatService.saveSessionChatHistory(prjPath, this.sessionId, this.list);
       }
 
-      // 确保会话在历史列表中
-      let historyData = this.chatService.historyList.find(h => h.sessionId === this.sessionId);
-      if (!historyData) {
-        const title = this.sessionTitle || 'q' + Date.now();
-        this.chatService.historyList.push({ sessionId: this.sessionId, name: title });
-        this.HistoryList = [...this.chatService.historyList].reverse();
-      }
-
-      // 保存历史列表索引文件
-      this.chatService.saveHistoryFile(prjPath);
-
-      // 保存聊天记录到 .chat_history 文件夹
-      this.chatService.saveSessionChatHistory(prjPath, this.sessionId, this.list);
-
-      // console.log('会话已保存:', this.sessionId, '路径:', prjPath);
+      // 刷新UI历史列表
+      this.refreshHistoryList();
     } catch (error) {
       console.warn('保存会话失败:', error);
+    }
+  }
+
+  /**
+   * 刷新历史列表UI（合并新旧两种数据源）
+   */
+  private refreshHistoryList(): void {
+    // 优先使用新索引
+    const newEntries = this.chatHistoryService.getHistoryList('current-project',
+      this.projectService.currentProjectPath || this.projectService.projectRootPath
+    );
+
+    if (newEntries.length > 0) {
+      // 转换为旧格式以兼容模板
+      this.HistoryList = newEntries.map(e => ({
+        sessionId: e.sessionId,
+        name: e.title || 'q' + e.createdAt,
+      }));
+    } else {
+      // 降级使用旧格式
+      this.HistoryList = [...this.chatService.historyList].reverse();
     }
   }
 
@@ -1733,6 +1791,8 @@ Do not create non-existent boards and libraries.
       this.toolCallingIteration = 0;
       // 重置上下文预算
       this.contextBudgetService.reset();
+      // 清理所有 subagent 会话
+      this.subagentSessionService.cleanupAll();
     }
 
     // 清空会话期间的额外允许路径
@@ -2089,6 +2149,9 @@ ${JSON.stringify(errData)}
     // 标记任务已取消，防止后续工具结果触发重连
     this.isCancelled = true;
 
+    // 取消所有正在执行的 subagent 调用
+    this.subagentSessionService.cleanupAll();
+
     // 设置最后一条AI消息状态为done（如果存在）
     if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
       this.list[this.list.length - 1].state = 'done';
@@ -2306,6 +2369,9 @@ ${JSON.stringify(errData)}
       }
       this.isWaiting = false;
       this.isCompleted = true;
+
+      // ★ 关键修复：无状态模式轮次结束时立即保存历史
+      this.saveCurrentSession();
     }
   }
 
@@ -2359,12 +2425,12 @@ ${JSON.stringify(errData)}
         // }
 
         // [无状态调试] 记录所有收到的事件类型
-        if (statelessMode) {
-          console.log(`[无状态调试] 事件: ${data.type}, isWaiting: ${this.isWaiting}, isCancelled: ${this.isCancelled}`, 
-            data.type === 'ModelClientStreamingChunkEvent' ? `content: "${(data.content || '').substring(0, 30)}"` : 
-            data.type === 'tool_call_request' ? `tool: ${data.tool_name}, internal: ${data.internal}` :
-            data.type === 'TaskCompleted' ? `stop_reason: ${data.stop_reason}` : '');
-        }
+        // if (statelessMode) {
+        //   console.log(`[无状态调试] 事件: ${data.type}, isWaiting: ${this.isWaiting}, isCancelled: ${this.isCancelled}`, 
+        //     data.type === 'ModelClientStreamingChunkEvent' ? `content: "${(data.content || '').substring(0, 30)}"` : 
+        //     data.type === 'tool_call_request' ? `tool: ${data.tool_name}, internal: ${data.internal}` :
+        //     data.type === 'TaskCompleted' ? `stop_reason: ${data.stop_reason}` : '');
+        // }
 
         // console.log("当前是否处于等待状态： ", this.isWaiting)
         if (!this.isWaiting) {
@@ -2395,7 +2461,7 @@ ${JSON.stringify(errData)}
           if (data.type === 'ModelClientStreamingChunkEvent') {
             // 处理流式数据
             if (data.content) {
-              console.log(`[无状态调试] 收到流式文本: "${data.content.substring(0, 50)}..." source: ${messageSource}`);
+              // console.log(`[无状态调试] 收到流式文本: "${data.content.substring(0, 50)}..." source: ${messageSource}`);
               // 检测 <think> 标签作为内容边界
               if (data.content.includes('<think>')) {
                 this.repetitionDetectionService.markBoundary('think_start');
@@ -2501,6 +2567,54 @@ ${JSON.stringify(errData)}
               this.startToolCall(internalToolId, data.tool_name, `服务端执行: ${data.tool_name}...`);
               // 不执行、不计数、不加入 currentTurnToolCalls 或 pendingToolResults
               // 后续会收到 tool_call_execution 事件来更新完成状态
+              return;
+            }
+
+            // ==================== Subagent 工具调用：前端直连 subagent 执行 ====================
+            // data.tool_type === 'subagent' → 需要前端直连对应 subagent 执行
+            if (statelessMode && SubagentSessionService.isSubagentToolCall(data)) {
+              console.log(`[无状态模式] Subagent 工具调用: ${data.tool_name}, agent: ${data.agent_name}`);
+
+              // 记录工具调用元信息（用于构建 assistant 消息的 tool_calls 字段）
+              this.currentTurnToolCalls.push({
+                tool_id: data.tool_id,
+                tool_name: data.tool_name,
+                tool_args: data.tool_args
+              });
+
+              // UI：展示工具调用进行中状态
+              const subagentDisplayName = data.agent_name || data.tool_name;
+              this.startToolCall(data.tool_id, data.tool_name, `正在执行 ${subagentDisplayName}...`);
+
+              // 标记工具执行开始（用于解决 async/complete 竞态）
+              this.activeToolExecutions++;
+
+              // 异步执行 subagent（不阻塞 SSE 流处理）
+              this.subagentSessionService.executeSubagentToolCall(data as any).then(
+                (result: string) => {
+                  // 成功：收集工具结果
+                  this.completeToolCall(data.tool_id, data.tool_name, ToolCallState.DONE, `${subagentDisplayName} 完成`);
+                  this.pendingToolResults.push({
+                    tool_id: data.tool_id,
+                    tool_name: data.tool_name,
+                    content: result,
+                    is_error: false
+                  });
+                  this.onToolExecutionComplete();
+                },
+                (error: any) => {
+                  // 失败：将错误信息作为 tool content 回传，mainAgent 会据此调整策略
+                  const errMsg = error?.message || `${subagentDisplayName} 执行失败`;
+                  this.completeToolCall(data.tool_id, data.tool_name, ToolCallState.ERROR, errMsg);
+                  this.pendingToolResults.push({
+                    tool_id: data.tool_id,
+                    tool_name: data.tool_name,
+                    content: errMsg,
+                    is_error: true
+                  });
+                  this.onToolExecutionComplete();
+                }
+              );
               return;
             }
 
@@ -4533,35 +4647,8 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
         this.isWaiting = false;
         this.isCompleted = true;
 
-        // 更新历史列表元数据（用于显示），但不立即落盘
-        // 落盘操作在 newChat、closeSession、ngOnDestroy 时触发
-        try {
-          let historyData = this.chatService.historyList.find(h => h.sessionId === this.sessionId);
-          if (!historyData && this.sessionId) {
-            // 如果已经有标题,直接使用
-            if (this.sessionTitle && this.sessionTitle.trim() !== '') {
-              this.chatService.historyList.push({ sessionId: this.sessionId, name: this.sessionTitle });
-              this.HistoryList = [...this.chatService.historyList].reverse();
-            } else {
-              // 没有标题则等待标题生成后更新
-              const checkTitle = () => {
-                if (this.chatService.titleIsGenerating) {
-                  setTimeout(checkTitle, 1000);
-                  return;
-                }
-                const title = this.sessionTitle || 'q' + Date.now();
-                // 再次检查是否已存在
-                if (!this.chatService.historyList.find(h => h.sessionId === this.sessionId)) {
-                  this.chatService.historyList.push({ sessionId: this.sessionId, name: title });
-                  this.HistoryList = [...this.chatService.historyList].reverse();
-                }
-              };
-              setTimeout(checkTitle, 3000);
-            }
-          }
-        } catch (error) {
-          console.warn("Error updating history list:", error);
-        }
+        // ★ 关键修复：传统模式对话结束时立即保存历史（替代旧的 3s 轮询 + 仅更新内存逻辑）
+        this.saveCurrentSession();
       },
       error: (err) => {
         console.warn('流连接出错:', err);
@@ -4594,56 +4681,60 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
     if (!this.sessionId) return;
 
     this.list = [];
-    // console.log('获取历史消息，sessionId:', this.sessionId);
 
-    // 优先从内存缓存中获取
-    if (this.chatService.historyChatMap.get(this.sessionId)) {
-      const cachedHistory = this.chatService.historyChatMap.get(this.sessionId);
-      // 处理历史消息，标记其中的交互组件为历史模式
-      this.list = cachedHistory.map(item => {
+    // ===== 1. 优先从 ChatHistoryService 加载（支持恢复完整对话上下文） =====
+    const sessionData = this.chatHistoryService.loadSession(this.sessionId);
+    if (sessionData && sessionData.chatList && sessionData.chatList.length > 0) {
+      // 恢复 UI 列表
+      this.list = sessionData.chatList.map(item => {
         if (item.content && typeof item.content === 'string') {
-          return {
-            ...item,
-            content: this.markContentAsHistory(item.content)
-          };
+          return { ...item, content: this.markContentAsHistory(item.content) };
         }
         return item;
       });
-      this.scrollToBottom('auto');
-      return;
-    }
 
-    // 其次从本地 .chat_history 文件夹加载
-    const prjPath = this.projectService.currentProjectPath || this.projectService.projectRootPath;
-    const localChatHistory = this.chatService.loadSessionChatHistory(prjPath, this.sessionId);
-    if (localChatHistory && localChatHistory.length > 0) {
-      // 处理历史消息，标记其中的交互组件为历史模式
-      this.list = localChatHistory.map(item => {
-        if (item.content && typeof item.content === 'string') {
-          return {
-            ...item,
-            content: this.markContentAsHistory(item.content)
-          };
-        }
-        return item;
-      });
-      // 同时更新内存缓存
+      // ★ 恢复对话上下文 conversationMessages（核心：支持继续对话）
+      if (sessionData.conversationMessages && sessionData.conversationMessages.length > 0) {
+        this.conversationMessages = sessionData.conversationMessages;
+        // 恢复工具迭代计数
+        this.toolCallingIteration = sessionData.metadata?.toolCallingIteration || 0;
+        // 更新上下文预算
+        this.contextBudgetService?.updateBudget(this.conversationMessages);
+      }
+
+      // 同时更新旧缓存（兼容其他引用 historyChatMap 的地方）
       this.chatService.historyChatMap.set(this.sessionId, this.list);
       this.scrollToBottom('auto');
       return;
     }
 
-    // // 最后从服务端获取
-    // this.chatService.getHistory(this.sessionId).subscribe((res: any) => {
-    //   // console.log('get history', res);
-    //   if (res.status === 'success') {
-    //     // 先解析工具调用状态信息
-    //     this.parseHistory(res.data);
-    //     this.scrollToBottom('auto');
-    //   } else {
-    //     this.appendMessage('error', res.message);
-    //   }
-    // });
+    // ===== 2. 降级：从旧内存缓存获取 =====
+    if (this.chatService.historyChatMap.get(this.sessionId)) {
+      const cachedHistory = this.chatService.historyChatMap.get(this.sessionId);
+      this.list = cachedHistory.map(item => {
+        if (item.content && typeof item.content === 'string') {
+          return { ...item, content: this.markContentAsHistory(item.content) };
+        }
+        return item;
+      });
+      this.scrollToBottom('auto');
+      return;
+    }
+
+    // ===== 3. 降级：从旧格式文件加载 =====
+    const prjPath = this.projectService.currentProjectPath || this.projectService.projectRootPath;
+    const localChatHistory = this.chatService.loadSessionChatHistory(prjPath, this.sessionId);
+    if (localChatHistory && localChatHistory.length > 0) {
+      this.list = localChatHistory.map(item => {
+        if (item.content && typeof item.content === 'string') {
+          return { ...item, content: this.markContentAsHistory(item.content) };
+        }
+        return item;
+      });
+      this.chatService.historyChatMap.set(this.sessionId, this.list);
+      this.scrollToBottom('auto');
+      return;
+    }
   }
 
   bottomHeight = 180;
@@ -5285,12 +5376,14 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
   }
 
   menuClick(e) {
-    // console.log('选择了历史会话:', e);
-    // console.log("CurrentSessionId: ", this.chatService.currentSessionId)
     if (this.chatService.currentSessionId !== e.sessionId) {
+      // 切换前先保存当前会话
+      this.saveCurrentSession();
+
       this.chatService.currentSessionId = e.sessionId;
-      // 历史会话来自当前路径的历史列表，所以记录当前路径
-      this.chatService.currentSessionPath = this.projectService.currentProjectPath || this.projectService.projectRootPath;
+      // 从新索引中获取会话的项目路径；降级使用当前路径
+      const entry = this.chatHistoryService.findEntry(e.sessionId);
+      this.chatService.currentSessionPath = entry?.projectPath || this.projectService.currentProjectPath || this.projectService.projectRootPath;
       this.getHistory();
       this.isCompleted = true;
       this.closeMenu();
@@ -5486,8 +5579,9 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
   ngOnDestroy() {
     // console.log('AilyChatComponent 正在销毁...');
 
-    // 组件销毁前，保存当前会话数据
+    // 组件销毁前，保存当前会话数据 + 强制刷写所有脏数据
     this.saveCurrentSession();
+    this.chatHistoryService.flushAll();
 
     // 清理消息订阅
     if (this.messageSubscription) {

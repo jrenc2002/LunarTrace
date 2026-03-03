@@ -752,7 +752,13 @@ export class ChatService {
     return this.http.post(`${API.cancelTask}/${sessionId}`,{});
   }
 
-  generateTitle(sessionId: string, content: string) {
+  /**
+   * 生成会话标题
+   * @param sessionId 会话ID
+   * @param content 用户消息内容
+   * @param onTitleReady 标题生成成功时的回调（可选）
+   */
+  generateTitle(sessionId: string, content: string, onTitleReady?: (title: string) => void) {
     if (this.titleIsGenerating) {
       console.warn('标题生成中，忽略重复请求');
       return;
@@ -761,13 +767,20 @@ export class ChatService {
     this.http.post(`${API.generateTitle}`, { content }).subscribe(
       (res) => {
         if ((res as any).status === 'success' && sessionId === this.currentSessionId) {
+          let title: string;
           try {
-            this.currentSessionTitle = JSON.parse((res as any).data).title;
+            title = JSON.parse((res as any).data).title;
           } catch (error) {
-            this.currentSessionTitle = (res as any).data;
+            title = (res as any).data;
           }
 
+          this.currentSessionTitle = title;
           console.log("currentSessionTitle:", this.currentSessionTitle);
+
+          // 调用回调，通知标题已就绪
+          if (onTitleReady && title) {
+            onTitleReady(title);
+          }
         }
 
         this.titleIsGenerating = false;
