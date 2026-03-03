@@ -4656,6 +4656,12 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
       // ★ 恢复标题（防止进入历史会话后发消息再次触发标题生成）
       if (sessionData.metadata?.title) {
         this.chatService.currentSessionTitle = sessionData.metadata.title;
+      } else {
+        // 数据文件中没有标题，从全局索引获取（兜底旧数据）
+        const indexEntry = this.chatHistoryService.findEntry(this.sessionId);
+        if (indexEntry?.title) {
+          this.chatService.currentSessionTitle = indexEntry.title;
+        }
       }
 
       // ★ 恢复对话上下文 conversationMessages（核心：支持继续对话）

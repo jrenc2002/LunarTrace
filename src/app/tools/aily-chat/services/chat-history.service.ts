@@ -212,6 +212,9 @@ export class ChatHistoryService implements OnDestroy {
       const cached = this.sessionCache.get(sessionId);
       if (cached) {
         cached.metadata.title = title;
+        cached.metadata.updatedAt = Date.now();
+        // 同步写入会话数据文件，防止重启后标题丢失
+        this.writeSessionData(sessionId, cached);
       }
       // 立即写索引（低 IO，只有几 KB）
       this.writeIndex();
