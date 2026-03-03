@@ -1876,6 +1876,9 @@ Do not create non-existent boards and libraries.
             }
             this.isSessionStarting = false;
 
+            // ★ 会话启动后立即更新上下文预算（显示 System + Tools 基础开销）
+            this.contextBudgetService.updateBudget(this.conversationMessages, this.getCurrentTools());
+
             if (this.list.length === 0) {
               this.list = [];
             }
@@ -2034,8 +2037,8 @@ ${JSON.stringify(errData)}
         this.isWaiting = true;
         this.currentMessageSource = 'mainAgent';
         this.toolCallingIteration = 0;
-        // 更新上下文预算（新消息加入后）
-        this.contextBudgetService.updateBudget(this.conversationMessages);
+        // 更新上下文预算（新消息加入后），包含工具定义 token
+        this.contextBudgetService.updateBudget(this.conversationMessages, this.getCurrentTools());
         if (clear) {
           this.inputValue = '';
         }
@@ -2234,8 +2237,8 @@ ${JSON.stringify(errData)}
     // ==================== 上下文预算检查与压缩 ====================
     // 更新模型上下文窗口信息
     this.contextBudgetService.updateModelContextSize(this.currentModel?.model || null);
-    // 更新当前 token 使用量
-    this.contextBudgetService.updateBudget(this.conversationMessages);
+    // 更新当前 token 使用量（含工具定义）
+    this.contextBudgetService.updateBudget(this.conversationMessages, this.getCurrentTools());
 
     // 按分层策略压缩：全量保留 → 工具结果截断 → LLM 摘要
     try {
@@ -2299,8 +2302,8 @@ ${JSON.stringify(errData)}
 
     this.toolCallingIteration++;
 
-    // 更新上下文预算
-    this.contextBudgetService.updateBudget(this.conversationMessages);
+    // 更新上下文预算（含工具定义）
+    this.contextBudgetService.updateBudget(this.conversationMessages, this.getCurrentTools());
 
     console.log(`[无状态模式] 工具调用完成，${this.pendingToolResults.length} 个结果已加入对话历史，启动第 ${this.toolCallingIteration + 1} 轮`);
 
@@ -2339,8 +2342,8 @@ ${JSON.stringify(errData)}
           content: this.currentTurnAssistantContent
         });
       }
-      // 更新上下文预算（轮次结束时的最终状态）
-      this.contextBudgetService.updateBudget(this.conversationMessages);
+      // 更新上下文预算（轮次结束时的最终状态，含工具定义）
+      this.contextBudgetService.updateBudget(this.conversationMessages, this.getCurrentTools());
       // 设置完成状态（与传统模式 complete 回调的后续逻辑一致）
       if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
         this.list[this.list.length - 1].state = 'done';
@@ -4703,9 +4706,11 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
       if (sessionData.conversationMessages && sessionData.conversationMessages.length > 0) {
         this.conversationMessages = sessionData.conversationMessages;
         this.toolCallingIteration = sessionData.metadata?.toolCallingIteration || 0;
-        this.contextBudgetService?.updateBudget(this.conversationMessages);
+        this.contextBudgetService?.updateBudget(this.conversationMessages, this.getCurrentTools());
         console.log(`[AilyChat] 已恢复对话上下文: ${this.conversationMessages.length} 条消息`);
       } else {
+        // 旧格式历史无 conversationMessages，仅显示 System + Tools 基础开销
+        this.contextBudgetService?.updateBudget([], this.getCurrentTools());
         console.log(`[AilyChat] 旧格式历史数据，无法恢复对话上下文（仅显示聊天记录）`);
       }
 

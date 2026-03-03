@@ -145,11 +145,20 @@
               <i class="fa-light fa-star-christmas"></i><span>{{ currentModelName }}</span>
             </div>
             }
-            <!-- Token 用量环形指示器 -->
+            <!-- Token 用量环形指示器（参考 Copilot Context Window 面板） -->
             @if(contextBudgetSnapshot && contextBudgetSnapshot.maxContextTokens > 0) {
             <div class="token-budget-indicator ccenter"
               nz-tooltip nzTooltipPlacement="top"
-              [nzTooltipTitle]="((contextBudgetSnapshot.currentTokens / 1000) | number:'1.1-1') + 'K / ' + ((contextBudgetSnapshot.maxContextTokens / 1000) | number:'1.1-1') + 'K tokens · ' + (contextBudgetSnapshot.usagePercent | number:'1.0-0') + '%'">
+              [nzTooltipTitle]="tokenBudgetTooltip">
+              <ng-template #tokenBudgetTooltip>
+                <div style="font-size:11px;line-height:1.6;white-space:nowrap">
+                  <div style="font-weight:600;margin-bottom:2px">Context Window</div>
+                  <div style="border-top:1px solid rgba(255,255,255,0.15);margin-top:3px;padding-top:3px">{{ (contextBudgetSnapshot.currentTokens / 1000) | number:'1.1-1' }}K / {{ (contextBudgetSnapshot.maxContextTokens / 1000) | number:'1.1-1' }}K tokens · {{ contextBudgetSnapshot.usagePercent | number:'1.0-0' }}%</div>
+                  <div><span style="color:#98c379">■</span> System: {{ (contextBudgetSnapshot.systemTokens / 1000) | number:'1.1-1' }}K <span style="opacity:0.6">({{ contextBudgetSnapshot.systemPercent | number:'1.1-1' }}%)</span></div>
+                  <div><span style="color:#61afef">■</span> Tools: {{ (contextBudgetSnapshot.toolsTokens / 1000) | number:'1.1-1' }}K <span style="opacity:0.6">({{ contextBudgetSnapshot.toolsPercent | number:'1.1-1' }}%)</span></div>
+                  <div><span style="color:#c678dd">■</span> Messages: {{ (contextBudgetSnapshot.messagesTokens / 1000) | number:'1.1-1' }}K <span style="opacity:0.6">({{ contextBudgetSnapshot.messagesPercent | number:'1.1-1' }}%)</span></div>
+                </div>
+              </ng-template>
               <svg viewBox="0 0 24 24" class="token-ring">
                 <!-- 背景环 -->
                 <circle cx="12" cy="12" r="9" fill="none" stroke="#3f3f3f" stroke-width="2.5"/>

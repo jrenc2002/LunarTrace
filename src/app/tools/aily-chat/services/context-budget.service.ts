@@ -71,13 +71,38 @@ export function estimateMessagesTokens(messages: any[]): number {
   return messages.reduce((sum, msg) => sum + estimateMessageTokens(msg), 0) + 2;
 }
 
+/**
+ * 估算工具定义数组的 token 数
+ * 每个工具定义会被序列化为 JSON schema 格式发送给 LLM
+ */
+export function estimateToolsTokens(tools: any[]): number {
+  if (!tools || tools.length === 0) return 0;
+
+  let tokens = 0;
+  for (const tool of tools) {
+    // 工具名 + 描述 + JSON schema 序列化
+    tokens += 4; // 工具定义框架开销
+    if (tool.name) tokens += estimateTokenCount(tool.name);
+    if (tool.description) tokens += estimateTokenCount(tool.description);
+    if (tool.input_schema) {
+      tokens += estimateTokenCount(JSON.stringify(tool.input_schema));
+    } else if (tool.parameters) {
+      tokens += estimateTokenCount(JSON.stringify(tool.parameters));
+    }
+  }
+
+  return tokens;
+}
+
 // ==================== 上下文预算状态 ====================
 
 /**
  * 上下文预算快照（供 UI 消费）
+ *
+ * 参考 Copilot 的 Context Window 面板，分 System / Tools / Messages 三部分展示占用
  */
 export interface ContextBudgetSnapshot {
-  /** 当前对话历史的估算 token 数 */
+  /** 总占用 token 数（system + tools + messages） */
   currentTokens: number;
   /** 模型上下文窗口总 token 数 */
   maxContextTokens: number;
@@ -91,6 +116,20 @@ export interface ContextBudgetSnapshot {
   messageCount: number;
   /** 最后一次更新时间 */
   updatedAt: number;
+
+  // ===== 分项明细（参考 Copilot Context Window 面板） =====
+  /** 系统提示词占用 token 数 */
+  systemTokens: number;
+  /** 工具定义占用 token 数 */
+  toolsTokens: number;
+  /** 对话消息占用 token 数 */
+  messagesTokens: number;
+  /** 系统提示词占比 (0-100) */
+  systemPercent: number;
+  /** 工具定义占比 (0-100) */
+  toolsPercent: number;
+  /** 对话消息占比 (0-100) */
+  messagesPercent: number;
 }
 
 /**
@@ -227,6 +266,15 @@ export class ContextBudgetService {
   /** 摘要最大 token 数 */
   private static readonly MAX_SUMMARY_TOKENS = 4000;
 
+  /**
+   * 服务端系统提示词的预估 token 数
+   *
+   * 服务端系统提示词在客户端不可见，
+   * 通过人工预估给出合理值。后续可由服务端 API 返回精确值。
+   * 当前 系统提示词约 10000+ 中文字符 → ~4500 tokens
+   */
+  private static readonly ESTIMATED_SYSTEM_PROMPT_TOKENS = 4500;
+
   // ==================== 状态 ====================
 
   /** 当前模型上下文窗口大小 */
@@ -250,7 +298,10 @@ export class ContextBudgetService {
   constructor(
     private chatService: ChatService,
     private ailyChatConfigService: AilyChatConfigService
-  ) {}
+  ) {
+    // 初始化系统提示词 token 估算
+    this._cachedSystemTokens = ContextBudgetService.ESTIMATED_SYSTEM_PROMPT_TOKENS;
+  }
 
   // ==================== 公共接口 ====================
 
@@ -321,20 +372,77 @@ export class ContextBudgetService {
     this._maxContextTokens = ContextBudgetService.DEFAULT_CONTEXT_SIZE;
   }
 
+  /** 缓存的系统提示词 token 估算值 */
+  private _cachedSystemTokens: number = 0;
+  /** 缓存的工具定义 token 估算值 */
+  private _cachedToolsTokens: number = 0;
+  /** 上一次工具数组长度（用于判断是否需要重新估算） */
+  private _lastToolsCount: number = 0;
+
+  /**
+   * 更新系统提示词 token 估算（服务端提示词，客户端无法获取原文，需估算）
+   *
+   * 参考 Copilot Context Window 面板的 "System Instructions" 一栏。
+   * 由于系统提示词在服务端，客户端通过配置估算。
+   *
+   * @param tokenCount 估算的系统提示词 token 数（可通过 estimateTokenCount(promptText) 计算）
+   */
+  updateSystemPromptTokens(tokenCount: number): void {
+    this._cachedSystemTokens = tokenCount;
+  }
+
+  /**
+   * 更新工具定义 token 估算
+   * @param tools 当前工具数组
+   */
+  updateToolsTokens(tools: any[]): void {
+    if (!tools || tools.length === 0) {
+      this._cachedToolsTokens = 0;
+      this._lastToolsCount = 0;
+      return;
+    }
+    // 仅在工具数量变化时重新估算（避免每次都序列化大量 JSON）
+    if (tools.length !== this._lastToolsCount) {
+      this._cachedToolsTokens = estimateToolsTokens(tools);
+      this._lastToolsCount = tools.length;
+    }
+  }
+
   /**
    * 更新上下文预算状态（每次 conversationMessages 变化时调用）
+   *
+   * 参考 Copilot 的 Context Window 面板，完整上下文 = System + Tools + Messages
+   *
    * @param messages 当前完整对话历史
+   * @param tools 可选，当前工具数组（传入时会更新工具 token 缓存）
    */
-  updateBudget(messages: any[]): void {
-    const currentTokens = estimateMessagesTokens(messages);
+  updateBudget(messages: any[], tools?: any[]): void {
+    // 如果传入了 tools，更新缓存
+    if (tools) {
+      this.updateToolsTokens(tools);
+    }
+
+    const messagesTokens = estimateMessagesTokens(messages);
+    const systemTokens = this._cachedSystemTokens;
+    const toolsTokens = this._cachedToolsTokens;
+    const currentTokens = systemTokens + toolsTokens + messagesTokens;
+    const max = this.maxContextTokens;
+
     const snapshot: ContextBudgetSnapshot = {
       currentTokens,
-      maxContextTokens: this.maxContextTokens,
+      maxContextTokens: max,
       compressionThreshold: this.compressionThreshold,
       summarizationThreshold: this.summarizationThreshold,
-      usagePercent: Math.min(100, Math.round((currentTokens / this.maxContextTokens) * 100)),
+      usagePercent: Math.min(100, Math.round((currentTokens / max) * 100)),
       messageCount: messages.length,
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      // 分项明细
+      systemTokens,
+      toolsTokens,
+      messagesTokens,
+      systemPercent: max > 0 ? Math.round((systemTokens / max) * 1000) / 10 : 0,
+      toolsPercent: max > 0 ? Math.round((toolsTokens / max) * 1000) / 10 : 0,
+      messagesPercent: max > 0 ? Math.round((messagesTokens / max) * 1000) / 10 : 0,
     };
     this.budgetSubject.next(snapshot);
   }
@@ -672,7 +780,13 @@ export class ContextBudgetService {
       summarizationThreshold: this.summarizationThreshold,
       usagePercent: 0,
       messageCount: 0,
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      systemTokens: 0,
+      toolsTokens: 0,
+      messagesTokens: 0,
+      systemPercent: 0,
+      toolsPercent: 0,
+      messagesPercent: 0,
     };
   }
 
@@ -680,6 +794,9 @@ export class ContextBudgetService {
    * 重置状态（新会话时调用）
    */
   reset(): void {
+    // 注意：不清除 _cachedSystemTokens，因为系统提示词在会话间不变
+    this._cachedToolsTokens = 0;
+    this._lastToolsCount = 0;
     this.budgetSubject.next(this.createEmptySnapshot());
     this.compressionEventSubject.next(null);
   }
