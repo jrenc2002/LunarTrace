@@ -32,11 +32,9 @@ export class ChatService {
 
   currentMode = 'agent'; // 默认为代理模式
   currentModel: ModelConfig | null = null; // 当前模型，在构造函数中初始化
-  historyList = [];
-  historyChatMap = new Map<string, any>();
 
-  currentSessionId = this.historyList.length > 0 ? this.historyList[0].sessionId : '';
-  currentSessionTitle = this.historyList.length > 0 ? this.historyList[0].name : '';
+  currentSessionId = '';
+  currentSessionTitle = '';
 
   // 记录当前会话创建时的项目路径，用于确保历史记录保存到正确位置
   currentSessionPath = '';
@@ -117,103 +115,6 @@ export class ChatService {
     this.currentModel = model;
     this.configService.data.aiChatModel = model;
     this.configService.save();
-  }
-
-  // 打开.history
-  openHistoryFile(prjPath: string) {
-    // 打开项目下的.chat_history/.chat文件
-    this.ensureChatHistoryFolder(prjPath);
-    const historyPath = this.getChatHistoryFolderPath(prjPath) + '/.chat';
-    if (window['fs'].existsSync(historyPath)) {
-      this.historyList = JSON.parse(window['fs'].readFileSync(historyPath, 'utf-8'));
-    } else {
-      // 如果历史文件不存在，清空历史列表
-      this.historyList = [];
-    }
-  }
-
-  // 保存.history
-  saveHistoryFile(prjPath: string) {
-    // 保存项目下的.chat_history/.chat文件
-    this.ensureChatHistoryFolder(prjPath);
-    const historyPath = this.getChatHistoryFolderPath(prjPath) + '/.chat';
-    window['fs'].writeFileSync(historyPath, JSON.stringify(this.historyList, null, 2), 'utf-8');
-  }
-
-  /**
-   * 获取 .chat_history 文件夹路径
-   * @param prjPath 项目路径
-   * @returns .chat_history 文件夹的完整路径
-   */
-  private getChatHistoryFolderPath(prjPath: string): string {
-    return prjPath + '/.chat_history';
-  }
-
-  /**
-   * 获取会话历史记录文件路径
-   * @param prjPath 项目路径
-   * @param sessionId 会话ID
-   * @returns 会话历史记录文件的完整路径
-   */
-  private getSessionHistoryFilePath(prjPath: string, sessionId: string): string {
-    return this.getChatHistoryFolderPath(prjPath) + '/' + sessionId + '.json';
-  }
-
-  /**
-   * 确保 .chat_history 文件夹存在
-   * @param prjPath 项目路径
-   */
-  private ensureChatHistoryFolder(prjPath: string): void {
-    const folderPath = this.getChatHistoryFolderPath(prjPath);
-    if (!window['fs'].existsSync(folderPath)) {
-      window['fs'].mkdirSync(folderPath, { recursive: true });
-    }
-  }
-
-  /**
-   * 保存会话聊天记录到 .chat_history 文件夹
-   * @param prjPath 项目路径
-   * @param sessionId 会话ID
-   * @param chatList 聊天记录列表
-   */
-  saveSessionChatHistory(prjPath: string, sessionId: string, chatList: any[]): void {
-    if (!sessionId || !chatList || chatList.length === 0) {
-      return;
-    }
-
-    this.ensureChatHistoryFolder(prjPath);
-    const filePath = this.getSessionHistoryFilePath(prjPath, sessionId);
-
-    try {
-      window['fs'].writeFileSync(filePath, JSON.stringify(chatList, null, 2), 'utf-8');
-    } catch (error) {
-      console.warn('保存会话聊天记录失败:', error);
-    }
-  }
-
-  /**
-   * 从 .chat_history 文件夹加载会话聊天记录
-   * @param prjPath 项目路径
-   * @param sessionId 会话ID
-   * @returns 聊天记录列表，如果不存在则返回 null
-   */
-  loadSessionChatHistory(prjPath: string, sessionId: string): any[] | null {
-    if (!sessionId) {
-      return null;
-    }
-
-    const filePath = this.getSessionHistoryFilePath(prjPath, sessionId);
-
-    try {
-      if (window['fs'].existsSync(filePath)) {
-        const content = window['fs'].readFileSync(filePath, 'utf-8');
-        return JSON.parse(content);
-      }
-    } catch (error) {
-      console.warn('加载会话聊天记录失败:', error);
-    }
-
-    return null;
   }
 
 
