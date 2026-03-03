@@ -37,6 +37,7 @@ export interface BlockMeta {
   fieldTypes: Map<string, string>;    // 字段名到类型的映射（field_dropdown, field_variable 等）
   valueInputNames: string[];          // 值输入名列表（按顺序）
   statementInputNames: string[];      // 语句输入名列表
+  argsOrder: Array<{ name: string; kind: 'field' | 'valueInput' | 'statementInput' }>; // 所有参数的原始顺序
   hasOutput: boolean;                 // 是否有输出（值块）
   outputType?: string | string[];     // 输出类型
   hasPrevious: boolean;               // 是否有上连接点
@@ -248,6 +249,7 @@ export class BlockDefinitionService {
       fieldTypes: new Map<string, string>(),
       valueInputNames: [],
       statementInputNames: [],
+      argsOrder: [],
       hasOutput: 'output' in def,
       outputType: def.output,
       hasPrevious: 'previousStatement' in def,
@@ -300,16 +302,19 @@ export class BlockDefinitionService {
       case 'field_label_serializable':
         meta.fieldNames.push(arg.name);
         meta.fieldTypes.set(arg.name, arg.type);  // 记录字段类型
+        meta.argsOrder.push({ name: arg.name, kind: 'field' });
         break;
       
       // 值输入
       case 'input_value':
         meta.valueInputNames.push(arg.name);
+        meta.argsOrder.push({ name: arg.name, kind: 'valueInput' });
         break;
       
       // 语句输入
       case 'input_statement':
         meta.statementInputNames.push(arg.name);
+        meta.argsOrder.push({ name: arg.name, kind: 'statementInput' });
         break;
       
       // 虚拟输入（通常用于换行）
@@ -410,6 +415,7 @@ function parseBlockDefSimple(def: any, library: string): BlockMeta | null {
     fieldTypes: new Map<string, string>(),
     valueInputNames: [],
     statementInputNames: [],
+    argsOrder: new Array<{ name: string; kind: 'field' | 'valueInput' | 'statementInput' }>(),
     hasOutput: 'output' in def,
     outputType: def.output,
     hasPrevious: 'previousStatement' in def,
@@ -436,10 +442,13 @@ function parseBlockDefSimple(def: any, library: string): BlockMeta | null {
         if (arg.type?.startsWith('field_')) {
           meta.fieldNames.push(arg.name);
           meta.fieldTypes.set(arg.name, arg.type);  // 记录字段类型
+          meta.argsOrder.push({ name: arg.name, kind: 'field' });
         } else if (arg.type === 'input_value') {
           meta.valueInputNames.push(arg.name);
+          meta.argsOrder.push({ name: arg.name, kind: 'valueInput' });
         } else if (arg.type === 'input_statement') {
           meta.statementInputNames.push(arg.name);
+          meta.argsOrder.push({ name: arg.name, kind: 'statementInput' });
         }
       }
     }

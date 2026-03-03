@@ -14,7 +14,7 @@ const ABS_SYNTAX_SPECIFICATION = `# ABS (Aily Block Syntax) Quick Reference
 
 | Type | Role | Parameter Style |
 |------|------|-----------------|
-| **Value** | Embedded in other blocks' params | All params in parentheses: \`logic_compare(EQ, $a, $b)\` |
+| **Value** | Embedded in other blocks' params | All params in parentheses: \`logic_compare($a, EQ, $b)\` |
 | **Statement** | Standalone line, chains via next | Params in parentheses, statement inputs use \`@NAME:\` |
 | **Hat** | Root entry (arduino_setup, arduino_loop) | Same as Statement |
 
@@ -37,19 +37,29 @@ const ABS_SYNTAX_SPECIFICATION = `# ABS (Aily Block Syntax) Quick Reference
 | Variable | \`$name\` | \`$count\`, \`$temp\` |
 | Value block | \`block(args)\` | \`math_number(10)\`, \`$var\` |
 
+## ⚠️ Parameter Order Rule
+
+**Parameters follow block.json \`args0\` definition order** (fields and value inputs may interleave).
+For example, \`logic_compare\` has args0: [A(input_value), OP(field_dropdown), B(input_value)], so:
+- ✅ \`logic_compare($a, EQ, $b)\` — matches args0 order: A, OP, B
+- ❌ \`logic_compare(EQ, $a, $b)\` — wrong: OP should not be first
+
 ## Value Blocks (All params in parentheses)
 
 \`\`\`
-# Comparison: logic_compare(OP, A, B)
-logic_compare(EQ, $a, math_number(10))
-logic_compare(GT, $temp, math_number(30))
+# Comparison: logic_compare(A, OP, B) — args0 order: A, OP, B
+logic_compare($a, EQ, math_number(10))
+logic_compare($temp, GT, math_number(30))
 
-# Logic: logic_operation(OP, A, B)
-logic_operation(AND, $sensor1, $sensor2)
-logic_operation(OR, logic_compare(GT, $a, math_number(0)), logic_compare(LT, $a, math_number(100)))
+# Logic: logic_operation(A, OP, B) — args0 order: A, OP, B
+logic_operation($sensor1, AND, $sensor2)
+logic_operation(logic_compare($a, GT, math_number(0)), OR, logic_compare($a, LT, math_number(100)))
+
+# Math: math_arithmetic(A, OP, B) — args0 order: A, OP, B
+math_arithmetic($a, ADD, $b)
 
 # Ternary: logic_ternary(condition, trueValue, falseValue)
-logic_ternary(logic_compare(GTE, $score, math_number(90)), text("A"), text("B"))
+logic_ternary(logic_compare($score, GTE, math_number(90)), text("A"), text("B"))
 
 # Negate
 logic_negate($flag)
@@ -63,7 +73,7 @@ logic_boolean(TRUE)
 \`\`\`
 # If-Else: statement inputs use @NAME:
 controls_if()
-    @IF0: logic_compare(GT, $temp, math_number(30))
+    @IF0: logic_compare($temp, GT, math_number(30))
     @DO0:
         serial_println(Serial, text("Hot"))
     @ELSE:
@@ -71,10 +81,10 @@ controls_if()
 
 # If-ElseIf-Else
 controls_if()
-    @IF0: logic_compare(GT, $v, math_number(100))
+    @IF0: logic_compare($v, GT, math_number(100))
     @DO0:
         action1()
-    @IF1: logic_compare(GT, $v, math_number(50))
+    @IF1: logic_compare($v, GT, math_number(50))
     @DO1:
         action2()
     @ELSE:
@@ -125,6 +135,7 @@ arduino_loop()
 - 4-space indent for statement body
 - Named inputs only for statement inputs: \`@IF0:\`, \`@DO0:\`, \`@ELSE:\`
 - Value blocks: ALL params in parentheses (no named inputs)
+- **Parameter order follows block.json args0** (not always fields-first)
 `;
 
 /**

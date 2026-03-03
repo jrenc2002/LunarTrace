@@ -83,6 +83,7 @@ interface BlockMeta {
   statementInputNames?: string[];     // 语句输入名称列表
   valueInputNames?: string[];         // 值输入名称列表
   fieldNames?: string[];              // 字段名称列表
+  argsOrder?: Array<{ name: string; kind: 'field' | 'valueInput' | 'statementInput' }>; // 参数原始顺序
   isRootBlock?: boolean;              // 是否为根块
   isValueBlock?: boolean;             // 是否为无参数值块（如 esp32_wifi_status）
   mutator?: string;                   // mutator 类型（如 function_params_mutator）
@@ -169,6 +170,7 @@ function convertDynamicMeta(meta: DynamicBlockMeta): Partial<BlockMeta> {
     fieldNames: meta.fieldNames.length > 0 ? meta.fieldNames : undefined,
     valueInputNames: meta.valueInputNames.length > 0 ? meta.valueInputNames : undefined,
     statementInputNames: meta.statementInputNames.length > 0 ? meta.statementInputNames : undefined,
+    argsOrder: meta.argsOrder && meta.argsOrder.length > 0 ? meta.argsOrder : undefined,
     hasStatementInput: meta.statementInputNames.length > 0,
     isRootBlock: meta.isRootBlock,
     isValueBlock: meta.hasOutput && meta.fieldNames.length === 0 && meta.valueInputNames.length === 0,
@@ -239,12 +241,12 @@ const FALLBACK_BLOCKS: Record<string, Partial<BlockMeta>> = {
   
   // 基础块（Blockly 内置）
   'math_number': { fieldNames: ['NUM'] },
-  'math_arithmetic': { fieldNames: ['OP'], valueInputNames: ['A', 'B'] },
-  'math_change': { fieldNames: ['VAR'], valueInputNames: ['DELTA'] },
+  'math_arithmetic': { fieldNames: ['OP'], valueInputNames: ['A', 'B'], argsOrder: [{ name: 'A', kind: 'valueInput' }, { name: 'OP', kind: 'field' }, { name: 'B', kind: 'valueInput' }] },
+  'math_change': { fieldNames: ['VAR'], valueInputNames: ['DELTA'], argsOrder: [{ name: 'VAR', kind: 'field' }, { name: 'DELTA', kind: 'valueInput' }] },
   'text': { fieldNames: ['TEXT'] },
   'text_join': { valueInputNames: ['ADD0', 'ADD1'] },
-  'logic_compare': { fieldNames: ['OP'], valueInputNames: ['A', 'B'] },
-  'logic_operation': { fieldNames: ['OP'], valueInputNames: ['A', 'B'] },
+  'logic_compare': { fieldNames: ['OP'], valueInputNames: ['A', 'B'], argsOrder: [{ name: 'A', kind: 'valueInput' }, { name: 'OP', kind: 'field' }, { name: 'B', kind: 'valueInput' }] },
+  'logic_operation': { fieldNames: ['OP'], valueInputNames: ['A', 'B'], argsOrder: [{ name: 'A', kind: 'valueInput' }, { name: 'OP', kind: 'field' }, { name: 'B', kind: 'valueInput' }] },
   'logic_boolean': { fieldNames: ['BOOL'] },
   'logic_negate': { valueInputNames: ['BOOL'] },
   'variables_get': { fieldNames: ['VAR'] },
@@ -425,13 +427,13 @@ export class BlocklyAbsParser {
    * 当一个块调用跨越多行时（括号未闭合），将其合并成单行。
    * 例如:
    * ```
-   * logic_operation(AND,
-   *     logic_compare(EQ, $a, math_number(1)),
-   *     logic_compare(EQ, $b, math_number(2)))
+   * logic_operation($a, AND,
+   *     logic_compare($a, EQ, math_number(1)),
+   *     logic_compare($b, EQ, math_number(2)))
    * ```
    * 合并为:
    * ```
-   * logic_operation(AND, logic_compare(EQ, $a, math_number(1)), logic_compare(EQ, $b, math_number(2)))
+   * logic_operation($a, AND, logic_compare($a, EQ, math_number(1)), logic_compare($b, EQ, math_number(2)))
    * ```
    */
   private mergeMultilineParentheses(code: string): string {
@@ -824,27 +826,56 @@ export class BlocklyAbsParser {
       // 使用已知的块定义
       let argIndex = 0;
       
-      // 先分配字段（跳过已通过命名参数设置的）
-      if (meta.fieldNames) {
-        for (const fieldName of meta.fieldNames) {
-          if (fieldName in fields || fieldName in inlineInputs) continue; // 已设置
+      // 🆕 优先按 argsOrder 顺序分配参数（保持字段和值输入的交错顺序）
+      if (meta.argsOrder && meta.argsOrder.length > 0) {
+        for (const argInfo of meta.argsOrder) {
+          const { name, kind } = argInfo;
+          
+          // 跳过已通过命名参数设置的
+          if (name in fields || name in inlineInputs) continue;
+          // 跳过语句输入（不在括号参数内）
+          if (kind === 'statementInput') continue;
+          
           if (argIndex < positionalArgs.length) {
-            fields[fieldName] = this.parseFieldValue(positionalArgs[argIndex]);
+            const arg = positionalArgs[argIndex];
+            
+            if (kind === 'field') {
+              // 字段参数
+              fields[name] = this.parseFieldValue(arg);
+            } else if (kind === 'valueInput') {
+              // 值输入参数
+              const valueNode = this.parseInlineValue(arg);
+              if (valueNode) {
+                inlineInputs[name] = valueNode;
+              }
+            }
             argIndex++;
           }
         }
-      }
-      
-      // 再分配值输入（跳过已通过命名参数设置的）
-      if (meta.valueInputNames) {
-        for (const inputName of meta.valueInputNames) {
-          if (inputName in fields || inputName in inlineInputs) continue; // 已设置
-          if (argIndex < positionalArgs.length) {
-            const valueNode = this.parseInlineValue(positionalArgs[argIndex]);
-            if (valueNode) {
-              inlineInputs[inputName] = valueNode;
+      } else {
+        // 回退：无 argsOrder 时使用旧逻辑（先字段后值输入）
+        // 先分配字段（跳过已通过命名参数设置的）
+        if (meta.fieldNames) {
+          for (const fieldName of meta.fieldNames) {
+            if (fieldName in fields || fieldName in inlineInputs) continue; // 已设置
+            if (argIndex < positionalArgs.length) {
+              fields[fieldName] = this.parseFieldValue(positionalArgs[argIndex]);
+              argIndex++;
             }
-            argIndex++;
+          }
+        }
+        
+        // 再分配值输入（跳过已通过命名参数设置的）
+        if (meta.valueInputNames) {
+          for (const inputName of meta.valueInputNames) {
+            if (inputName in fields || inputName in inlineInputs) continue; // 已设置
+            if (argIndex < positionalArgs.length) {
+              const valueNode = this.parseInlineValue(positionalArgs[argIndex]);
+              if (valueNode) {
+                inlineInputs[inputName] = valueNode;
+              }
+              argIndex++;
+            }
           }
         }
       }
@@ -1532,7 +1563,7 @@ HIGH / LOW        # 高低电平 -> math_number(1/0)
 ### 命名输入
 \`\`\`
 controls_if
-    @condition: logic_compare(EQ, $a, $b)
+    @condition: logic_compare($a, EQ, $b)
     @do:
         serial_println(Serial, "Equal!")
     @else:
@@ -1543,13 +1574,13 @@ controls_if
 \`\`\`
 # 简单 if
 controls_if
-    @IF0: logic_compare(GT, $count, number(10))
+    @IF0: logic_compare($count, GT, number(10))
     @DO0:
         serial_println(Serial, "Greater than 10")
 
 # if-else
 controls_if
-    @IF0: logic_compare(GT, $count, number(10))
+    @IF0: logic_compare($count, GT, number(10))
     @DO0:
         serial_println(Serial, "Greater than 10")
     @ELSE:
@@ -1557,10 +1588,10 @@ controls_if
 
 # if-elseif-else（extraState 自动推断）
 controls_if
-    @IF0: logic_compare(GT, $count, number(10))
+    @IF0: logic_compare($count, GT, number(10))
     @DO0:
         serial_println(Serial, "Greater than 10")
-    @IF1: logic_compare(GT, $count, number(5))
+    @IF1: logic_compare($count, GT, number(5))
     @DO1:
         serial_println(Serial, "Greater than 5")
     @ELSE:
@@ -1589,7 +1620,7 @@ arduino_loop
 ### 条件判断
 \`\`\`
 controls_if
-    @condition: logic_compare(GT, $count, number(10))
+    @condition: logic_compare($count, GT, number(10))
     @do:
         serial_println(Serial, "Count > 10")
         variables_set($count, number(0))

@@ -485,32 +485,66 @@ function convertBlockChainToAbs(block: any, indentLevel: number, context: Conver
  * 构建块调用字符串
  * 
  * 使用简单的位置参数格式，保持 ABS 语法简洁易学。
- * 导入时，系统会在创建块并触发动态扩展后，自动获取块上实际的输入并按顺序连接。
+ * 按照块定义的 args 顺序输出参数（字段和值输入交错），确保导入时顺序正确。
  */
 function buildBlockCall(block: any, context: ConversionContext): string {
   const args: string[] = [];
+  const statementInputs = new Set(getStatementInputs(block));
   
-  // 收集字段参数（按定义顺序）
-  if (block.fields) {
-    for (const [fieldName, fieldValue] of Object.entries(block.fields)) {
-      const formattedValue = formatFieldValue(block.type, fieldName, fieldValue, context);
-      if (formattedValue !== null) {
-        args.push(formattedValue);
+  // 尝试获取块的元数据，按 argsOrder 顺序输出参数
+  const dynamicMetas = getGlobalBlockMetas();
+  const meta = dynamicMetas?.get(block.type);
+  
+  // 获取 argsOrder：优先静态元数据 → Blockly 运行时回退
+  const argsOrder = (meta?.argsOrder?.length ? meta.argsOrder : null) || queryArgsOrderFromBlockly(block.type);
+  
+  if (argsOrder && argsOrder.length > 0) {
+    // 有 argsOrder：按定义顺序输出参数
+    for (const argInfo of argsOrder) {
+      const { name, kind } = argInfo;
+      
+      if (kind === 'field') {
+        // 字段参数
+        if (block.fields && name in block.fields) {
+          const formattedValue = formatFieldValue(block.type, name, block.fields[name], context);
+          if (formattedValue !== null) {
+            args.push(formattedValue);
+          }
+        }
+      } else if (kind === 'valueInput') {
+        // 值输入参数
+        if (block.inputs && name in block.inputs) {
+          const input = block.inputs[name] as any;
+          const formattedValue = formatInputValue(input, context);
+          if (formattedValue !== null) {
+            args.push(formattedValue);
+          }
+        }
+      }
+      // statementInput 不在括号内输出，跳过
+    }
+  } else {
+    // 无元数据：使用原逻辑（先字段后值输入）
+    // 收集字段参数
+    if (block.fields) {
+      for (const [fieldName, fieldValue] of Object.entries(block.fields)) {
+        const formattedValue = formatFieldValue(block.type, fieldName, fieldValue, context);
+        if (formattedValue !== null) {
+          args.push(formattedValue);
+        }
       }
     }
-  }
-  
-  // 收集值输入参数（非语句输入）- 使用位置参数格式
-  if (block.inputs) {
-    const statementInputs = new Set(getStatementInputs(block));
     
-    for (const [inputName, inputValue] of Object.entries(block.inputs)) {
-      if (statementInputs.has(inputName)) continue;
-      
-      const input = inputValue as any;
-      const formattedValue = formatInputValue(input, context);
-      if (formattedValue !== null) {
-        args.push(formattedValue);
+    // 收集值输入参数（非语句输入）
+    if (block.inputs) {
+      for (const [inputName, inputValue] of Object.entries(block.inputs)) {
+        if (statementInputs.has(inputName)) continue;
+        
+        const input = inputValue as any;
+        const formattedValue = formatInputValue(input, context);
+        if (formattedValue !== null) {
+          args.push(formattedValue);
+        }
       }
     }
   }
@@ -631,6 +665,60 @@ function formatBlockAsValue(block: any, context: ConversionContext): string {
 
 // 运行时查询缓存：blockType -> Set<语句输入名>
 const runtimeStatementInputCache = new Map<string, Set<string>>();
+
+// 运行时查询缓存：blockType -> argsOrder
+const runtimeArgsOrderCache = new Map<string, Array<{ name: string; kind: 'field' | 'valueInput' | 'statementInput' }> | null>();
+
+/**
+ * 通过 Blockly 运行时查询块的参数顺序
+ * 遍历 inputList 及其 fieldRow，按定义顺序收集所有字段和输入
+ */
+function queryArgsOrderFromBlockly(blockType: string): Array<{ name: string; kind: 'field' | 'valueInput' | 'statementInput' }> | null {
+  if (runtimeArgsOrderCache.has(blockType)) {
+    return runtimeArgsOrderCache.get(blockType) || null;
+  }
+  
+  if (typeof Blockly === 'undefined' || !Blockly.Blocks || !Blockly.Blocks[blockType]) {
+    return null;
+  }
+  
+  try {
+    const workspace = Blockly.getMainWorkspace?.();
+    if (!workspace) return null;
+    
+    const tempBlock = workspace.newBlock(blockType);
+    const argsOrder: Array<{ name: string; kind: 'field' | 'valueInput' | 'statementInput' }> = [];
+    
+    if (tempBlock.inputList) {
+      for (const input of tempBlock.inputList) {
+        // 先收集该行的字段（按 fieldRow 顺序）
+        if (input.fieldRow) {
+          for (const field of input.fieldRow) {
+            if (field.name && field.SERIALIZABLE) {
+              argsOrder.push({ name: field.name, kind: 'field' });
+            }
+          }
+        }
+        // 再收集输入本身
+        if (input.connection) {
+          if (input.connection.type === 1) { // INPUT_VALUE
+            argsOrder.push({ name: input.name, kind: 'valueInput' });
+          } else if (input.connection.type === 3) { // INPUT_STATEMENT
+            argsOrder.push({ name: input.name, kind: 'statementInput' });
+          }
+        }
+      }
+    }
+    
+    tempBlock.dispose();
+    runtimeArgsOrderCache.set(blockType, argsOrder.length > 0 ? argsOrder : null);
+    return argsOrder.length > 0 ? argsOrder : null;
+  } catch (e) {
+    console.warn(`[abiAbsConverter] Failed to query argsOrder for ${blockType}:`, e);
+    runtimeArgsOrderCache.set(blockType, null);
+    return null;
+  }
+}
 
 /**
  * 通过 Blockly 运行时查询块的语句输入名称

@@ -1199,6 +1199,132 @@ function getFieldTypeInfo(block: any, fieldName: string): {
   }
 }
 
+/**
+ * 获取下拉菜单字段的可用选项列表
+ * 返回选项值数组，如果字段不是下拉菜单或获取失败则返回空数组
+ */
+function getDropdownOptions(block: any, fieldName: string): string[] {
+  try {
+    const field = block.getField(fieldName);
+    if (!field) return [];
+    // 检查是否为下拉菜单字段
+    if (typeof field.getOptions !== 'function') return [];
+    const options = field.getOptions(false);
+    if (!Array.isArray(options)) return [];
+    return options.map((opt: any) => {
+      if (Array.isArray(opt) && opt.length >= 2) return String(opt[1]);
+      return String(opt);
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 智能设置字段值：对下拉菜单字段自动进行选项匹配（精确 → 大小写不敏感 → 显示文本），
+ * 对非下拉字段直接 setFieldValue。设置后验证值是否生效。
+ * @returns { success: boolean; error?: string; suggestion?: string }
+ */
+function smartSetFieldValue(
+  block: any,
+  fieldName: string,
+  actualValue: string
+): { success: boolean; error?: string; suggestion?: string } {
+  const field = block.getField(fieldName);
+  if (!field) {
+    return { success: false, error: `字段 "${fieldName}" 不存在`, suggestion: `块 "${block.type}" 没有名为 "${fieldName}" 的字段` };
+  }
+
+  // 判断是否为下拉菜单字段
+  const isDropdown = typeof field.getOptions === 'function';
+
+  if (isDropdown) {
+    try {
+      const options = field.getOptions();
+      if (!Array.isArray(options) || options.length === 0) {
+        // 无选项，直接尝试设置
+        block.setFieldValue(actualValue, fieldName);
+        return { success: true };
+      }
+
+      let matchedOption: string | null = null;
+
+      // 1. 精确匹配
+      for (const option of options) {
+        const optionValue = option[1] ?? option[0];
+        if (optionValue === actualValue) {
+          matchedOption = optionValue;
+          break;
+        }
+      }
+
+      // 2. 大小写不敏感匹配
+      if (matchedOption === null) {
+        const lowerVal = String(actualValue).toLowerCase();
+        for (const option of options) {
+          const optionValue = option[1] ?? option[0];
+          if (typeof optionValue === 'string' && optionValue.toLowerCase() === lowerVal) {
+            matchedOption = optionValue;
+            break;
+          }
+        }
+      }
+
+      // 3. 显示文本匹配
+      if (matchedOption === null) {
+        const lowerVal = String(actualValue).toLowerCase();
+        for (const option of options) {
+          const displayText = option[0];
+          const optionValue = option[1] ?? option[0];
+          if (typeof displayText === 'string' && displayText.toLowerCase() === lowerVal) {
+            matchedOption = optionValue;
+            break;
+          }
+        }
+      }
+
+      const availableOpts = options.map((opt: any) => String(opt[1] ?? opt[0]));
+
+      if (matchedOption === null) {
+        const mismatchHint = /^[a-z_]+\(/.test(actualValue)
+          ? `\n⚠️ 该值看起来像块调用表达式，可能是 ABS 参数顺序与 block.json 定义不一致。请按照 block.json 中 args0 的定义顺序传递参数。`
+          : '';
+        return {
+          success: false,
+          error: `无效的下拉选项值: ${actualValue}, 可用选项: [${availableOpts.join(', ')}]`,
+          suggestion: `下拉菜单 "${fieldName}" 的值 "${actualValue}" 不是有效选项。可用选项: [${availableOpts.join(', ')}]${mismatchHint}`
+        };
+      }
+
+      block.setFieldValue(matchedOption, fieldName);
+
+      // 验证设置是否生效（Blockly 下拉菜单可能静默拒绝）
+      const afterValue = block.getFieldValue(fieldName);
+      if (afterValue !== matchedOption) {
+        return {
+          success: false,
+          error: `设置验证失败`,
+          suggestion: `下拉菜单 "${fieldName}" 设置后值不匹配。期望: "${matchedOption}", 实际: "${afterValue}". 可用选项: [${availableOpts.join(', ')}]`
+        };
+      }
+
+      return { success: true };
+    } catch (e: any) {
+      const opts = getDropdownOptions(block, fieldName);
+      const optsHint = opts.length > 0 ? ` 可用选项: [${opts.join(', ')}]` : '';
+      return { success: false, error: e?.message || String(e), suggestion: `字段 "${fieldName}" 设置失败: ${e?.message || e}${optsHint}` };
+    }
+  } else {
+    // 非下拉字段：直接设置
+    try {
+      block.setFieldValue(actualValue, fieldName);
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || String(e), suggestion: `字段 "${fieldName}" 设置失败: ${e?.message || e}` };
+    }
+  }
+}
+
 function configureBlockFields(block: any, fields: FieldConfig): {
   configSuccess: boolean;
   failedFields?: Array<{
@@ -1423,14 +1549,10 @@ function configureBlockFields(block: any, fields: FieldConfig): {
             
             // 获取可用选项并进行智能匹配
             let matchedOption: string | null = null;
-            let availableOptions: string[] = [];
             
             if (field.getOptions) {
               try {
                 const options = field.getOptions();
-                // 注意：使用 ?? 而非 || ，因为空字符串 "" 是有效的选项值
-                availableOptions = options.map((opt: any) => opt[1] ?? opt[0]);
-                // console.log(`🔍 下拉菜单可用选项:`, availableOptions);
                 
                 // 1. 首先尝试精确匹配（注意：空字符串是有效值）
                 for (const option of options) {
@@ -1604,7 +1726,7 @@ function configureBlockFields(block: any, fields: FieldConfig): {
                     fieldName,
                     value: actualValue,
                     error: `设置验证失败`,
-                    suggestion: `下拉菜单 "${fieldName}" 设置后值不匹配。期望: "${matchedOption}", 实际: "${actualFieldValue}". 可用选项: [${availableOptions.join(', ')}]`
+                    suggestion: `下拉菜单 "${fieldName}" 设置后值不匹配。期望: "${matchedOption}", 实际: "${actualFieldValue}". 可用选项: [${getDropdownOptions(block, fieldName).join(', ')}]`
                   });
                 }
               } catch (setError: any) {
@@ -1614,17 +1736,22 @@ function configureBlockFields(block: any, fields: FieldConfig): {
                   fieldName,
                   value: actualValue,
                   error: errorMsg,
-                  suggestion: `下拉菜单 "${fieldName}" 设置失败: ${errorMsg}. 可用选项: [${availableOptions.join(', ')}]`
+                  suggestion: `下拉菜单 "${fieldName}" 设置失败: ${errorMsg}. 可用选项: [${getDropdownOptions(block, fieldName).join(', ')}]`
                 });
               }
             } else {
               // 没有找到匹配的选项
-              const suggestion = `下拉菜单 "${fieldName}" 的值 "${actualValue}" 不是有效选项。可用选项: [${availableOptions.join(', ')}]`;
+              // 检测是否可能是参数顺序错位（如把 input_value 的值传给了 field_dropdown）
+              const mismatchHint = (typeof actualValue === 'string' && /^[a-z_]+\(/.test(actualValue))
+                ? `\n⚠️ 该值看起来像块调用表达式，可能是 ABS 参数顺序与 block.json 定义不一致。请按照 block.json 中 args0 的定义顺序传递参数（字段和值输入可能交错排列）。`
+                : '';
+              const dropdownOpts = getDropdownOptions(block, fieldName);
+              const suggestion = `下拉菜单 "${fieldName}" 的值 "${actualValue}" 不是有效选项。可用选项: [${dropdownOpts.join(', ')}]${mismatchHint}`;
               console.warn(`❌ ${suggestion}`);
               failedFields.push({
                 fieldName,
                 value: actualValue,
-                error: `无效的下拉选项值: ${actualValue}, 可用选项: [${availableOptions.join(', ')}]`,
+                error: `无效的下拉选项值: ${actualValue}, 可用选项: [${dropdownOpts.join(', ')}]`,
                 suggestion
               });
             }
@@ -1753,7 +1880,7 @@ function configureBlockFields(block: any, fields: FieldConfig): {
             continue;
           }
           
-          // 字段现在存在，尝试设置值
+          // 字段现在存在，使用智能设置（支持下拉菜单匹配+验证）
           let actualValue: string;
           if (typeof value === 'object' && value !== null) {
             if ((value as any).id) {
@@ -1767,18 +1894,30 @@ function configureBlockFields(block: any, fields: FieldConfig): {
             actualValue = String(value);
           }
           
-          block.setFieldValue(actualValue, fieldName);
-          // console.log(`✅ 二次尝试设置成功: ${fieldName} = ${actualValue}`);
-          configSuccess = true;
+          const setResult = smartSetFieldValue(block, fieldName, actualValue);
+          if (setResult.success) {
+            // console.log(`✅ 二次尝试设置成功: ${fieldName} = ${actualValue}`);
+            configSuccess = true;
+          } else {
+            console.warn(`❌ 二次尝试设置失败: ${fieldName}`, setResult.error);
+            failedFields.push({
+              fieldName,
+              value: typeof value === 'object' ? JSON.stringify(value) : String(value),
+              error: setResult.error || '设置失败',
+              suggestion: setResult.suggestion || `字段 "${fieldName}" 二次尝试设置失败`
+            });
+          }
           
         } catch (retryError: any) {
           const errorMsg = retryError?.message || String(retryError);
-          console.warn(`❌ 二次尝试设置失败: ${fieldName}`, retryError);
+          console.warn(`❌ 二次尝试异常: ${fieldName}`, retryError);
+          const dropdownOpts = getDropdownOptions(block, fieldName);
+          const optionsHint = dropdownOpts.length > 0 ? ` 可用选项: [${dropdownOpts.join(', ')}]` : '';
           failedFields.push({
             fieldName,
             value: typeof value === 'object' ? JSON.stringify(value) : String(value),
             error: errorMsg,
-            suggestion: `字段 "${fieldName}" 二次尝试设置失败: ${errorMsg}`
+            suggestion: `字段 "${fieldName}" 二次尝试异常: ${errorMsg}${optionsHint}`
           });
         }
       }
@@ -1837,24 +1976,24 @@ function configureBlockFields(block: any, fields: FieldConfig): {
       for (const { fieldName, value } of mappedRetryFields) {
         const existingField = block.getField(fieldName);
         if (existingField) {
-          try {
-            let actualValue: string;
-            if (typeof value === 'object' && value !== null) {
-              if ((value as any).id) actualValue = (value as any).id;
-              else if ((value as any).name) actualValue = (value as any).name;
-              else actualValue = JSON.stringify(value);
-            } else {
-              actualValue = String(value);
-            }
-            block.setFieldValue(actualValue, fieldName);
+          let actualValue: string;
+          if (typeof value === 'object' && value !== null) {
+            if ((value as any).id) actualValue = (value as any).id;
+            else if ((value as any).name) actualValue = (value as any).name;
+            else actualValue = JSON.stringify(value);
+          } else {
+            actualValue = String(value);
+          }
+          const setResult = smartSetFieldValue(block, fieldName, actualValue);
+          if (setResult.success) {
             // console.log(`✅ 字段设置成功: ${fieldName} = ${actualValue}`);
             configSuccess = true;
-          } catch (e: any) {
+          } else {
             failedFields.push({
               fieldName,
               value: typeof value === 'object' ? JSON.stringify(value) : String(value),
-              error: e?.message || String(e),
-              suggestion: `字段 "${fieldName}" 设置失败`
+              error: setResult.error || '设置失败',
+              suggestion: setResult.suggestion || `字段 "${fieldName}" 设置失败`
             });
           }
         } else {
@@ -1881,28 +2020,28 @@ function configureBlockFields(block: any, fields: FieldConfig): {
           // 尝试将值映射到第一个未配置的字段
           if (unconfiguredFields.length > 0) {
             const targetField = unconfiguredFields[0];
-            try {
-              let actualValue: string;
-              if (typeof value === 'object' && value !== null) {
-                if ((value as any).id) actualValue = (value as any).id;
-                else if ((value as any).name) actualValue = (value as any).name;
-                else actualValue = JSON.stringify(value);
-              } else {
-                actualValue = String(value);
-              }
-              block.setFieldValue(actualValue, targetField);
+            let actualValue: string;
+            if (typeof value === 'object' && value !== null) {
+              if ((value as any).id) actualValue = (value as any).id;
+              else if ((value as any).name) actualValue = (value as any).name;
+              else actualValue = JSON.stringify(value);
+            } else {
+              actualValue = String(value);
+            }
+            const setResult = smartSetFieldValue(block, targetField, actualValue);
+            if (setResult.success) {
               // console.log(`🔄 字段映射: ${fieldName} → ${targetField} = ${actualValue}`);
               configuredFieldNames.add(targetField);
               configSuccess = true;
-            } catch (e: any) {
-              console.warn(`⚠️ 字段映射失败: ${fieldName} → ${targetField}:`, e?.message);
+            } else {
+              console.warn(`⚠️ 字段映射失败: ${fieldName} → ${targetField}:`, setResult.error);
               failedFields.push({
                 fieldName,
                 value: typeof value === 'object' ? JSON.stringify(value) : String(value),
                 error: `字段 "${fieldName}" 在块类型 "${block.type}" 中不存在，映射到 "${targetField}" 也失败`,
-                suggestion: availableFieldsList.length > 0 
+                suggestion: setResult.suggestion || (availableFieldsList.length > 0 
                   ? `该块可用的字段有: [${availableFieldsList.join(', ')}]`
-                  : `请阅读块类型 "${block.type}" 所属库的 README.md 文档`
+                  : `请阅读块类型 "${block.type}" 所属库的 README.md 文档`)
               });
             }
           } else {
@@ -11178,62 +11317,93 @@ async function getCurrentProjectInfo(projectService?: any): Promise<{
  * - 下拉字段: ENUM_VALUE
  * - 数字输入: math_number(n)
  * - 命名输入: @InputName: value_block()
+ * 
+ * ⚠️ 参数顺序遵循 block.json 的 args0 定义顺序（字段和输入可能交错排列）
  */
 function generateAbsFormat(block: any): string {
   const params: string[] = [];
   const namedInputs: string[] = [];
   
-  // 收集输入
-  const valueInputs = block.inputs?.filter((i: any) => i.type === 'value') || [];
+  // 收集输入和字段的映射（按 name 索引方便查找）
+  const fieldMap = new Map<string, any>();
+  const inputMap = new Map<string, any>();
+  
+  if (block.fields) {
+    for (const field of block.fields) {
+      if (field.name !== '_DYNAMIC_') {
+        fieldMap.set(field.name, field);
+      }
+    }
+  }
+  if (block.inputs) {
+    for (const input of block.inputs) {
+      inputMap.set(input.name, input);
+    }
+  }
+  
   const statementInputs = block.inputs?.filter((i: any) => i.type === 'statement') || [];
   
   // 判断块类型和是否使用命名输入
-  // 规则：
-  // - 值块（hasOutput）：所有参数作为位置参数放括号内
-  // - 语句块 + 有语句输入：使用命名输入语法
   const isValueBlock = block.connectionTypes?.hasOutput;
   const useNamedInputs = !isValueBlock && statementInputs.length > 0;
   
-  // 处理字段参数（按顺序添加到括号内）
-  if (block.fields && block.fields.length > 0) {
-    for (const field of block.fields) {
-      // 跳过动态标记
-      if (field.name === '_DYNAMIC_') continue;
-      
-      if (field.type === 'variable') {
-        // field_variable 使用 $varName 格式
-        params.push('$var');
-      } else if (field.type === 'dropdown') {
-        const defaultVal = getDropdownDefaultValue(field);
-        if (defaultVal) {
-          params.push(defaultVal);
-        }
-      } else if (field.type === 'text') {
-        // field_input 直接写引号字符串
-        const val = field.defaultValue || 'text';
-        params.push(`"${val}"`);
-      } else if (field.type === 'number') {
-        // field_number 直接写数字
-        const val = field.defaultValue ?? '0';
-        params.push(String(val));
-      } else if (field.type === 'checkbox') {
-        params.push(field.defaultValue ? 'TRUE' : 'FALSE');
+  // 🔑 核心：使用 rawDefinition 的 args0/args1/args2... 确定参数顺序（字段和输入可能交错排列）
+  const rawDef = block.rawDefinition;
+  
+  // 收集所有 argsN 的参数，按 N 递增顺序合并
+  const allArgs: any[] = [];
+  if (rawDef) {
+    for (let i = 0; i <= 10; i++) {
+      const argsKey = i === 0 ? 'args0' : `args${i}`;
+      const args = rawDef[argsKey];
+      if (Array.isArray(args)) {
+        allArgs.push(...args);
       }
     }
   }
   
-  // 处理值输入
-  if (valueInputs.length > 0) {
-    for (const input of valueInputs) {
-      // 根据 check 类型生成合适的示例
-      const exampleBlock = getInputExampleBlock(input);
+  if (allArgs.length > 0) {
+    // 按 args 定义顺序遍历，区分字段和输入
+    for (const arg of allArgs) {
+      if (!arg.name) continue;
       
+      if (arg.type && arg.type.startsWith('field_')) {
+        // 字段：从已解析的 fields 中查找
+        const field = fieldMap.get(arg.name);
+        if (field) {
+          const paramStr = formatFieldParam(field);
+          if (paramStr) params.push(paramStr);
+        }
+      } else if (arg.type === 'input_value') {
+        const input = inputMap.get(arg.name);
+        const exampleBlock = input ? getInputExampleBlock(input) : 'value';
+        if (useNamedInputs) {
+          const normalizedName = normalizeInputNameForAbs(arg.name);
+          namedInputs.push(`@${normalizedName}: ${exampleBlock}`);
+        } else {
+          params.push(exampleBlock);
+        }
+      } else if (arg.type === 'input_statement') {
+        // 语句输入延迟到后面统一处理
+      }
+    }
+  } else {
+    // 回退：没有 rawDefinition，按旧逻辑（fields first, then inputs）
+    if (block.fields) {
+      for (const field of block.fields) {
+        if (field.name === '_DYNAMIC_') continue;
+        const paramStr = formatFieldParam(field);
+        if (paramStr) params.push(paramStr);
+      }
+    }
+    
+    const valueInputs = block.inputs?.filter((i: any) => i.type === 'value') || [];
+    for (const input of valueInputs) {
+      const exampleBlock = getInputExampleBlock(input);
       if (useNamedInputs) {
-        // 语句块 + 有语句输入时，值输入也用命名格式（规范化名称）
         const normalizedName = normalizeInputNameForAbs(input.name);
         namedInputs.push(`@${normalizedName}: ${exampleBlock}`);
       } else {
-        // 值块或简单语句块：值输入作为位置参数
         params.push(exampleBlock);
       }
     }
@@ -11241,16 +11411,12 @@ function generateAbsFormat(block: any): string {
   
   // 处理语句输入
   if (statementInputs.length > 0) {
-    // 与 abiAbsConverter 一致：只有多个语句输入时才添加命名标记
     const useStatementLabels = statementInputs.length > 1;
-    
     for (const input of statementInputs) {
-      // 语句输入使用规范化名称
       const normalizedName = normalizeInputNameForAbs(input.name);
       if (useStatementLabels) {
         namedInputs.push(`@${normalizedName}:`);
       } else {
-        // 单个语句输入时可省略标签（简化表示）
         namedInputs.push(`[statements]`);
       }
     }
@@ -11259,17 +11425,36 @@ function generateAbsFormat(block: any): string {
   // 组装 ABS 格式
   let abs = `${block.type}(${params.join(', ')})`;
   
-  // 如果有命名输入，添加简化说明（单行格式更适合表格）
   if (namedInputs.length > 0) {
     abs += ' ' + namedInputs.join(' ');
   }
   
-  // 截断过长内容（保留有效信息）
   if (abs.length > 120) {
     abs = abs.substring(0, 117) + '...';
   }
   
   return '`' + abs + '`';
+}
+
+/**
+ * 格式化字段参数为 ABS 表示
+ */
+function formatFieldParam(field: any): string | null {
+  if (field.type === 'variable') {
+    return '$var';
+  } else if (field.type === 'dropdown') {
+    const defaultVal = getDropdownDefaultValue(field);
+    return defaultVal || null;
+  } else if (field.type === 'text') {
+    const val = field.defaultValue || 'text';
+    return `"${val}"`;
+  } else if (field.type === 'number') {
+    const val = field.defaultValue ?? '0';
+    return String(val);
+  } else if (field.type === 'checkbox') {
+    return field.defaultValue ? 'TRUE' : 'FALSE';
+  }
+  return null;
 }
 
 /**

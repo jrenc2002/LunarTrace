@@ -484,13 +484,17 @@ async function importFromAbs(
       
       for (const f of failedBlocks) {
         failedInfo += `- \`${f.blockType}\`: ${f.error}\n`;
+        if (f.suggestion) {
+          failedInfo += `  💡 ${f.suggestion}\n`;
+        }
       }
       
       failedInfo += '\n**🔧 修复建议:**\n';
       failedInfo += '1. 检查块类型是否拼写正确\n';
-      failedInfo += '2. 直接读取库的 generator/block 等文件了解块的使用方法\n';
-      failedInfo += '3. 阅读对应库的 README 了解块的使用方法\n';
-      failedInfo += '4. 如果多次尝试仍失败，考虑使用 `lib-core-custom` 的自定义代码块\n';
+      failedInfo += '2. ABS 位置参数必须严格按照 block.json 中 args0 的定义顺序传递（字段和值输入可能交错排列，不是"先所有字段后所有输入"）\n';
+      failedInfo += '3. 直接读取库的 generator/block 等文件了解块的使用方法\n';
+      failedInfo += '4. 阅读对应库的 README 了解块的使用方法\n';
+      failedInfo += '5. 如果多次尝试仍失败，考虑使用 `lib-core-custom` 的自定义代码块\n';
     }
     
     // 版本信息
