@@ -604,6 +604,142 @@ export class ChatService {
     return this.http.post(`${API.sendMessage}/${sessionId}`, { content, source });
   }
 
+  /**
+   * 无状态聊天请求（Copilot 式 Request-per-Turn）
+   * 每次请求携带完整对话历史（含工具结果），返回 SSE 流。
+   * 服务端不需要等待工具执行结果，工具调用由前端控制循环。
+   *
+   * @param sessionId  会话ID
+   * @param messages   完整对话历史 [{role,content,tool_calls?,tool_call_id?,name?}]
+   * @param tools      可用工具列表
+   * @param mode       模式 'agent' | 'ask'
+   * @param llmConfig  自定义 LLM 配置（可选）
+   * @param selectModel 选择的模型名称（可选）
+   * @param maxCount   最大消息轮数（可选）
+   */
+  chatRequest(
+    sessionId: string,
+    messages: any[],
+    tools: any[] | null = null,
+    mode: string = 'agent',
+    llmConfig?: any,
+    selectModel?: string,
+    maxCount?: number
+  ): Observable<any> {
+    return new Observable(observer => {
+      let aborted = false;
+      let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+
+      const payload: any = {
+        session_id: sessionId,
+        messages,
+        tools: tools || [],
+        mode
+      };
+
+      if (maxCount !== undefined && maxCount > 0) {
+        payload.max_count = maxCount;
+      }
+      if (llmConfig) {
+        payload.llm_config = llmConfig;
+      }
+      if (selectModel) {
+        payload.select_model = selectModel;
+      }
+
+      this.authService.getToken2().then(token => {
+        if (aborted) return;
+
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json'
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        fetch(`${API.chatRequest}/${sessionId}`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload)
+        })
+          .then(async response => {
+            if (aborted) return;
+
+            if (!response.ok) {
+              observer.error(new Error(`HTTP error! Status: ${response.status}`));
+              return;
+            }
+
+            reader = response.body!.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            try {
+              while (!aborted) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                  if (aborted) break;
+                  if (!line.trim()) continue;
+                  try {
+                    const msg = JSON.parse(line);
+                    observer.next(msg);
+
+                    if (msg.type === 'TaskCompleted') {
+                      observer.complete();
+                      return;
+                    }
+                  } catch (error) {
+                    console.warn('解析JSON失败:', error, line);
+                  }
+                }
+              }
+
+              // 处理缓冲区中剩余的内容
+              if (!aborted && buffer.trim()) {
+                try {
+                  const msg = JSON.parse(buffer);
+                  observer.next(msg);
+                } catch (error) {
+                  console.warn('解析最后的JSON失败:', error, buffer);
+                }
+              }
+
+              if (!aborted) {
+                observer.complete();
+              }
+            } catch (error) {
+              if (!aborted) {
+                observer.error(error);
+              }
+            }
+          })
+          .catch(error => {
+            if (!aborted) {
+              observer.error(error);
+            }
+          });
+      }).catch(error => {
+        if (!aborted) {
+          observer.error(error);
+        }
+      });
+
+      // 返回清理函数，在取消订阅时调用
+      return () => {
+        aborted = true;
+        if (reader) {
+          reader.cancel().catch(() => {});
+        }
+      };
+    });
+  }
+
   getHistory(sessionId: string) {
     return this.http.get(`${API.getHistory}/${sessionId}`);
   }
