@@ -2814,7 +2814,7 @@ ${JSON.stringify(errData)}
             let resultState = "done";
             let resultText = '';
 
-            // console.log("工具调用请求: ", data.tool_name, toolArgs);
+            console.log("工具调用请求: ", data.tool_name, toolArgs);
 
             // 检测重复工具调用
             const toolRepetitionCheck = this.repetitionDetectionService.checkToolCallRepetition(data.tool_name, toolArgs);
@@ -4621,7 +4621,7 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
               this.completeToolCall(data.tool_id, data.tool_name, finalState, resultText);
             }
 
-            // console.log(`工具调用结果: `, toolResult, resultText);
+            console.log(`工具调用结果: `, toolResult, resultText);
 
             if (statelessMode) {
               // 无状态模式：收集工具结果，SSE 流结束后统一加入对话历史并启动下一轮
