@@ -536,12 +536,15 @@ export class HeaderComponent implements OnDestroy {
     // console.log('已初始化快捷键映射:', Array.from(this.shortcutMap.keys()));
   }
 
-  // 转换快捷键文本为标准格式
+  // 转换快捷键文本为标准格式（Ctrl/⌘ 统一为 ctrl）
   private normalizeShortcutKey(shortcutText: string): string {
     if (!shortcutText) return '';
 
-    return shortcutText.toLowerCase().split('+')
+    return shortcutText.toLowerCase()
+      .replace(/ctrl\/⌘|⌘/g, 'ctrl')  // Mac Command 与 Ctrl 等效
+      .split('+')
       .map(part => part.trim())
+      .filter(part => part)
       .sort((a, b) => {
         // 保证修饰键的顺序：ctrl 在前，shift 在后，其他按字母顺序
         if (a === 'ctrl') return -1;
@@ -553,17 +556,17 @@ export class HeaderComponent implements OnDestroy {
       .join('+');
   }
 
-  // 从键盘事件生成标准化的快捷键字符串
+  // 从键盘事件生成标准化的快捷键字符串（Mac Command 与 Ctrl 等效）
   private getShortcutFromEvent(event: KeyboardEvent): string {
     const parts: string[] = [];
 
-    if (event.ctrlKey) parts.push('ctrl');
+    if (event.ctrlKey || event.metaKey) parts.push('ctrl');
     if (event.shiftKey) parts.push('shift');
     if (event.altKey) parts.push('alt');
 
     // 添加主键，忽略修饰键本身
     const key = event.key.toLowerCase();
-    if (!['control', 'shift', 'alt'].includes(key)) {
+    if (!['control', 'shift', 'alt', 'meta'].includes(key)) {
       parts.push(key);
     }
 
@@ -575,8 +578,8 @@ export class HeaderComponent implements OnDestroy {
   listenShortcutKeys() {
     this.initShortcutMap();
     window.addEventListener('keydown', (event: KeyboardEvent) => {
-      // 处理窗口缩放快捷键
-      if (event.ctrlKey && !event.shiftKey && !event.altKey) {
+      // 处理窗口缩放快捷键（Mac 上 Command 与 Ctrl 等效）
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey) {
         if (event.key === '-' || event.key === '_') {
           event.preventDefault();
           this.zoomOut();
@@ -597,8 +600,8 @@ export class HeaderComponent implements OnDestroy {
       // 处理功能键 F1-F12
       const isFunctionKey = /^f([1-9]|1[0-2])$/i.test(event.key);
 
-      // 处理包含修饰键的组合键或功能键
-      if (event.ctrlKey || event.shiftKey || event.altKey || isFunctionKey) {
+      // 处理包含修饰键的组合键或功能键（含 Mac Command）
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || isFunctionKey) {
         const shortcutKey = this.getShortcutFromEvent(event);
         const menuItem = this.shortcutMap.get(shortcutKey);
 

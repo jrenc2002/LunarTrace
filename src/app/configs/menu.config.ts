@@ -70,7 +70,7 @@ export let HEADER_MENU: IMenuItem[] = [
   },
   {
     name: 'MENU.PROJECT_SAVE',
-    text: 'Ctrl + S',
+    text: 'Ctrl/⌘ + S',
     action: 'project-save',
     data: { type: 'cmd', data: 'save' },
     icon: 'fa-light fa-file-circle-check',
@@ -78,7 +78,7 @@ export let HEADER_MENU: IMenuItem[] = [
   },
   {
     name: 'MENU.PROJECT_SAVE_AS',
-    text: 'Ctrl + Shift + S',
+    text: 'Ctrl/⌘ + Shift + S',
     action: 'project-save-as',
     data: { type: 'cmd', data: 'save-as' },
     icon: 'fa-light fa-copy',
