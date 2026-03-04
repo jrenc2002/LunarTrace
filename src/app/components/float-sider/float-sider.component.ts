@@ -136,8 +136,17 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const windowUrl = 'https://tool.aily.pro/connection-graph?type=json&theme=dark';
-    // const windowUrl = 'http://localhost:4201/connection-graph?type=json&theme=dark';
+    let windowUrl = 'https://tool.aily.pro/connection-graph?type=json&theme=dark';
+    // let windowUrl = 'http://localhost:4201/connection-graph?type=json&theme=dark';
+
+    // 项目全路径的 MD5 作为 key，追加到 windowUrl 上
+    const projectPath = this.projectService.currentProjectPath || this.projectService.projectRootPath || '';
+    const key = projectPath && window['tools']?.calculateMD5
+      ? await window['tools'].calculateMD5(projectPath)
+      : '';
+    if (key) {
+      windowUrl += `&key=${encodeURIComponent(key)}`;
+    }
 
     // 构建连线图 payload 并打开子窗口
     const payload = this.connectionGraphService.buildPayload(this.boardPackagePath);
