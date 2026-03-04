@@ -566,12 +566,41 @@ export class ChatService {
           .then(async response => {
             if (aborted) return;
 
+            let streamResponse = response;
             if (!response.ok) {
-              observer.error(new Error(`HTTP error! Status: ${response.status}`));
-              return;
+              if (response.status === 404) {
+                try {
+                  const errorBody = await response.json().catch(() => null);
+                  if (errorBody && errorBody.code === 21001) {
+                    // 会话不存在（服务器重启导致），透明地重建会话并重试请求
+                    await this.startSession(mode, tools as any, maxCount, llmConfig, selectModel).toPromise();
+                    if (aborted) return;
+                    const retryResp = await fetch(`${API.chatRequest}/${sessionId}`, {
+                      method: 'POST',
+                      headers,
+                      body: JSON.stringify(payload)
+                    });
+                    if (aborted) return;
+                    if (!retryResp.ok) {
+                      observer.error(new Error(`HTTP error after session restart! Status: ${retryResp.status}`));
+                      return;
+                    }
+                    streamResponse = retryResp;
+                  } else {
+                    observer.error(new Error(`HTTP error! Status: ${response.status}`));
+                    return;
+                  }
+                } catch (retryErr) {
+                  if (!aborted) observer.error(retryErr);
+                  return;
+                }
+              } else {
+                observer.error(new Error(`HTTP error! Status: ${response.status}`));
+                return;
+              }
             }
 
-            reader = response.body!.getReader();
+            reader = streamResponse.body!.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
 
