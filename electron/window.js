@@ -153,7 +153,7 @@ function registerWindowHandlers(mainWindow) {
         const subWindow = new BrowserWindow({
             frame: false,
             autoHideMenuBar: true,
-            transparent: true,
+            thickFrame: true,
             titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
             alwaysOnTop: data.alwaysOnTop ? data.alwaysOnTop : false,
             width: data.width ? data.width : 800,
