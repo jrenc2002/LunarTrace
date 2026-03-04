@@ -2237,6 +2237,42 @@ ${JSON.stringify(errData)}
     // 取消所有正在执行的 subagent 调用
     this.subagentSessionService.cleanupAll();
 
+    // ★ 无状态模式：stop() 时将已累积的 assistant 内容保存到对话历史，
+    //   防止 aily-button 截断对话后用户点击按钮时 LLM 丢失上下文
+    if (this.currentStatelessMode && this.currentTurnAssistantContent) {
+      const assistantMessage: any = {
+        role: 'assistant',
+        content: this.currentTurnAssistantContent
+      };
+      // 如果有工具调用元信息，也一并保存
+      if (this.currentTurnToolCalls.length > 0) {
+        assistantMessage.tool_calls = this.currentTurnToolCalls.map(tc => ({
+          id: tc.tool_id,
+          type: 'function',
+          function: {
+            name: tc.tool_name,
+            arguments: typeof tc.tool_args === 'string' ? tc.tool_args : JSON.stringify(tc.tool_args)
+          }
+        }));
+      }
+      this.conversationMessages.push(assistantMessage);
+
+      // 如果有已完成的工具结果，也加入对话历史
+      if (this.pendingToolResults.length > 0) {
+        for (const result of this.pendingToolResults) {
+          this.conversationMessages.push({
+            role: 'tool',
+            tool_call_id: result.tool_id,
+            name: result.tool_name,
+            content: result.content
+          });
+        }
+      }
+
+      // 更新上下文预算
+      this.contextBudgetService.updateBudget(this.conversationMessages, this.getCurrentTools());
+    }
+
     // 设置最后一条AI消息状态为done（如果存在）
     if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
       this.list[this.list.length - 1].state = 'done';
@@ -2250,6 +2286,11 @@ ${JSON.stringify(errData)}
       }
       this.isWaiting = false;
       this.isCompleted = true;
+
+      // ★ 无状态模式：stop 完成后保存会话历史
+      if (this.currentStatelessMode) {
+        this.saveCurrentSession();
+      }
     });
   }
 
