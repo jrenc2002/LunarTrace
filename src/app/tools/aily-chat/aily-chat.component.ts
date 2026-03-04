@@ -1700,6 +1700,106 @@ Do not create non-existent boards and libraries.
   }
 
   /**
+   * 清理 assistant 内容，移除仅供 UI 渲染的元素，保留 LLM 需要的有效文本。
+   *
+   * 参考 Copilot 策略：
+   * - Copilot 的 thinking 是结构化 opaque part，历史轮次自动丢弃（isHistorical 时不渲染）
+   * - Copilot 不对 assistant 文本做 regex 清洗，因为其架构中 UI 元素与文本内容天然分离
+   * - 我们的架构中 think/aily-state/aily-button 等 UI 标记混在原始文本流中，必须手动清理
+   *
+   * 清理内容：
+   * 1. <think>...</think> — 推理过程，历史轮次不需要（Copilot: isHistorical 时丢弃 thinking）
+   * 2. ```aily-state — 工具执行状态，仅 UI 展示
+   * 3. ```aily-button — 按钮选项，用户交互后即失效，不应让 LLM 重复看到
+   * 4. ```aily-mermaid — 图表渲染指令，仅 UI 展示
+   */
+  private sanitizeAssistantContent(content: string): string {
+    if (!content) return '';
+
+    let cleaned = content;
+
+    // 1. 移除 [thinking...] 占位符
+    cleaned = cleaned.replace(/\[thinking\.\.\.?\]/g, '');
+
+    // 2. 移除 <think>...</think> 标签及其内容（Copilot: 历史轮次完全丢弃 thinking）
+    cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/g, '');
+    // 移除未闭合的 <think> 到末尾的内容
+    const openThinkIdx = cleaned.lastIndexOf('<think>');
+    if (openThinkIdx >= 0 && !cleaned.substring(openThinkIdx).includes('</think>')) {
+      cleaned = cleaned.substring(0, openThinkIdx);
+    }
+
+    // 3. 移除 UI-only 的代码块（aily-state / aily-button / aily-mermaid）
+    //    这些在 x-dialog 中由专用组件渲染，对 LLM 历史上下文无意义
+    cleaned = cleaned.replace(/```aily-state[\s\S]*?```/g, '');
+    cleaned = cleaned.replace(/```aily-button[\s\S]*?```/g, '');
+    cleaned = cleaned.replace(/```aily-mermaid[\s\S]*?```/g, '');
+
+    // 4. 压缩连续空行为最多两个换行
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+    return cleaned.trim();
+  }
+
+  // ==================== 工具结果清理与截断 ====================
+
+  /** 单条工具结果的最大字符数（约 2000 tokens） */
+  private static readonly TOOL_RESULT_MAX_CHARS = 8000;
+
+  /**
+   * 清理工具结果 content，移除仅在当前执行上下文有用、不应存入对话历史的元素：
+   * - <rules>...</rules> 大段静态规则文本（每次重复注入，极度膨胀）
+   * - <info>...</info> 临时操作提示
+   * - 解包 <toolResult>...</toolResult> 为纯内容
+   *
+   * 工具执行时的上下文提示不进入历史消息。
+   */
+  private sanitizeToolContent(content: string): string {
+    if (!content) return '';
+
+    let cleaned = content;
+
+    // 1. 移除 <rules>...</rules>（可能跨多行的大段 Blockly 规则文本）
+    cleaned = cleaned.replace(/<rules>[\s\S]*?<\/rules>/g, '');
+
+    // 2. 移除 <info>...</info> 临时提示
+    cleaned = cleaned.replace(/<info>[\s\S]*?<\/info>/g, '');
+
+    // 3. 解包 <toolResult>...</toolResult>，仅保留内部内容
+    cleaned = cleaned.replace(/<toolResult>([\s\S]*?)<\/toolResult>/g, '$1');
+
+    // 4. 压缩连续空行
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+    return cleaned.trim();
+  }
+
+  /**
+   * 截断过长的工具结果，采用 Copilot 风格的 40/60 头尾分割策略。
+   *
+   * 原理：错误信息和关键结果通常在输出的尾部（如报错堆栈、最终状态），
+   * 因此尾部分配更多空间（60%），头部保留 40%。
+   *
+   * @param content 工具结果文本
+   * @param maxChars 最大字符数，默认 TOOL_RESULT_MAX_CHARS
+   * @returns 截断后的文本（若未超限则原样返回）
+   */
+  private truncateToolResult(content: string, maxChars?: number): string {
+    const limit = maxChars ?? AilyChatComponent.TOOL_RESULT_MAX_CHARS;
+    if (!content || content.length <= limit) return content;
+
+    const markerText = '\n\n[... 工具返回内容过长，已截断 ...]\n\n';
+    const available = limit - markerText.length;
+    const headSize = Math.floor(available * 0.4);
+    const tailSize = available - headSize;
+
+    const head = content.substring(0, headSize);
+    const tail = content.substring(content.length - tailSize);
+
+    return head + markerText + tail;
+  }
+
+  /**
    * 检测 last message 中是否包含完整的 ```aily-button...``` 块，若有且块在 </think> 之后（非 think 内）则截断其后的多余内容
    * @returns true 表示检测到完整块（已截断多余内容）并应中断 SSE
    */
@@ -2242,7 +2342,7 @@ ${JSON.stringify(errData)}
     if (this.currentStatelessMode && this.currentTurnAssistantContent) {
       const assistantMessage: any = {
         role: 'assistant',
-        content: this.currentTurnAssistantContent
+        content: this.sanitizeAssistantContent(this.currentTurnAssistantContent)
       };
       // 如果有工具调用元信息，也一并保存
       if (this.currentTurnToolCalls.length > 0) {
@@ -2257,14 +2357,16 @@ ${JSON.stringify(errData)}
       }
       this.conversationMessages.push(assistantMessage);
 
-      // 如果有已完成的工具结果，也加入对话历史
+      // 如果有已完成的工具结果，也加入对话历史（清理 + 截断）
       if (this.pendingToolResults.length > 0) {
         for (const result of this.pendingToolResults) {
+          const sanitized = this.sanitizeToolContent(result.content);
+          const truncated = this.truncateToolResult(sanitized);
           this.conversationMessages.push({
             role: 'tool',
             tool_call_id: result.tool_id,
             name: result.tool_name,
-            content: result.content
+            content: truncated
           });
         }
       }
@@ -2280,7 +2382,7 @@ ${JSON.stringify(errData)}
 
     this.chatService.cancelTask(this.sessionId).subscribe((res: any) => {
       if (res.status === 'success') {
-        // console.log('任务已取消:', res);
+        console.log('任务已取消:', res);
       } else {
         console.warn('取消任务失败:', res);
       }
@@ -2419,7 +2521,7 @@ ${JSON.stringify(errData)}
     // 构建 assistant 消息（包含文本 + tool_calls）
     const assistantMessage: any = {
       role: 'assistant',
-      content: this.currentTurnAssistantContent || ''
+      content: this.sanitizeAssistantContent(this.currentTurnAssistantContent) || ''
     };
 
     if (this.currentTurnToolCalls.length > 0) {
@@ -2435,13 +2537,15 @@ ${JSON.stringify(errData)}
 
     this.conversationMessages.push(assistantMessage);
 
-    // 将工具结果加入对话历史
+    // 将工具结果加入对话历史（清理 + 截断，参考 Copilot 的工具结果处理策略）
     for (const result of this.pendingToolResults) {
+      const sanitized = this.sanitizeToolContent(result.content);
+      const truncated = this.truncateToolResult(sanitized);
       this.conversationMessages.push({
         role: 'tool',
         tool_call_id: result.tool_id,
         name: result.tool_name,
-        content: result.content
+        content: truncated
       });
     }
 
@@ -2484,7 +2588,7 @@ ${JSON.stringify(errData)}
       if (this.currentTurnAssistantContent) {
         this.conversationMessages.push({
           role: 'assistant',
-          content: this.currentTurnAssistantContent
+          content: this.sanitizeAssistantContent(this.currentTurnAssistantContent)
         });
       }
       // 更新上下文预算（轮次结束时的最终状态，含工具定义）

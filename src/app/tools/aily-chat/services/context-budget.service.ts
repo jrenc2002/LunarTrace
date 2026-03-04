@@ -545,10 +545,16 @@ export class ContextBudgetService {
         continue;
       }
 
-      // 压缩旧的 tool 消息
+      // 压缩旧的 tool 消息：先清理冗余标签，再截断
       if (msg.role === 'tool') {
+        let cleaned = (msg.content || '')
+          .replace(/<rules>[\s\S]*?<\/rules>/g, '')
+          .replace(/<info>[\s\S]*?<\/info>/g, '')
+          .replace(/<toolResult>([\s\S]*?)<\/toolResult>/g, '$1')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
         const truncatedContent = this.truncateText(
-          msg.content || '',
+          cleaned,
           ContextBudgetService.TOOL_RESULT_TRUNCATE_LENGTH
         );
         result.push({
@@ -558,25 +564,52 @@ export class ContextBudgetService {
         continue;
       }
 
-      // 压缩旧的 assistant 消息中的 tool_calls arguments
-      if (msg.role === 'assistant' && msg.tool_calls) {
-        const compressedToolCalls = msg.tool_calls.map((tc: any) => {
-          const args = tc.function?.arguments;
-          if (args && args.length > ContextBudgetService.TOOL_RESULT_TRUNCATE_LENGTH) {
-            return {
-              ...tc,
-              function: {
-                ...tc.function,
-                arguments: this.truncateText(args, ContextBudgetService.TOOL_RESULT_TRUNCATE_LENGTH)
-              }
-            };
+      // 压缩旧的 assistant 消息
+      if (msg.role === 'assistant') {
+        // 清理 assistant 内容中的 UI-only 元素（历史数据可能含有未清理的 think/aily-state）
+        let cleanedContent = (msg.content || '')
+          .replace(/<think>[\s\S]*?<\/think>/g, '')
+          .replace(/```aily-state[\s\S]*?```/g, '')
+          .replace(/```aily-button[\s\S]*?```/g, '')
+          .replace(/```aily-mermaid[\s\S]*?```/g, '')
+          .replace(/\[thinking\.\.\.?\]/g, '')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+
+        const compressedMsg: any = { ...msg, content: cleanedContent };
+
+        if (msg.tool_calls) {
+          // 收集本消息之后存在对应 tool result 的 tool_call_ids
+          const existingToolResultIds = new Set<string>();
+          for (let j = i + 1; j < messages.length && messages[j].role === 'tool'; j++) {
+            if (messages[j].tool_call_id) existingToolResultIds.add(messages[j].tool_call_id);
           }
-          return tc;
-        });
-        result.push({
-          ...msg,
-          tool_calls: compressedToolCalls
-        });
+
+          // 过滤孤立 tool_calls（无对应 result），并截断 arguments
+          // 参考 Copilot: isHistorical 时只保留有对应结果的 tool_calls
+          compressedMsg.tool_calls = msg.tool_calls
+            .filter((tc: any) => tc.id && existingToolResultIds.has(tc.id))
+            .map((tc: any) => {
+              const args = tc.function?.arguments;
+              if (args && args.length > ContextBudgetService.TOOL_RESULT_TRUNCATE_LENGTH) {
+                return {
+                  ...tc,
+                  function: {
+                    ...tc.function,
+                    arguments: this.truncateText(args, ContextBudgetService.TOOL_RESULT_TRUNCATE_LENGTH)
+                  }
+                };
+              }
+              return tc;
+            });
+
+          // 如果过滤后没有 tool_calls 了，移除该字段
+          if (compressedMsg.tool_calls.length === 0) {
+            delete compressedMsg.tool_calls;
+          }
+        }
+
+        result.push(compressedMsg);
         continue;
       }
 
@@ -764,9 +797,18 @@ export class ContextBudgetService {
   /**
    * 截断文本到指定长度
    */
+  /**
+   * 截断文本到指定长度，采用 Copilot 风格的 40/60 头尾分割策略。
+   * 保留头部 40% 和尾部 60%，因为错误信息和关键结果通常在输出末尾。
+   */
   private truncateText(text: string, maxLength: number): string {
     if (!text || text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + `\n...[已截断，原始长度: ${text.length} 字符]`;
+    const marker = '\n...[内容已截断]...\n';
+    const available = maxLength - marker.length;
+    if (available <= 0) return text.substring(0, maxLength);
+    const headSize = Math.floor(available * 0.4);
+    const tailSize = available - headSize;
+    return text.substring(0, headSize) + marker + text.substring(text.length - tailSize);
   }
 
   /**

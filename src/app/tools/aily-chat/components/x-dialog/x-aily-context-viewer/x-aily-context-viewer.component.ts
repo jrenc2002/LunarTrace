@@ -6,12 +6,15 @@ import { CommonModule } from '@angular/common';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="ac-context">
-      <div class="ac-context-header">
-        <i class="fa-light fa-file-code"></i>
+    <div class="ac-context" [class.expanded]="!collapsed">
+      <div class="ac-context-header" (click)="collapsed = !collapsed">
+        <i class="fa-light fa-file-code ac-context-icon"></i>
         <span>{{ data?.label || '代码上下文' }}</span>
+        <i class="fa-light fa-chevron-down ac-context-arrow"></i>
       </div>
-      <pre class="ac-context-body"><code>{{ content }}</code></pre>
+      @if (!collapsed) {
+        <div class="ac-context-body">{{ content }}</div>
+      }
     </div>
   `,
   styles: [`
@@ -21,22 +24,63 @@ import { CommonModule } from '@angular/common';
       border: 1px solid rgba(212, 160, 23, 0.3);
       color: #ccc; overflow: hidden; margin: 4px 0;
     }
-    .ac-context-header {
-      display: flex; align-items: center; gap: 6px;
-      padding: 0; font-size: 13px; color: #d4a017;
+    .ac-context.collapsed {
+      padding: 5px 10px;
+      margin: 0;
+      overflow: hidden;
+      background-color: #3a3a3a;
+      color: #ccc;
     }
-    .ac-context-header i { font-size: 13px; flex-shrink: 0; }
+    .ac-context-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0;
+      cursor: pointer;
+      font-size: 13px;
+      user-select: none;
+      transition: background 0.2s;
+    }
+    .ac-context-header:hover {
+      background: rgba(255, 255, 255, 0.05);
+      margin: -5px -10px;
+      padding: 5px 10px;
+    }
+    .ac-context-icon {
+      flex-shrink: 0;
+      margin-right: 5px;
+      color: #d4a017;
+    }
+    .ac-context-arrow {
+      margin-left: auto;
+      font-size: 10px;
+      color: #888;
+      transition: transform 0.2s;
+    }
+    .ac-context.expanded .ac-context-arrow {
+      transform: rotate(180deg);
+    }
     .ac-context-body {
-      margin: 8px 0 0 0; padding: 0; font-size: 12px;
-      line-height: 1.6; overflow-x: auto;
-      color: #999; max-height: 200px; overflow-y: auto;
-      white-space: pre-wrap; word-break: break-word;
-      font-family: Consolas, 'Courier New', monospace;
+      padding: 8px 2px;
+      margin: 5px -10px 0 0;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #999;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 200px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+      // font-family: Consolas, 'Courier New', monospace;
     }
   `],
 })
 export class XAilyContextViewerComponent {
   @Input() data: { label?: string; content?: string; encoded?: boolean } | null = null;
+
+  /** 默认折叠 */
+  collapsed = true;
 
   get content(): string {
     if (!this.data?.content) return '';
