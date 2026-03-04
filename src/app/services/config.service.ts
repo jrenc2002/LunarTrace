@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import { lastValueFrom } from 'rxjs';
+import { lastValueFrom, Subject } from 'rxjs';
 import { ElectronService } from './electron.service';
 import { API, setServerUrl, setRegistryUrl, setToolWebUrl } from '../configs/api.config';
 
@@ -10,6 +10,9 @@ import { API, setServerUrl, setRegistryUrl, setToolWebUrl } from '../configs/api
 export class ConfigService {
 
   data: AppConfig | any = {};
+
+  /** 配置重新加载完成时发出，供 blockly 等组件实时应用新配置 */
+  configReloaded$ = new Subject<void>();
   
   // 数据加载状态标识
   private _isDataReady = false;
@@ -85,6 +88,7 @@ export class ConfigService {
 
     // 合并用户配置和默认配置
     this.data = { ...this.data, ...userConfData };
+    this.configReloaded$.next();
 
     // 使用Electron检测到的最优区域覆盖配置
     if (this.electronService.isElectron) {

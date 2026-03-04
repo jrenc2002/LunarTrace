@@ -260,6 +260,11 @@ export class BlocklyComponent implements OnInit, OnDestroy {
       .subscribe((event) => {
         this.updateBlocklyLocale(event.lang);
       });
+
+    // 订阅配置重载，实时应用 flyoutAutoClose 等 blockly 配置
+    this.configService.configReloaded$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => this.applyFlyoutAutoClose());
   }
 
   ngOnInit(): void {
@@ -414,43 +419,8 @@ export class BlocklyComponent implements OnInit, OnDestroy {
 
       this.workspace = Blockly.inject('blocklyDiv', this.options);
 
-      // 根据配置决定 flyout 拖出 block 后是否自动关闭。
-      // 这里直接改 workspace 的 flyout 实例，避免替换 Flyout 类导致布局变化（挤占工作区）。
-      if (this.configData.blockly.flyoutAutoClose === false) {
-        const flyout = this.workspace.getFlyout?.();
-        if (flyout) {
-          (flyout as any).autoClose = false;
-
-          // Flyout 显隐会影响 metrics，但不会触发容器尺寸变化；这里在 show/hide 时补一次 svgResize。
-          // 避免手动关闭 flyout 后工作区仍保持“被挤占”的旧 metrics。
-          if (!(flyout as any).__resizePatched) {
-            (flyout as any).__resizePatched = true;
-
-            const tryResize = () => {
-              // 延迟到下一帧，确保 flyout 的 DOM 已更新。
-              setTimeout(() => Blockly.svgResize(this.workspace), 0);
-            };
-
-            const originalShow = (flyout as any).show?.bind(flyout);
-            if (originalShow) {
-              (flyout as any).show = (...args: any[]) => {
-                const result = originalShow(...args);
-                tryResize();
-                return result;
-              };
-            }
-
-            const originalHide = (flyout as any).hide?.bind(flyout);
-            if (originalHide) {
-              (flyout as any).hide = (...args: any[]) => {
-                const result = originalHide(...args);
-                tryResize();
-                return result;
-              };
-            }
-          }
-        }
-      }
+      // 根据配置决定 flyout 拖出 block 后是否自动关闭（配置重载时会通过 configReloaded$ 实时应用）
+      this.applyFlyoutAutoClose();
 
       const multiselectPlugin = new Multiselect(this.workspace);
       multiselectPlugin.init(this.options);
@@ -460,7 +430,6 @@ export class BlocklyComponent implements OnInit, OnDestroy {
         this.minimap.init();
       }
 
-      // 动态连接块监听
       this.workspace.addChangeListener(BlockDynamicConnection.finalizeConnections);
 
       // 监听容器尺寸变化，刷新Blockly工作区
@@ -486,6 +455,36 @@ export class BlocklyComponent implements OnInit, OnDestroy {
       });
       this.initLanguage();
     }, 100);
+  }
+
+  /** 根据配置应用 flyout 自动关闭，支持初始化及配置重载时实时生效 */
+  private applyFlyoutAutoClose(): void {
+    const ws = this.workspace;
+    if (!ws?.getFlyout) return;
+    const flyout = ws.getFlyout();
+    if (!flyout) return;
+    const autoClose = this.configData?.blockly?.flyoutAutoClose !== false;
+    (flyout as any).autoClose = autoClose;
+    if (!autoClose && !(flyout as any).__resizePatched) {
+      (flyout as any).__resizePatched = true;
+      const tryResize = () => setTimeout(() => Blockly.svgResize(ws), 0);
+      const originalShow = (flyout as any).show?.bind(flyout);
+      if (originalShow) {
+        (flyout as any).show = (...args: any[]) => {
+          const result = originalShow(...args);
+          tryResize();
+          return result;
+        };
+      }
+      const originalHide = (flyout as any).hide?.bind(flyout);
+      if (originalHide) {
+        (flyout as any).hide = (...args: any[]) => {
+          const result = originalHide(...args);
+          tryResize();
+          return result;
+        };
+      }
+    }
   }
 
   initDevMode() {
