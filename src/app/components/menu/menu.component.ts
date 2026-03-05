@@ -33,6 +33,8 @@ export class MenuComponent {
 
   @Input() width;
 
+  @Input() maxHeight: number | null = null;
+
   @Output() itemClickEvent = new EventEmitter();
 
   @Output() subItemClickEvent = new EventEmitter();

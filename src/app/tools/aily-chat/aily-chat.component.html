@@ -211,7 +211,7 @@
 </ng-template>
 
 @if (showHistoryList) {
-<app-menu [menuList]="HistoryList" [position]="historyListPosition" [width]="300" (closeEvent)="closeMenu()"
+<app-menu [menuList]="HistoryList" [position]="historyListPosition" [width]="300" [maxHeight]="360" (closeEvent)="closeMenu()"
   (itemClickEvent)="menuClick($event)" (actionClickEvent)="historyActionClick($event)"></app-menu>
 }
 

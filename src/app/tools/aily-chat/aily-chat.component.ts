@@ -1892,6 +1892,7 @@ Do not create non-existent boards and libraries.
       sessionId: e.sessionId,
       name: e.title || 'q' + e.createdAt,
       actions: historyActions,
+      current: e.sessionId === this.sessionId,
     }));
   }
 

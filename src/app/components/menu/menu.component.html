@@ -1,6 +1,6 @@
 <div class="menu-container">
-  <div class="menu-box bborder" #menuBox
-    [ngStyle]="{ left: position.x + 'px', top: position.y + 'px' ,'width': width?width + 'px':'auto'}">
+  <div class="menu-box bborder sscroll" #menuBox
+    [ngStyle]="{ left: position.x + 'px', top: position.y + 'px', 'width': width ? width + 'px' : 'auto', 'max-height': maxHeight ? maxHeight + 'px' : 'none', 'overflow-y': maxHeight ? 'auto' : 'visible' }">
     @for (item of menuList; track $index) {
     @if (item.sep) {
     <div class="sep"></div>
@@ -8,7 +8,7 @@
     @if((item.children && item.children.length > 0)||(!item.children&&showInRouter(item))){
     <div class="menu-item ccenter" #menuItem (click)="itemClick(item)" (mouseenter)="showSubMenu($event, $index)"
       (mouseleave)="hideSubMenu($event, $index)"
-      [ngClass]="{'highlight': isHighlight(item.text), 'disabled': item.disabled ,'active':activeSubmenuIndex == $index}">
+      [ngClass]="{'highlight': isHighlight(item.text), 'disabled': item.disabled, 'active': activeSubmenuIndex == $index, 'current': item.current}">
       @if(item.icon){
       <div class="icon ccenter"><i class="{{ item.icon }}"></i></div>
       }
