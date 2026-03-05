@@ -75,6 +75,19 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
   }
 
   showPinmap() {
+    let boardPackageData = JSON.parse(this.electronService.readFile(this.boardPackagePath + '/package.json'));
+
+    // 如果 pinmap 被禁用，直接显示 webp 图片
+    if (boardPackageData.pinmap === false) {
+      const pinmapWebpPath = this.boardPackagePath + '/pinmap.webp';
+      if (this.electronService.exists(pinmapWebpPath)) {
+        this.imageViewer.open(pinmapWebpPath);
+        return;
+      }
+      this.message.error(this.translate.instant('FLOAT_SIDER.NO_PINMAP'));
+      return;
+    }
+
     const pinmapJsonPath = this.boardPackagePath + '/pinmap.json';
     if (this.electronService.exists(pinmapJsonPath)) {
       // 使用子窗口打开，通过 URL 查询参数传递文件路径
