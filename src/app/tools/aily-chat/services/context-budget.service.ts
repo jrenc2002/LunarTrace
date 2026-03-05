@@ -163,69 +163,11 @@ export interface ContextCompressionEvent {
   timestamp: number;
 }
 
-// ==================== 摘要提示模板 ====================
-
-/**
- * 参考 Copilot 的结构化摘要提示词模板
- * 用于 LLM 驱动的对话历史摘要
- */
-const SUMMARIZATION_SYSTEM_PROMPT = `你是一个对话历史摘要专家。你的任务是创建一份全面、详细的对话摘要，捕获所有关键信息以确保后续对话能无缝继续。
-
-## 输出要求
-
-用 <conversation-summary> 标签包裹你的摘要，包含以下分区：
-
-### 1. 对话概览
-- 用户的主要目标和需求
-- 会话的整体方向和进展
-
-### 2. 技术上下文
-- 涉及的技术栈、框架、语言
-- 关键的技术约束和依赖关系
-- 重要的配置信息
-
-### 3. 代码/文件变更记录
-- 已修改的文件列表及变更内容摘要
-- 关键的代码结构和设计决策
-- 重要的函数/类/变量名称
-
-### 4. 工具调用记录
-- 已执行的工具操作及其结果摘要
-- 关键的文件读写、搜索、命令执行记录
-- 重要的工具执行结论（成功/失败/关键发现）
-
-### 5. 问题解决进度
-- 已解决的问题列表
-- 未解决的问题和待办事项
-- 当前正在处理的任务
-
-### 6. 重要约束和决策
-- 用户提出的特定要求和偏好
-- 已确认的设计决策
-- 需要遵守的规则和限制
-
-### 7. 当前状态
-- 最后正在执行的操作
-- 下一步计划
-- 任何未完成的工作流
-
-## 注意事项
-- 保留所有重要的文件路径、变量名、函数名等具体信息
-- 工具调用结果中的关键数据要保留（如搜索到的文件列表、代码片段的关键部分）
-- 不要遗漏任何可能影响后续对话的技术细节
-- 摘要应当详细到让一个新的 AI 接手也能无缝继续工作
-- 使用简洁的结构化格式，避免冗余描述`;
-
-const SUMMARIZATION_USER_PROMPT_TEMPLATE = `请为以下对话历史创建一份详细的结构化摘要。
-
-特别注意：
-1. 保留最近几轮的完整上下文（最后的 agent 操作和工具结果）
-2. 确保所有文件路径、变量名、函数签名等具体信息不丢失
-3. 工具执行的关键结果要保留
-4. 当前正在进行的任务状态要清晰
-
-对话历史：
-{conversation}`;
+// ==================== 后台摘要服务 ====================
+import {
+  BackgroundSummarizerService,
+  BackgroundSummarizationState
+} from './background-summarizer.service';
 
 // ==================== 主服务 ====================
 
@@ -280,9 +222,6 @@ export class ContextBudgetService {
   /** 保留最近 N 条消息不压缩（确保最近上下文完整） */
   private static readonly RECENT_MESSAGES_PRESERVE = 6;
 
-  /** 摘要最大 token 数 */
-  private static readonly MAX_SUMMARY_TOKENS = 4000;
-
   /**
    * 服务端系统提示词的预估 token 数
    *
@@ -312,6 +251,9 @@ export class ContextBudgetService {
   /** 压缩事件 Observable（供 UI 消费） */
   public compressionEvent$: Observable<ContextCompressionEvent | null> = this.compressionEventSubject.asObservable();
 
+  /** 后台摘要化服务（Copilot 风格 75%/95% 双阈值后台压缩） */
+  public backgroundSummarizer: BackgroundSummarizerService;
+
   constructor(
     private chatService: ChatService,
     private ailyChatConfigService: AilyChatConfigService,
@@ -321,6 +263,8 @@ export class ContextBudgetService {
     _setTiktokenService(this.tiktokenService);
     // 初始化系统提示词 token 估算
     this._cachedSystemTokens = ContextBudgetService.ESTIMATED_SYSTEM_PROMPT_TOKENS;
+    // 初始化后台摘要化服务
+    this.backgroundSummarizer = new BackgroundSummarizerService(chatService, ailyChatConfigService);
   }
 
   // ==================== 公共接口 ====================
@@ -470,7 +414,8 @@ export class ContextBudgetService {
   /**
    * 在发送请求前检查并执行必要的压缩
    *
-   * 策略分层：
+   * 策略分层（参考 Copilot fallback 链）：
+   * 0. 先检查后台摘要：如已完成 → 直接应用；如 ≥95% 且正在进行 → 阻塞等待
    * 1. currentTokens < compressionThreshold → 不压缩，保留全量
    * 2. compressionThreshold ≤ currentTokens < summarizationThreshold → 压缩旧的工具结果
    * 3. currentTokens ≥ summarizationThreshold → 调用 LLM 生成摘要替换旧历史
@@ -486,13 +431,62 @@ export class ContextBudgetService {
     selectModel?: string
   ): Promise<any[]> {
     const currentTokens = estimateMessagesTokens(messages);
+    const maxTokens = this.maxContextTokens;
 
-    // 第一层：无需压缩
+    // ==================== 层级 0: 后台摘要化结果应用 ====================
+    // 参考 Copilot: 75%/95% 双阈值后台摘要
+    const bg = this.backgroundSummarizer;
+
+    // 如果后台摘要已完成，直接应用
+    if (bg.state === BackgroundSummarizationState.Completed) {
+      const result = bg.consumeResult();
+      if (result) {
+        const applied = bg.applySummary(messages, result);
+        const afterTokens = estimateMessagesTokens(applied);
+        console.log(`[上下文压缩] 应用后台摘要: ${currentTokens} → ${afterTokens} tokens`);
+
+        this.compressionEventSubject.next({
+          type: 'llm_summarization',
+          beforeTokens: currentTokens,
+          afterTokens,
+          compressedMessages: messages.length - applied.length,
+          timestamp: Date.now()
+        });
+
+        this.updateBudget(applied);
+        return applied;
+      }
+    }
+
+    // 如果 ≥ 95% 且后台摘要正在进行，阻塞等待
+    if (bg.shouldBlockAndWait(currentTokens, maxTokens)) {
+      console.log(`[上下文压缩] token ${(currentTokens / maxTokens * 100).toFixed(1)}% ≥ 95%，阻塞等待后台摘要...`);
+      const result = await bg.waitForCompletion();
+      if (result) {
+        bg.consumeResult(); // 消费掉状态
+        const applied = bg.applySummary(messages, result);
+        const afterTokens = estimateMessagesTokens(applied);
+        console.log(`[上下文压缩] 后台摘要等待完成: ${currentTokens} → ${afterTokens} tokens`);
+
+        this.compressionEventSubject.next({
+          type: 'llm_summarization',
+          beforeTokens: currentTokens,
+          afterTokens,
+          compressedMessages: messages.length - applied.length,
+          timestamp: Date.now()
+        });
+
+        this.updateBudget(applied);
+        return applied;
+      }
+    }
+
+    // ==================== 层级 1: 无需压缩 ====================
     if (currentTokens < this.compressionThreshold) {
       return messages;
     }
 
-    // 第二层：工具结果压缩
+    // ==================== 层级 2: 工具结果压缩 ====================
     if (currentTokens < this.summarizationThreshold) {
       const compressed = this.compressToolResults(messages);
       const afterTokens = estimateMessagesTokens(compressed);
@@ -510,11 +504,21 @@ export class ContextBudgetService {
       return compressed;
     }
 
-    // 第三层：LLM 摘要
-    console.log(`[上下文压缩] Token 数 (${currentTokens}) 超过摘要阈值 (${this.summarizationThreshold})，触发 LLM 摘要`);
+    // ==================== 层级 3: 前台 LLM 摘要 ====================
+    // 若后台摘要正在进行，不发起重复的前台调用（防止并行竞态），
+    // 回退到工具结果压缩先缓解，下次请求时后台摘要应已完成
+    if (bg.state === BackgroundSummarizationState.InProgress) {
+      console.log(`[上下文压缩] 后台摘要正在进行，跳过前台 LLM 调用，回退到工具结果压缩`);
+      const compressed = this.compressToolResults(messages);
+      this.updateBudget(compressed);
+      return compressed;
+    }
+
+    console.log(`[上下文压缩] Token 数 (${currentTokens}) 超过摘要阈值 (${this.summarizationThreshold})，触发前台 LLM 摘要`);
 
     try {
-      const summarized = await this.summarizeHistory(messages, sessionId, llmConfig, selectModel);
+      // 委托给 BackgroundSummarizerService，复用其 findPreservePoint / buildConversationText / validateAndTruncateSummary
+      const summarized = await this.backgroundSummarizer.foregroundSummarize(messages, sessionId, llmConfig, selectModel);
       const afterTokens = estimateMessagesTokens(summarized);
       console.log(`[上下文压缩] LLM 摘要: ${currentTokens} → ${afterTokens} tokens (节省 ${currentTokens - afterTokens})`);
 
@@ -529,8 +533,8 @@ export class ContextBudgetService {
       this.updateBudget(summarized);
       return summarized;
     } catch (error) {
-      console.warn('[上下文压缩] LLM 摘要失败，回退到工具结果压缩:', error);
-      // 回退到工具结果压缩
+      console.warn('[上下文压缩] LLM 摘要失败，回退到工具结果压缩（Simple mode fallback）:', error);
+      // 层级 4: Simple mode fallback — 纯截断压缩（不需要 LLM）
       const compressed = this.compressToolResults(messages);
       this.updateBudget(compressed);
       return compressed;
@@ -640,178 +644,6 @@ export class ContextBudgetService {
     return result;
   }
 
-  // ==================== 第二层：LLM 摘要 ====================
-
-  /**
-   * 调用 LLM 生成对话历史摘要，用一条 summary 消息替换旧的所有轮次
-   *
-   * @param messages 完整对话历史
-   * @param sessionId 会话ID
-   * @returns 压缩后的消息数组：[summary_system_message, ...recent_messages]
-   */
-  private async summarizeHistory(
-    messages: any[],
-    sessionId: string,
-    llmConfig?: any,
-    selectModel?: string
-  ): Promise<any[]> {
-    // 保留最近的消息不摘要（至少保留最后一个完整的用户-助手-工具交互周期）
-    const preserveCount = this.findPreservePoint(messages);
-    const toSummarize = messages.slice(0, messages.length - preserveCount);
-    const toPreserve = messages.slice(messages.length - preserveCount);
-
-    if (toSummarize.length === 0) {
-      // 没有可摘要的历史
-      return messages;
-    }
-
-    // 构建摘要请求的对话
-    const conversationText = toSummarize.map(msg => {
-      let text = `[${msg.role}]`;
-      if (msg.name) text += ` (${msg.name})`;
-      text += `: `;
-      if (msg.content) {
-        // 对工具结果做截断（避免摘要请求本身过大）
-        const content = msg.role === 'tool'
-          ? this.truncateText(msg.content, 2000)
-          : this.truncateText(msg.content, 5000);
-        text += content;
-      }
-      if (msg.tool_calls) {
-        text += `\n  [工具调用]: ${msg.tool_calls.map((tc: any) =>
-          `${tc.function?.name}(${this.truncateText(tc.function?.arguments || '', 200)})`
-        ).join(', ')}`;
-      }
-      return text;
-    }).join('\n\n');
-
-    const summaryUserPrompt = SUMMARIZATION_USER_PROMPT_TEMPLATE.replace('{conversation}', conversationText);
-
-    // 使用 chatRequest 发送摘要请求
-    const summaryMessages = [
-      { role: 'system', content: SUMMARIZATION_SYSTEM_PROMPT },
-      { role: 'user', content: summaryUserPrompt }
-    ];
-
-    const summary = await this.callLLMForSummary(sessionId, summaryMessages, llmConfig, selectModel);
-
-    if (!summary) {
-      throw new Error('LLM 摘要返回空结果');
-    }
-
-    // 组装新的消息数组：[摘要消息, ...保留的最近消息]
-    const summaryMessage = {
-      role: 'system',
-      content: `<conversation-summary>\n${summary}\n</conversation-summary>\n\n以上是之前对话历史的摘要。请基于这些上下文继续对话。`
-    };
-
-    console.log(`[LLM摘要] 将 ${toSummarize.length} 条消息摘要为 1 条，保留最近 ${preserveCount} 条原始消息`);
-
-    return [summaryMessage, ...toPreserve];
-  }
-
-  /**
-   * 调用 LLM 获取摘要文本
-   * 使用 chatRequest 发送请求，收集流式响应
-   */
-  private callLLMForSummary(
-    sessionId: string,
-    messages: any[],
-    llmConfig?: any,
-    selectModel?: string
-  ): Promise<string> {
-    return new Promise((resolve, reject) => {
-      let summaryText = '';
-      let resolved = false;
-
-      // 使用 chatService.chatRequest 发送摘要请求
-      // 不传工具列表（摘要不需要工具），mode 设为 'ask'
-      const subscription = this.chatService.chatRequest(
-        sessionId + '_summary', // 使用独立的 session ID
-        messages,
-        null, // 不需要工具
-        'ask',
-        llmConfig,
-        selectModel,
-        undefined
-      ).subscribe({
-        next: (data: any) => {
-          if (data.type === 'ModelClientStreamingChunkEvent' && data.content) {
-            summaryText += data.content;
-          }
-          if (data.type === 'TaskCompleted') {
-            // 正常完成
-          }
-        },
-        complete: () => {
-          if (!resolved) {
-            resolved = true;
-            resolve(summaryText.trim());
-          }
-          subscription.unsubscribe();
-        },
-        error: (err) => {
-          if (!resolved) {
-            resolved = true;
-            reject(err);
-          }
-          subscription.unsubscribe();
-        }
-      });
-
-      // 超时保护：30 秒
-      setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          subscription.unsubscribe();
-          if (summaryText.trim()) {
-            // 超时但有部分结果，使用已收到的内容
-            resolve(summaryText.trim());
-          } else {
-            reject(new Error('LLM 摘要请求超时'));
-          }
-        }
-      }, 30000);
-    });
-  }
-
-  /**
-   * 找到保留最近消息的起始点
-   * 至少保留最后一个完整的 user → assistant → tool 交互周期
-   * 最少保留 RECENT_MESSAGES_PRESERVE 条
-   */
-  private findPreservePoint(messages: any[]): number {
-    const minPreserve = ContextBudgetService.RECENT_MESSAGES_PRESERVE;
-
-    if (messages.length <= minPreserve) {
-      return messages.length;
-    }
-
-    // 从末尾向前扫描，找到第一个 user 消息的位置
-    // 保留该 user 消息及其后的所有消息
-    let preserveCount = 0;
-    let foundUser = false;
-
-    for (let i = messages.length - 1; i >= 0; i--) {
-      preserveCount++;
-
-      if (messages[i].role === 'user') {
-        foundUser = true;
-        // 继续包含前一个 user 消息（如果在合理范围内）
-        if (preserveCount >= minPreserve) {
-          break;
-        }
-      }
-
-      // 安全上限：不要保留太多
-      if (preserveCount >= minPreserve * 3) {
-        break;
-      }
-    }
-
-    return Math.max(preserveCount, minPreserve);
-  }
-
   // ==================== 工具方法 ====================
 
   /**
@@ -861,5 +693,7 @@ export class ContextBudgetService {
     this._lastToolsCount = 0;
     this.budgetSubject.next(this.createEmptySnapshot());
     this.compressionEventSubject.next(null);
+    // 重置后台摘要服务
+    this.backgroundSummarizer.reset();
   }
 }

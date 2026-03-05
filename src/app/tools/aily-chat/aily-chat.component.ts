@@ -2384,6 +2384,17 @@ ${JSON.stringify(errData)}
 
       // 更新上下文预算
       this.contextBudgetService.updateBudget(this.conversationMessages, this.getCurrentTools());
+
+      // ★ 后台摘要化：stop 中断后也检查 token 使用率，提前启动后台摘要
+      const budget = this.contextBudgetService.getSnapshot();
+      this.contextBudgetService.backgroundSummarizer.checkAndTrigger(
+        this.conversationMessages,
+        budget.maxContextTokens,
+        budget.currentTokens,
+        this.sessionId,
+        this.getCurrentLLMConfig(),
+        this.currentModel?.model || undefined
+      );
     }
 
     // 设置最后一条AI消息状态为done（如果存在）
@@ -2499,6 +2510,31 @@ ${JSON.stringify(errData)}
     this.contextBudgetService.updateBudget(this.conversationMessages, this.getCurrentTools());
 
     // 按分层策略压缩：全量保留 → 工具结果截断 → LLM 摘要
+    const preCompressBudget = this.contextBudgetService.getSnapshot();
+    const willCompress = preCompressBudget.currentTokens >= preCompressBudget.compressionThreshold;
+    const willSummarize = preCompressBudget.currentTokens >= preCompressBudget.summarizationThreshold;
+    const compressionStateId = 'context-compression-' + Date.now();
+
+    // ★ 如果即将压缩/摘要，先在聊天界面展示 aily-state 提示
+    if (willCompress) {
+      const bg = this.contextBudgetService.backgroundSummarizer;
+      const bgWaiting = bg.shouldBlockAndWait(preCompressBudget.currentTokens, preCompressBudget.maxContextTokens);
+      const bgReady = bg.state === 'Completed';
+      const stateText = bgWaiting
+        ? `正在等待上下文摘要完成 (${preCompressBudget.usagePercent}%)...`
+        : bgReady
+          ? `正在应用上下文摘要 (${preCompressBudget.usagePercent}%)...`
+          : willSummarize
+            ? `正在压缩上下文 — LLM 摘要中 (${preCompressBudget.usagePercent}%)...`
+            : `正在压缩上下文 (${preCompressBudget.usagePercent}%)...`;
+      this.displayToolCallState({
+        id: compressionStateId,
+        name: 'context_compression',
+        state: ToolCallState.DOING,
+        text: stateText
+      });
+    }
+
     try {
       this.conversationMessages = await this.contextBudgetService.compressIfNeeded(
         this.conversationMessages,
@@ -2506,8 +2542,31 @@ ${JSON.stringify(errData)}
         this.getCurrentLLMConfig(),
         this.currentModel?.model || undefined
       );
+
+      // ★ 压缩完成，更新 aily-state 为 done
+      if (willCompress) {
+        const postBudget = this.contextBudgetService.getSnapshot();
+        const saved = preCompressBudget.currentTokens - postBudget.currentTokens;
+        this.displayToolCallState({
+          id: compressionStateId,
+          name: 'context_compression',
+          state: ToolCallState.DONE,
+          text: saved > 0
+            ? `上下文压缩完成：${preCompressBudget.currentTokens} → ${postBudget.currentTokens} tokens（节省 ${saved}）`
+            : `上下文检查完成 (${postBudget.usagePercent}%)`
+        });
+      }
     } catch (error) {
       console.warn('[无状态模式] 上下文压缩失败，使用原始历史:', error);
+      // ★ 压缩失败，更新 aily-state 为 warn
+      if (willCompress) {
+        this.displayToolCallState({
+          id: compressionStateId,
+          name: 'context_compression',
+          state: ToolCallState.WARN,
+          text: '上下文压缩失败，使用原始历史继续'
+        });
+      }
     }
 
     // 重置当前轮次的收集器
@@ -2604,6 +2663,19 @@ ${JSON.stringify(errData)}
       }
       // 更新上下文预算（轮次结束时的最终状态，含工具定义）
       this.contextBudgetService.updateBudget(this.conversationMessages, this.getCurrentTools());
+
+      // ★ 后台摘要化：轮次正常结束后，趁用户阅读/输入的空闲期，
+      //   检查 token 使用率，≥75% 自动启动后台摘要，下次请求时应用
+      const budget = this.contextBudgetService.getSnapshot();
+      this.contextBudgetService.backgroundSummarizer.checkAndTrigger(
+        this.conversationMessages,
+        budget.maxContextTokens,
+        budget.currentTokens,
+        this.sessionId,
+        this.getCurrentLLMConfig(),
+        this.currentModel?.model || undefined
+      );
+
       // 设置完成状态（与传统模式 complete 回调的后续逻辑一致）
       if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
         this.list[this.list.length - 1].state = 'done';
