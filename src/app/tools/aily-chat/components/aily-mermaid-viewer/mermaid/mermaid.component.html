@@ -1,7 +1,7 @@
 <div class="mermaid-container" [class.dragging]="isDragging" (wheel)="onWheel($event)"
-    (mousedown)="onMouseDown($event)">
+    (mousedown)="onMouseDown($event)" (click)="onContainerClick($event)">
     <div class="mermaid-content" [style.transform]="getTransform()" [style.transform-origin]="'0 0'">
-        <div class="mermaid-svg-container" [innerHTML]="renderedSvg">
+        <div class="mermaid-svg-container" #svgContainer [innerHTML]="renderedSvg">
         </div>
     </div>
 </div>

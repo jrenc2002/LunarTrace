@@ -1,4 +1,4 @@
-import { Component, Inject, OnInit, OnDestroy } from '@angular/core';
+import { Component, Inject, OnInit, OnDestroy, AfterViewInit, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { NZ_MODAL_DATA, NzModalRef } from 'ng-zorro-antd/modal';
@@ -17,7 +17,8 @@ export interface MermaidModalData {
   templateUrl: './mermaid.component.html',
   styleUrl: './mermaid.component.scss'
 })
-export class MermaidComponent implements OnInit, OnDestroy {
+export class MermaidComponent implements OnInit, AfterViewInit, OnDestroy {
+  @ViewChild('svgContainer') svgContainer!: ElementRef<HTMLElement>;
   renderedSvg: SafeHtml = '';
   
   // 缩放和拖拽相关属性
@@ -31,6 +32,8 @@ export class MermaidComponent implements OnInit, OnDestroy {
   dragStartY = 0;
   lastTranslateX = 0;
   lastTranslateY = 0;
+  /** 是否发生了拖拽（用于区分点击与拖拽，点击时关闭弹窗） */
+  hasDragged = false;
   
   // 缩放参数
   readonly MIN_SCALE = 0.1;
@@ -47,6 +50,33 @@ export class MermaidComponent implements OnInit, OnDestroy {
     if (this.data?.svg) {
       this.renderedSvg = this.sanitizer.bypassSecurityTrustHtml(this.data.svg);
     }
+  }
+
+  ngAfterViewInit(): void {
+    this.injectHitRect();
+  }
+
+  /** 在根 g 内注入透明 rect，使点击 svg>g 区域时 target 为 g/rect 而非 svg */
+  private injectHitRect(): void {
+    setTimeout(() => {
+      const container = this.svgContainer?.nativeElement;
+      const svg = container?.querySelector?.('svg');
+      if (!svg) return;
+      const rootG = Array.from(svg.children).find((el) => el.tagName?.toLowerCase() === 'g') as SVGGElement | undefined;
+      if (!rootG || rootG.tagName?.toLowerCase() !== 'g') return;
+      const vb = (svg.getAttribute('viewBox') || '0 0 800 600').split(/\s+/);
+      const w = vb[2] || '800';
+      const h = vb[3] || '600';
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', '0');
+      rect.setAttribute('y', '0');
+      rect.setAttribute('width', w);
+      rect.setAttribute('height', h);
+      rect.setAttribute('fill', 'black');
+      rect.setAttribute('fill-opacity', '0.001');
+      rect.style.pointerEvents = 'all';
+      rootG.insertBefore(rect, rootG.firstChild);
+    });
   }
 
   ngOnDestroy(): void {
@@ -79,6 +109,7 @@ export class MermaidComponent implements OnInit, OnDestroy {
   // 鼠标按下开始拖拽
   onMouseDown(event: MouseEvent): void {
     if (event.button === 0) { // 左键
+      this.hasDragged = false;
       this.isDragging = true;
       this.dragStartX = event.clientX;
       this.dragStartY = event.clientY;
@@ -100,7 +131,9 @@ export class MermaidComponent implements OnInit, OnDestroy {
     if (this.isDragging) {
       const deltaX = event.clientX - this.dragStartX;
       const deltaY = event.clientY - this.dragStartY;
-      
+      if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+        this.hasDragged = true;
+      }
       this.translateX = this.lastTranslateX + deltaX;
       this.translateY = this.lastTranslateY + deltaY;
     }
@@ -123,5 +156,19 @@ export class MermaidComponent implements OnInit, OnDestroy {
 
   close(): void {
     this.modal.close();
+  }
+
+  /** 点击 svg 根关闭弹窗；点击 svg>g 等子元素时阻止关闭 */
+  onContainerClick(event: MouseEvent): void {
+    if (this.hasDragged) return;
+    const target = event.target as Element;
+    const isSvgRoot = target?.tagName?.toLowerCase() === 'svg';
+    if (isSvgRoot) {
+      this.close();
+      return;
+    }
+    const inSvg = target?.closest?.('svg');
+    if (inSvg) return; // 点击 svg 内部子元素（g、rect、path 等）不关闭
+    this.close(); // 点击容器空白关闭
   }
 }

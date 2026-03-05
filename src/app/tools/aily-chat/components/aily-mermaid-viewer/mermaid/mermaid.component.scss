@@ -31,6 +31,6 @@
     max-height: none;
     height: auto;
     width: auto;
-    pointer-events: none; // 防止SVG内部元素干扰拖拽
+    pointer-events: auto;
   }
 }
