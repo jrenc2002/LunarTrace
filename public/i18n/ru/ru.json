@@ -239,6 +239,10 @@
     },
     "UPDATE_DIALOG": {
         "TITLE": "Обновление программного обеспечения",
+        "TITLE_READY": "Обновление готово",
+        "TITLE_NEW_VERSION": "Доступна новая версия {{version}}",
+        "TEXT_DOWNLOADED": "Версия {{version}} загружена. Установить сейчас?",
+        "TEXT_AVAILABLE": "Текущая версия {{currentVersion}}, новая версия {{version}}<br>Хотите загрузить и установить это обновление?",
         "DOWNLOAD_FAILED": "Ошибка загрузки",
         "REMIND_LATER": "Напомнить позже",
         "SKIP_VERSION": "Пропустить эту версию",

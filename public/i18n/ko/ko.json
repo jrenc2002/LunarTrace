@@ -235,6 +235,10 @@
     },
     "UPDATE_DIALOG": {
         "TITLE": "소프트웨어 업데이트",
+        "TITLE_READY": "업데이트 준비 완료",
+        "TITLE_NEW_VERSION": "새 버전 {{version}} 사용 가능",
+        "TEXT_DOWNLOADED": "버전 {{version}} 다운로드가 완료되었습니다. 지금 설치하시겠습니까?",
+        "TEXT_AVAILABLE": "현재 버전 {{currentVersion}}, 새 버전 {{version}}<br>이 업데이트를 다운로드하고 설치하시겠습니까?",
         "DOWNLOAD_FAILED": "다운로드 실패",
         "REMIND_LATER": "나중에 알림",
         "SKIP_VERSION": "이 버전 건너뛰기",

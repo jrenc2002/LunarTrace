@@ -239,6 +239,10 @@
     },
     "UPDATE_DIALOG": {
         "TITLE": "Software-Update",
+        "TITLE_READY": "Update bereit",
+        "TITLE_NEW_VERSION": "Neue Version {{version}} verfügbar",
+        "TEXT_DOWNLOADED": "Version {{version}} wurde heruntergeladen. Jetzt installieren?",
+        "TEXT_AVAILABLE": "Aktuelle Version {{currentVersion}}, neue Version {{version}}<br>Möchten Sie dieses Update herunterladen und installieren?",
         "DOWNLOAD_FAILED": "Download fehlgeschlagen",
         "REMIND_LATER": "Später erinnern",
         "SKIP_VERSION": "Diese Version überspringen",

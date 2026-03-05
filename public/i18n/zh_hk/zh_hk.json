@@ -239,6 +239,10 @@
     },
     "UPDATE_DIALOG": {
         "TITLE": "軟體更新",
+        "TITLE_READY": "更新已準備就緒",
+        "TITLE_NEW_VERSION": "發現新版本 {{version}}",
+        "TEXT_DOWNLOADED": "新版本 {{version}} 已下載完成，是否立即安裝？",
+        "TEXT_AVAILABLE": "當前版本 {{currentVersion}}，新版本 {{version}}<br>是否要下載並安裝此更新？",
         "DOWNLOAD_FAILED": "下載失敗",
         "REMIND_LATER": "稍後提醒",
         "SKIP_VERSION": "跳過此版本",

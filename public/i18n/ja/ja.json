@@ -239,6 +239,10 @@
     },
     "UPDATE_DIALOG": {
         "TITLE": "ソフトウェアアップデート",
+        "TITLE_READY": "アップデート準備完了",
+        "TITLE_NEW_VERSION": "新しいバージョン {{version}} が利用可能です",
+        "TEXT_DOWNLOADED": "バージョン {{version}} のダウンロードが完了しました。今すぐインストールしますか？",
+        "TEXT_AVAILABLE": "現在のバージョン {{currentVersion}}、新しいバージョン {{version}}<br>このアップデートをダウンロードしてインストールしますか？",
         "DOWNLOAD_FAILED": "ダウンロード失敗",
         "REMIND_LATER": "後で通知",
         "SKIP_VERSION": "このバージョンをスキップ",

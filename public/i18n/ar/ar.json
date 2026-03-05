@@ -239,6 +239,10 @@
     },
     "UPDATE_DIALOG": {
         "TITLE": "تحديث البرنامج",
+        "TITLE_READY": "التحديث جاهز",
+        "TITLE_NEW_VERSION": "إصدار جديد {{version}} متاح",
+        "TEXT_DOWNLOADED": "تم تنزيل الإصدار {{version}}. هل تريد التثبيت الآن؟",
+        "TEXT_AVAILABLE": "الإصدار الحالي {{currentVersion}}، الإصدار الجديد {{version}}<br>هل تريد تنزيل هذا التحديث وتثبيته؟",
         "DOWNLOAD_FAILED": "فشل التنزيل",
         "REMIND_LATER": "تذكير لاحقًا",
         "SKIP_VERSION": "تخطي هذا الإصدار",
