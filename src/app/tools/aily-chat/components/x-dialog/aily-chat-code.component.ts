@@ -234,17 +234,25 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
         return;
       }
 
+      const forcedStyle = 'width: 60vw !important; height: 80vh !important; max-width: 100% !important; display: block !important;';
       const enhancedSvg = svg
         .replace('<svg', `<svg id="${diagramId}" data-mermaid-svg="true"`)
-        .replace(/width="[^"]*"/, 'width="100%"')
-        .replace(/height="[^"]*"/, 'height="auto"')
-        .replace(/<svg([^>]*)>/, (_m: string, attrs: string) => `<svg${attrs} style="max-width: 100%; height: auto; display: block;">`);
+        .replace(/width="[^"]*"/, 'width="60vw"')
+        .replace(/height="[^"]*"/, 'height="80vh"')
+        .replace(/<svg([^>]*)>/, (_m: string, attrs: string) => {
+          const merged = /style=/.test(attrs)
+            ? attrs.replace(/style="[^"]*"/, `style="${forcedStyle}"`)
+            : `${attrs} style="${forcedStyle}"`;
+          return `<svg${merged}>`;
+        });
 
       this.modal.create({
         nzTitle: null,
         nzFooter: null,
         nzClosable: false,
-        nzBodyStyle: { padding: '0' },
+        nzBodyStyle: {
+          padding: '0',
+        },
         nzContent: MermaidComponent,
         nzData: { svg: enhancedSvg },
         nzWidth: 'fit-content',
