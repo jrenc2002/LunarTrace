@@ -1050,7 +1050,7 @@ export class _BuilderService {
                 });
                 
                 this.workflowService.finishBuild(false, 'Compilation failed');
-                reject({ state: 'error', text: `编译失败 (耗时: ${buildDuration}s)` });
+                reject({ state: 'error', text: `编译失败 (耗时: ${buildDuration}s)`, fullStdErr: fullStdErr || lastStdErr });
               } else if (this.cancelled) {
                 console.warn("编译中断")
                 console.log(`编译已取消，耗时: ${buildDuration} 秒`);
