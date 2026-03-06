@@ -453,13 +453,13 @@ export class RepetitionDetectionService {
     // 根据模式长度调整阈值
     let threshold: number;
     if (patternLen <= 5) {
-      threshold = 6;
+      threshold = 15; // 15 次 3-5 字符模式（如 "哈哈哈哈"）
     } else if (patternLen <= 10) {
-      threshold = 4;
+      threshold = 8;
     } else if (patternLen <= 20) {
-      threshold = 3;
+      threshold = 5;
     } else {
-      threshold = 3; // 统一使用 3 次阈值
+      threshold = 5; // 统一使用 5 次阈值
     }
 
     if (consecutiveCount >= threshold) {
