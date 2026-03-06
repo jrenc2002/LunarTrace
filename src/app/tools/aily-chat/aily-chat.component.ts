@@ -1164,6 +1164,7 @@ Do not create non-existent boards and libraries.
     if (this.sessionTitle) return;
     // 先保留对话前20字符作为初始标题，避免完全没有标题
     const initialTitle = content.length > 20 ? content.substring(0, 20) + '...' : content;
+    this.chatService.currentSessionTitle = initialTitle;
     this.chatHistoryService.updateTitle(this.sessionId, initialTitle);
     this.refreshHistoryList();
 
@@ -1176,6 +1177,7 @@ Do not create non-existent boards and libraries.
     const titleContent = content.length > 500 ? content.substring(0, 500) : content;
     this.chatService.generateTitle(this.sessionId, titleContent, (title: string) => {
       // 标题就绪回调：立即更新全局索引 + 刷新历史列表
+      this.chatService.currentSessionTitle = title;
       this.chatHistoryService.updateTitle(this.sessionId, title);
       this.refreshHistoryList();
     });
@@ -2273,6 +2275,11 @@ ${JSON.stringify(errData)}
     let text = content.trim();
     if (!this.sessionId || !text) return;
 
+    // llmText: 实际发给 LLM 的内容（可能含 context 块 + <user> 标签）
+    // displayText: UI 展示内容（保持原始输入，不含标签）
+    let llmText = text;
+    let displayText = text;
+
     if (sender === 'user') {
       if (this.isWaiting) {
         return;
@@ -2282,23 +2289,24 @@ ${JSON.stringify(errData)}
       this.repetitionDetectionService.resetStreamTokens();
       this.insideThink = false;
 
-      // 将用户输入的文本包裹在<user-query>标签中
-      // text = `<user-query>${text}</user-query>`;
-
       // ★ 先生成标题（使用原始用户输入，不包含附件 context 块）
       this.generateTitle(text);
 
       const resourcesText = this.getResourcesText();
       if (resourcesText) {
-        text = resourcesText + '\n\n' + text;
+        llmText = `${resourcesText}\n\n<userRequest>${text}</userRequest>`;
+        displayText = resourcesText + '\n\n' + text;
+      } else {
+        llmText = text;
+        displayText = text;
       }
 
-      this.appendMessage('user', text);
+      this.appendMessage('user', displayText);
       this.appendMessage('aily', '[thinking...]');
 
       // ==================== 无状态模式：用户消息直接启动工具调用循环 ====================
       if (this.useStatelessMode) {
-        this.conversationMessages.push({ role: 'user', content: text });
+        this.conversationMessages.push({ role: 'user', content: llmText });
         this.isWaiting = true;
         this.currentMessageSource = 'mainAgent';
         this.toolCallingIteration = 0;
@@ -2325,7 +2333,7 @@ ${JSON.stringify(errData)}
     // 重置消息来源为主Agent，每次新对话都从主Agent开始
     this.currentMessageSource = 'mainAgent';
 
-    this.sendMessageWithRetry(this.sessionId, text, sender, clear, 3);
+    this.sendMessageWithRetry(this.sessionId, llmText, sender, clear, 3);
   }
 
   /**
@@ -5774,6 +5782,10 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
 
   /**
    * 获取资源列表的文本描述，用于发送给AI
+   *
+   * 对齐 Copilot 的 <attachment> 模式：
+   * - 每个附件独立的 <attachment id="..."> 标签，LLM 可精确引用
+   * - 块上下文保持原有格式（已含结构化信息）
    */
   getResourcesText(): string {
     if (this.selectContent.length === 0) {
