@@ -2243,6 +2243,15 @@ ${JSON.stringify(errData)}
         return;
       }
 
+      // 兜底修复：上一轮被 stop/cancel 后，确保新请求不会继承旧取消态。
+      if (this.isCancelled) {
+        this.isCancelled = false;
+        this.pendingUserInput = false;
+        this.streamCompleted = false;
+        this.sseStreamCompleted = false;
+        this.activeToolExecutions = 0;
+      }
+
       // 重置流式文本检测状态（新消息开始）
       this.repetitionDetectionService.resetStreamTokens();
       this.insideThink = false;
@@ -2360,13 +2369,27 @@ ${JSON.stringify(errData)}
   stop() {
     // 标记任务已取消，防止后续工具结果触发重连
     this.isCancelled = true;
+    const wasStatelessTurn = this.currentStatelessMode;
+
+    // 立即断开旧流，避免其延迟 complete 回调覆盖新请求状态。
+    if (this.messageSubscription) {
+      this.messageSubscription.unsubscribe();
+      this.messageSubscription = null;
+    }
+
+    // stop/cancel 不依赖 StreamComplete，直接清理当前轮次流式状态。
+    this.pendingUserInput = false;
+    this.streamCompleted = false;
+    this.sseStreamCompleted = false;
+    this.activeToolExecutions = 0;
+    this.currentStatelessMode = false;
 
     // 取消所有正在执行的 subagent 调用
     this.subagentSessionService.cleanupAll();
 
     // ★ 无状态模式：stop() 时将已累积的 assistant 内容保存到对话历史，
     //   防止 aily-button 截断对话后用户点击按钮时 LLM 丢失上下文
-    if (this.currentStatelessMode && this.currentTurnAssistantContent) {
+    if (wasStatelessTurn && this.currentTurnAssistantContent) {
       const assistantMessage: any = {
         role: 'assistant',
         content: this.sanitizeAssistantContent(this.currentTurnAssistantContent)
@@ -2418,18 +2441,26 @@ ${JSON.stringify(errData)}
       this.list[this.list.length - 1].state = 'done';
     }
 
-    this.chatService.cancelTask(this.sessionId).subscribe((res: any) => {
-      if (res.status === 'success') {
-        console.log('任务已取消:', res);
-      } else {
-        console.warn('取消任务失败:', res);
-      }
-      this.isWaiting = false;
-      this.isCompleted = true;
+    // 本地立即收尾，避免 cancelTask 响应延迟导致后续请求被阻塞。
+    this.isWaiting = false;
+    this.isCompleted = true;
 
-      // ★ 无状态模式：stop 完成后保存会话历史
-      if (this.currentStatelessMode) {
-        this.saveCurrentSession();
+    const shouldSaveSession = this.useStatelessMode || wasStatelessTurn;
+    if (shouldSaveSession) {
+      this.saveCurrentSession();
+    }
+
+    this.chatService.cancelTask(this.sessionId).subscribe({
+      next: (res: any) => {
+        if (res.status === 'success') {
+          console.log('任务已取消:', res);
+        } else {
+          console.warn('取消任务失败:', res);
+        }
+      },
+      error: (err) => {
+        // 本地已完成 stop，接口失败仅记录，不影响后续会话。
+        console.warn('取消任务请求失败:', err);
       }
     });
   }
@@ -2769,7 +2800,7 @@ ${JSON.stringify(errData)}
           return; // 用户已中断，阻止流继续渲染（含 think loading 被覆盖）
         }
 
-        console.log("Recv: ", data);
+        // console.log("Recv: ", data);
 
         // 更新当前消息来源
         const messageSource = this.currentMessageSource || 'mainAgent';
