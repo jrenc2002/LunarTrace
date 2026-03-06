@@ -1162,7 +1162,19 @@ Do not create non-existent boards and libraries.
   // generate title — 标题生成完成后立即更新索引并刷新 UI
   generateTitle(content: string) {
     if (this.sessionTitle) return;
-    this.chatService.generateTitle(this.sessionId, content, (title: string) => {
+    // 先保留对话前20字符作为初始标题，避免完全没有标题
+    const initialTitle = content.length > 20 ? content.substring(0, 20) + '...' : content;
+    this.chatHistoryService.updateTitle(this.sessionId, initialTitle);
+    this.refreshHistoryList();
+
+    // 如果 content 过短，直接使用它作为标题，不调用生成接口
+    if (content.length <= 20) {
+      return;
+    }
+
+    // 只取前 500 字符送给 API，避免发送过长输入
+    const titleContent = content.length > 500 ? content.substring(0, 500) : content;
+    this.chatService.generateTitle(this.sessionId, titleContent, (title: string) => {
       // 标题就绪回调：立即更新全局索引 + 刷新历史列表
       this.chatHistoryService.updateTitle(this.sessionId, title);
       this.refreshHistoryList();
@@ -1673,6 +1685,35 @@ Do not create non-existent boards and libraries.
 
   /** 当前是否在 <think> 标签内（think 内不匹配 aily-button） */
   private insideThink = false;
+
+  /**
+   * 检查最后一条 aily 消息中是否存在未闭合的 markdown 结构（如 <think>、代码块），
+   * 返回需要插入的闭合标签。用于在强制插入中断提示前确保前文 markdown 结构完整，
+   * 避免 aily-state / aily-button 被渲染到未闭合的代码块或 think 块内部。
+   */
+  private getClosingTagsForOpenBlocks(): string {
+    if (this.list.length === 0) return '';
+    const lastMsg = this.list[this.list.length - 1];
+    if (lastMsg.role !== 'aily') return '';
+
+    const content = lastMsg.content || '';
+    let closingTags = '';
+
+    // 闭合未结束的 <think> 标签
+    const thinkOpenCount = (content.match(/<think>/g) || []).length;
+    const thinkCloseCount = (content.match(/<\/think>/g) || []).length;
+    if (thinkOpenCount > thinkCloseCount) {
+      closingTags += '\n</think>\n';
+    }
+
+    // 闭合未结束的代码块（``` 出现奇数次说明有未闭合的代码块）
+    const codeBlockMatches = content.match(/```/g) || [];
+    if (codeBlockMatches.length % 2 !== 0) {
+      closingTags += '\n```\n';
+    }
+
+    return closingTags;
+  }
 
   appendMessage(role, text, source?: string) {
     // console.log("添加消息: ", role, text, "source:", source);
@@ -2257,14 +2298,15 @@ ${JSON.stringify(errData)}
       this.insideThink = false;
 
       // 将用户输入的文本包裹在<user-query>标签中
-      text = `<user-query>${text}</user-query>`;
+      // text = `<user-query>${text}</user-query>`;
+
+      // ★ 先生成标题（使用原始用户输入，不包含附件 context 块）
+      this.generateTitle(text);
 
       const resourcesText = this.getResourcesText();
       if (resourcesText) {
         text = resourcesText + '\n\n' + text;
       }
-
-      this.generateTitle(text);
 
       this.appendMessage('user', text);
       this.appendMessage('aily', '[thinking...]');
@@ -2839,6 +2881,22 @@ ${JSON.stringify(errData)}
                 console.warn('[重复检测] 流式文本重复:', streamRepetitionCheck.pattern);
                 // 显示提示并终止响应
                 this.appendMessage('aily', data.content, messageSource);
+                // 闭合前文可能未结束的 markdown 结构，防止中断提示被渲染到代码块或 think 内
+                const closingTags = this.getClosingTagsForOpenBlocks();
+                this.appendMessage('aily', `${closingTags}
+\`\`\`aily-state
+{
+  "status": "warning",
+  "text": "模型已经处理了一段时间，请问需要继续吗？",
+  "id": "repetition-check-${Date.now()}"
+}
+\`\`\`
+
+\`\`\`aily-button
+[{"text":"继续","action":"retry","type":"primary"}]
+\`\`\`
+
+`);
                 this.stop();
                 return;
               }
@@ -2911,7 +2969,9 @@ ${JSON.stringify(errData)}
             if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
               this.list[this.list.length - 1].state = 'done';
             }
-            this.appendMessage('aily', `
+            // 闭合前文可能未结束的 markdown 结构
+            const errorClosingTags = this.getClosingTagsForOpenBlocks();
+            this.appendMessage('aily', `${errorClosingTags}
 \`\`\`aily-error
 {
   "message": "${this.makeJsonSafe(data.message || '未知错误')}"
@@ -5103,11 +5163,13 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
         }
 
         // 只有在活跃对话中才显示错误提示和重试按钮
-        if (this.isWaiting) {
-          this.appendMessage('aily', `
-\`\`\`aily-error
+        // if (this.isWaiting) {
+        this.appendMessage('aily', `
+\`\`\`aily-state
 {
-  "message": "网络连接已断开，请检查网络后重试。"
+  "state": "warn",
+  "text": "网络似乎开小差了，请检查连接并重试。",
+  "id": "network-error-${Date.now()}"
 }
 \`\`\`
 
@@ -5116,7 +5178,6 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
 \`\`\`
 
 `);
-        }
         this.isWaiting = false;
         this.list[this.list.length - 1].state = 'done';
       }

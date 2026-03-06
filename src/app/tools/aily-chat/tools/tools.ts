@@ -2408,6 +2408,25 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
             required: ['pinmapId', 'pinmapConfig']
         },
         agents: ["schematicAgent"]
+    },
+    // =============================================================================
+    // 编译工具
+    // =============================================================================
+    {
+        name: 'build_project',
+        description: `编译当前项目，检测代码是否能正常编译通过。用于代码编写完成后验证语法和链接是否正确。编译耗时较长（可能数十秒到数分钟），请仅在需要验证时调用。`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                preprocess_only: {
+                    type: 'boolean',
+                    description: '是否仅做预编译检查（更快但不生成完整产物，且为异步操作不会返回编译结果）',
+                    default: false
+                }
+            },
+            required: []
+        },
+        agents: ["mainAgent"]
     }
     // {
     //     name: 'verify_block_existence',

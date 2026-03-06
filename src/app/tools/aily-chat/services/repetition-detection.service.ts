@@ -238,13 +238,31 @@ export class RepetitionDetectionService {
 
   /**
    * 生成参数哈希（用于比较参数是否相同）
+   * 使用深层排序确保 key 顺序不同的等价对象产生相同 hash
    */
   private hashArgs(args: any): string {
     try {
-      return JSON.stringify(args, Object.keys(args || {}).sort());
+      return JSON.stringify(this.sortKeysDeep(args));
     } catch (e) {
       return String(args);
     }
+  }
+
+  /**
+   * 递归对对象的 key 进行排序，确保序列化结果稳定
+   */
+  private sortKeysDeep(value: any): any {
+    if (value === null || value === undefined || typeof value !== 'object') {
+      return value;
+    }
+    if (Array.isArray(value)) {
+      return value.map(item => this.sortKeysDeep(item));
+    }
+    const sorted: Record<string, any> = {};
+    for (const key of Object.keys(value).sort()) {
+      sorted[key] = this.sortKeysDeep(value[key]);
+    }
+    return sorted;
   }
 
   // ==================== 流式文本重复检测 ====================
@@ -263,7 +281,6 @@ export class RepetitionDetectionService {
     if (token.includes('</think>')) {
       this.insideThink = false;
       this.thinkTokens = [];
-      return { isRepetitive: false };
     }
 
     // 统一加入 streamTokens（保持索引一致性）
@@ -292,7 +309,11 @@ export class RepetitionDetectionService {
       if (this.thinkTokens.length < this.MIN_TOKENS_FOR_DETECTION) {
         return { isRepetitive: false };
       }
-
+      // Think Layer 0: 垃圾 token 重复（\t\t\t...、\t}\t}... 等卡顿信号）
+      const thinkJunkResult = this.checkJunkTokenRepetition(this.thinkTokens);
+      if (thinkJunkResult.isRepetitive) {
+        return thinkJunkResult;
+      }
       // Think Layer 1: 短语连续重复（“让我思考让我思考让我思考...”）
       const thinkPhraseResult = this.checkPhraseRepetitionOn(this.thinkTokens);
       if (thinkPhraseResult.isRepetitive) {
@@ -316,6 +337,12 @@ export class RepetitionDetectionService {
     // 至少需要一定数量的 token 才开始检测
     if (this.streamTokens.length < this.MIN_TOKENS_FOR_DETECTION) {
       return { isRepetitive: false };
+    }
+
+    // Layer 0: 垃圾 token 重复（\t\t\t...、\t}\t}...、}\r}\r... 等卡顿信号）
+    const junkResult = this.checkJunkTokenRepetition(this.streamTokens);
+    if (junkResult.isRepetitive) {
+      return junkResult;
     }
 
     // Layer 1: Token 级连续短语重复（"哈哈哈哈哈" 或 token 卡顿）
@@ -449,6 +476,61 @@ export class RepetitionDetectionService {
     return null;
   }
 
+  /**
+   * 检测垃圾 token 重复（全局）
+   * 包括纯空白字符重复（\t\t\t...）、控制字符+符号的短模式重复（\t}\t}...、}\r}\r...）
+   * 即使在正常输出中，高频重复的空白/控制字符也是模型卡顿信号
+   */
+  private checkJunkTokenRepetition(tokens: string[]): RepetitionCheckResult {
+    const text = tokens.join('');
+
+    if (text.length < 15) {
+      return { isRepetitive: false };
+    }
+
+    const checkLength = Math.min(text.length, 200);
+    const checkText = text.slice(-checkLength);
+
+    // 检测 1-5 字符的短模式重复（不过滤空白和控制字符）
+    for (let patternLen = 1; patternLen <= Math.min(5, Math.floor(checkText.length / 5)); patternLen++) {
+      const pattern = checkText.slice(-patternLen);
+
+      let consecutiveCount = 0;
+      let pos = checkText.length;
+
+      while (pos >= patternLen) {
+        if (checkText.slice(pos - patternLen, pos) === pattern) {
+          consecutiveCount++;
+          pos -= patternLen;
+        } else {
+          break;
+        }
+      }
+
+      // 阈值根据模式长度调整
+      let threshold: number;
+      if (patternLen === 1) {
+        threshold = 15; // 15 个相同字符（如 \t\t\t...）
+      } else if (patternLen === 2) {
+        threshold = 8;  // 8 次 2 字符模式（如 \t}\t}...）
+      } else {
+        threshold = 5;  // 5 次 3-5 字符模式
+      }
+
+      if (consecutiveCount >= threshold) {
+        // 将控制字符转义为可读形式
+        const displayPattern = JSON.stringify(pattern).slice(1, -1);
+        return {
+          isRepetitive: true,
+          pattern: `垃圾 token 重复: "${displayPattern}" × ${consecutiveCount}`,
+          suggestion: '模型可能陷入了无意义的输出循环。'
+        };
+      }
+    }
+
+    return { isRepetitive: false };
+  }
+
   // -------------------- Layer 2: 句子级连续重复 --------------------
 
   /**
@@ -541,7 +623,13 @@ export class RepetitionDetectionService {
    * - 'think_end': </think> 结束，不保存内容（think 内容丢弃），只更新索引
    */
   markBoundary(type: 'tool_call' | 'think_start' | 'think_end' = 'tool_call'): void {
-    if (type === 'think_end') {
+    // 同步 insideThink 状态（防止 token 拆分导致 checkStreamRepetition 内的 includes 检测失败）
+    if (type === 'think_start') {
+      this.insideThink = true;
+      this.thinkTokens = [];
+    } else if (type === 'think_end') {
+      this.insideThink = false;
+      this.thinkTokens = [];
       // think 内容不保存为内容块，只更新边界位置
       this.lastBoundaryTokenIndex = this.streamTokens.length;
       return;

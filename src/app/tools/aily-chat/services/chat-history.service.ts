@@ -198,6 +198,9 @@ export class ChatHistoryService implements OnDestroy {
     this.indexDirty = false;
   }
 
+  /** 设计第一条消息时 saveSession 尚未执行，暂存待写入的标题 */
+  private pendingTitles = new Map<string, string>();
+
   /**
    * 仅更新索引中的标题（标题生成完成时调用，低 IO）
    */
@@ -218,6 +221,12 @@ export class ChatHistoryService implements OnDestroy {
       }
       // 立即写索引（低 IO，只有几 KB）
       this.writeIndex();
+      console.log(`[ChatHistory] 标题已更新: ${sessionId} → "${title}"`);
+    } else {
+      // 索引条目尚未创建（会话首条消息发送时 saveSession 还未执行）
+      // 暂存标题，等 upsertIndexEntry 创建条目时自动应用
+      this.pendingTitles.set(sessionId, title);
+      console.log(`[ChatHistory] 标题暂存(条目未创建): ${sessionId} → "${title}"`);
     }
   }
 
@@ -442,6 +451,13 @@ export class ChatHistoryService implements OnDestroy {
     metadata: SessionMetadata,
     messageCount: number
   ): void {
+    // 检查是否有暂存标题（updateTitle 在条目尚未创建时调用的功法）
+    const pendingTitle = this.pendingTitles.get(sessionId);
+    if (pendingTitle) {
+      metadata = { ...metadata, title: pendingTitle };
+      this.pendingTitles.delete(sessionId);
+    }
+
     const existing = this.index.find(e => e.sessionId === sessionId);
     if (existing) {
       existing.title = metadata.title || existing.title;
