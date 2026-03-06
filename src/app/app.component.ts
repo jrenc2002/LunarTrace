@@ -70,7 +70,7 @@ export class AppComponent implements OnInit, OnDestroy {
           const result = await this.authService.handleOAuthCallback(callbackData);
 
           if (result.success) {
-            console.log('GitHub OAuth 成功:', result.data);
+            // console.log('GitHub OAuth 成功:', result.data);
             this.message.success('GitHub 登录成功');
           } else {
             // OAuth失败
