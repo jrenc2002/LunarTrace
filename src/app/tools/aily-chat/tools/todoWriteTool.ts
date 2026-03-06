@@ -85,7 +85,7 @@ class TodoManager {
     const isUrgent = this.callCount >= this.config.maxThreshold;
     const urgencyPrefix = isUrgent ? ' **紧急提醒**' : ' **友好提醒**';
 
-    let reminder = `\n\n${urgencyPrefix}: 您有 ${stats.byStatus['not-started']} 个待处理任务`;
+    let reminder = `<reminder>\n\n${urgencyPrefix}: 您有 ${stats.byStatus['not-started']} 个待处理任务`;
     if (stats.byStatus['in-progress'] > 0) {
       reminder += `，${stats.byStatus['in-progress']} 个进行中任务`;
     }
@@ -104,7 +104,7 @@ class TodoManager {
       }
     }
 
-    reminder += `\n\n 使用 todo_write_tool 工具来查看或更新任务状态`;
+    reminder += `\n\n 使用 todo_write_tool 工具来查看或更新任务状态</reminder>`;
     return reminder;
   }
 
@@ -119,14 +119,12 @@ export const todoManager = TodoManager.getInstance();
  * 工具调用拦截器 - 在其他工具的返回结果中注入todo提醒
  */
 export function injectTodoReminder(
-  toolResult: ToolUseResult,
   toolName: string,
   sessionId: string = 'default'
-): ToolUseResult {
+): string {
   todoManager.recordToolCall(toolName);
   const reminder = todoManager.checkAndGetReminder(sessionId);
-  if (!reminder) return toolResult;
-  return { ...toolResult, content: `${toolResult.content}${reminder}` };
+  return reminder || '';
 }
 
 export function configureTodoManager(config: Partial<TodoManagerConfig>): void {

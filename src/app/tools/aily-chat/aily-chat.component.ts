@@ -1818,6 +1818,8 @@ Do not create non-existent boards and libraries.
     // 2. 移除 <info>...</info> 临时提示
     cleaned = cleaned.replace(/<info>[\s\S]*?<\/info>/g, '');
 
+    cleaned = cleaned.replace(/<reminder>[\s\S]*?<\/reminder>/g, '');
+
     // 3. 解包 <toolResult>...</toolResult>，仅保留内部内容
     cleaned = cleaned.replace(/<toolResult>([\s\S]*?)<\/toolResult>/g, '$1');
 
@@ -4786,10 +4788,11 @@ ${JSON.stringify(errData)}
             // 判断是否为子Agent
             const isSubagent = messageSource !== 'mainAgent';
 
+            let reminder = '';
             // 集中注入 todo 提醒 - 仅对 mainAgent 的非 todo 工具结果注入
             if (toolResult && data.tool_name !== 'todo_write_tool' && !isSubagent) {
               // console.log('=============================🔔 注入 TODO 提醒=============================');
-              toolResult = injectTodoReminder(toolResult, data.tool_name);
+              reminder = injectTodoReminder(data.tool_name);
             }
 
             let toolContent = '';
@@ -4932,11 +4935,11 @@ ${JSON.stringify(errData)}
               } else if (shouldIncludeKeyInfo) {
                 // 需要路径信息的工具 或 工具失败时：只包含 keyInfo
                 // toolContent += `\n${keyInfo}\n<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
-                toolContent += `\n<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
+                toolContent += `\n<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}${reminder}`;
               } else {
                 // 其他成功的工具：不包含 keyInfo
                 // toolContent += `\n<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
-                toolContent += `<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
+                toolContent += `<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}${reminder}`;
               }
             } else {
               toolContent = `
