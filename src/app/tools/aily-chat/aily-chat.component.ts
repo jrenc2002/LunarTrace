@@ -2297,7 +2297,7 @@ ${JSON.stringify(errData)}
         llmText = `${resourcesText}\n\n<userRequest>${text}</userRequest>`;
         displayText = resourcesText + '\n\n' + text;
       } else {
-        llmText = text;
+        llmText = `<userRequest>${text}</userRequest>`;
         displayText = text;
       }
 
