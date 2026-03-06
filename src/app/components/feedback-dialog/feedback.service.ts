@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError, from } from 'rxjs';
 import { catchError, switchMap } from 'rxjs/operators';
-import { API } from '../configs/api.config';
+import { API } from '../../configs/api.config';
 
 export interface ImageUploadResponse {
   status: number;
@@ -15,9 +15,7 @@ export interface ImageUploadResponse {
   };
 }
 
-@Injectable({
-  providedIn: 'root'
-})
+@Injectable()
 export class FeedbackService {
 
   constructor(private http: HttpClient) { }
