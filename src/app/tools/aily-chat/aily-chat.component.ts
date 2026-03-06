@@ -2512,22 +2512,21 @@ ${JSON.stringify(errData)}
 
     // 按分层策略压缩：全量保留 → 工具结果截断 → LLM 摘要
     const preCompressBudget = this.contextBudgetService.getSnapshot();
-    const willCompress = preCompressBudget.currentTokens >= preCompressBudget.compressionThreshold;
     const willSummarize = preCompressBudget.currentTokens >= preCompressBudget.summarizationThreshold;
+    const bg = this.contextBudgetService.backgroundSummarizer;
+    const bgWaiting = bg.shouldBlockAndWait(preCompressBudget.currentTokens, preCompressBudget.maxContextTokens);
+    const bgReady = bg.state === 'Completed';
+    // ★ 仅 LLM 摘要（≥75%）或后台摘要阻塞/就绪时才显示 aily-state 提示
+    //   50-75% 的工具截断压缩速度极快（无 LLM 调用），不打扰用户
+    const showCompressionState = willSummarize || bgWaiting || bgReady;
     const compressionStateId = 'context-compression-' + Date.now();
 
-    // ★ 如果即将压缩/摘要，先在聊天界面展示 aily-state 提示
-    if (willCompress) {
-      const bg = this.contextBudgetService.backgroundSummarizer;
-      const bgWaiting = bg.shouldBlockAndWait(preCompressBudget.currentTokens, preCompressBudget.maxContextTokens);
-      const bgReady = bg.state === 'Completed';
+    if (showCompressionState) {
       const stateText = bgWaiting
         ? `正在等待上下文摘要完成 (${preCompressBudget.usagePercent}%)...`
         : bgReady
           ? `正在应用上下文摘要 (${preCompressBudget.usagePercent}%)...`
-          : willSummarize
-            ? `正在压缩上下文 — LLM 摘要中 (${preCompressBudget.usagePercent}%)...`
-            : `正在压缩上下文 (${preCompressBudget.usagePercent}%)...`;
+          : `正在压缩上下文 (${preCompressBudget.usagePercent}%)...`;
       this.displayToolCallState({
         id: compressionStateId,
         name: 'context_compression',
@@ -2544,31 +2543,27 @@ ${JSON.stringify(errData)}
         this.currentModel?.model || undefined
       );
 
-      // ★ 压缩完成，更新 aily-state 为 done
-      if (willCompress) {
+      // ★ 摘要完成，更新 aily-state 为 done
+      if (showCompressionState) {
         const postBudget = this.contextBudgetService.getSnapshot();
         const saved = preCompressBudget.currentTokens - postBudget.currentTokens;
-        if (saved > 0) {
-          // 只有实际节省了 token 才显示节省量，避免误导用户
-          this.displayToolCallState({
-            id: compressionStateId,
-            name: 'context_compression',
-            state: ToolCallState.DONE,
-            text: saved > 0
-              ? `上下文压缩完成：${preCompressBudget.currentTokens} → ${postBudget.currentTokens} tokens（节省 ${saved}）`
-              : `上下文检查完成 (${postBudget.usagePercent}%)`
-          });
-        }
+        this.displayToolCallState({
+          id: compressionStateId,
+          name: 'context_compression',
+          state: ToolCallState.DONE,
+          text: saved > 0
+            ? `上下文摘要完成：${preCompressBudget.currentTokens} → ${postBudget.currentTokens} tokens（节省 ${saved}）`
+            : `上下文摘要完成 (${postBudget.usagePercent}%)`
+        });
       }
     } catch (error) {
       console.warn('[无状态模式] 上下文压缩失败，使用原始历史:', error);
-      // ★ 压缩失败，更新 aily-state 为 warn
-      if (willCompress) {
+      if (showCompressionState) {
         this.displayToolCallState({
           id: compressionStateId,
           name: 'context_compression',
           state: ToolCallState.WARN,
-          text: '上下文压缩失败，使用原始历史继续'
+          text: '上下文摘要失败，使用原始历史继续'
         });
       }
     }
