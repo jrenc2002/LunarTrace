@@ -2691,6 +2691,10 @@ ${JSON.stringify(errData)}
 
       // ★ 关键修复：无状态模式轮次结束时立即保存历史
       this.saveCurrentSession();
+
+      if (!this.electronService.isWindowFocused()) {
+        this.electronService.notify('Aily', '对话已完成');
+      }
     }
   }
 
@@ -5039,6 +5043,10 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
 
         // ★ 关键修复：传统模式对话结束时立即保存历史（替代旧的 3s 轮询 + 仅更新内存逻辑）
         this.saveCurrentSession();
+
+        if (!this.electronService.isWindowFocused()) {
+          this.electronService.notify('Aily', '对话已完成');
+        }
       },
       error: (err) => {
         console.warn('流连接出错:', err);
