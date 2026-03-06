@@ -1162,13 +1162,13 @@ Do not create non-existent boards and libraries.
   // generate title — 标题生成完成后立即更新索引并刷新 UI
   generateTitle(content: string) {
     if (this.sessionTitle) return;
-    // 先保留对话前10字符作为初始标题，避免完全没有标题
-    const initialTitle = content.length > 10 ? content.substring(0, 10) + '...' : content;
+    // 先保留对话前20字符作为初始标题，避免完全没有标题
+    const initialTitle = content.length > 20 ? content.substring(0, 20) + '...' : content;
     this.chatHistoryService.updateTitle(this.sessionId, initialTitle);
     this.refreshHistoryList();
 
     // 如果 content 过短，直接使用它作为标题，不调用生成接口
-    if (content.length <= 10) {
+    if (content.length <= 20) {
       return;
     }
 
