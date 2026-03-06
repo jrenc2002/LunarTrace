@@ -50,10 +50,24 @@ export class BuilderService {
   async build() {
     try {
       const result = await this.actionService.dispatchWithFeedback('compile-begin', {}, 600000).toPromise();
+
+      // listener handler 内部 catch 了编译错误，所以 feedback.success 总是 true
+      // 需要检查 data.success 来判断编译是否真正成功
+      const buildResult = result.data?.result;
+      const buildSuccess = result.data?.success !== false && buildResult?.state !== 'error';
+
       if (!this.electronService.isWindowFocused()) {
-        this.electronService.notify('编译', result.data?.result?.text || '');
+        this.electronService.notify('编译', buildResult?.text || '');
       }
-      return result.data?.result;
+
+      if (!buildSuccess) {
+        // 编译失败，构造包含错误详情的错误对象抛出
+        const error: any = new Error(buildResult?.text || '编译失败');
+        error.buildResult = buildResult;
+        throw error;
+      }
+
+      return buildResult;
     } catch (error) {
       // console.error('编译失败:', error);
       if (!this.electronService.isWindowFocused()) {

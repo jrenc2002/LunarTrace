@@ -22,6 +22,7 @@ import { ProjectService } from '../../services/project.service';
 import { CmdService } from '../../services/cmd.service';
 import { PlatformService } from '../../services/platform.service';
 import { ElectronService } from '../../services/electron.service';
+import { BuilderService } from '../../services/builder.service';
 import { newProjectTool } from './tools/createProjectTool';
 import { executeCommandTool } from './tools/executeCommandTool';
 import { askApprovalTool } from './tools/askApprovalTool';
@@ -68,6 +69,7 @@ import { syncAbsFileHandler } from './tools/syncAbsFileTool';
 import { getAbsSyntaxTool } from './tools/getAbsSyntaxTool';
 // 连线图工具
 import { generateConnectionGraphTool, getPinmapSummaryTool, validateConnectionGraphTool, getSensorPinmapCatalogTool, generatePinmapTool, savePinmapTool, getCurrentSchematicTool, applySchematicTool } from './tools/connectionGraphTool';
+import { buildProjectTool } from './tools/buildProjectTool';
 import { ConnectionGraphService } from '../../services/connection-graph.service';
 // // 原子化块操作工具
 // import {
@@ -659,6 +661,8 @@ export class AilyChatComponent implements OnDestroy {
         return "获取 pinmap 生成参考信息...";
       case 'save_pinmap':
         return "保存 pinmap 配置...";
+      case 'build_project':
+        return "正在编译项目...";
       default:
         return `执行工具: ${cleanToolName}`;
     }
@@ -807,6 +811,8 @@ export class AilyChatComponent implements OnDestroy {
         return `Pinmap 参考信息获取完成`;
       case 'save_pinmap':
         return `Pinmap 配置保存成功`;
+      case 'build_project':
+        return `项目编译完成`;
       default:
         return `${cleanToolName} 执行成功`;
     }
@@ -1194,6 +1200,7 @@ Do not create non-existent boards and libraries.
     private subagentSessionService: SubagentSessionService,
     private chatHistoryService: ChatHistoryService,
     private cdr: ChangeDetectorRef,
+    private builderService: BuilderService,
   ) {
     // securityContext 改为 getter，每次使用时动态获取当前项目路径
   }
@@ -2551,9 +2558,7 @@ ${JSON.stringify(errData)}
           id: compressionStateId,
           name: 'context_compression',
           state: ToolCallState.DONE,
-          text: saved > 0
-            ? `上下文摘要完成：${preCompressBudget.currentTokens} → ${postBudget.currentTokens} tokens（节省 ${saved}）`
-            : `上下文摘要完成 (${postBudget.usagePercent}%)`
+          text: `上下文摘要完成`
         });
       }
     } catch (error) {
@@ -2752,7 +2757,7 @@ ${JSON.stringify(errData)}
           return; // 用户已中断，阻止流继续渲染（含 think loading 被覆盖）
         }
 
-        // console.log("Recv: ", data);
+        console.log("Recv: ", data);
 
         // 更新当前消息来源
         const messageSource = this.currentMessageSource || 'mainAgent';
@@ -4676,6 +4681,16 @@ ${JSON.stringify(errData)}
                         const parsed = JSON.parse(toolResult.content);
                         resultText = parsed.success ? `连线图保存成功（${parsed.summary?.connectionCount || 0} 条连线）` : 'AWS 处理完成';
                       } catch { resultText = 'AWS 解析完成'; }
+                    }
+                    break;
+                  case 'build_project':
+                    this.startToolCall(toolCallId, data.tool_name, "正在编译项目...", toolArgs);
+                    toolResult = await buildProjectTool(this.builderService, toolArgs);
+                    if (toolResult?.is_error) {
+                      resultState = "error";
+                      resultText = '编译失败';
+                    } else {
+                      resultText = '编译成功';
                     }
                     break;
                 }

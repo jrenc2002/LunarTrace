@@ -397,7 +397,7 @@ export class BuilderService {
         let bufferData = '';
         let completeLines = '';
         let lastStdErr = '';
-        let isBuildText = false;
+        let fullStdErr = '';        let isBuildText = false;
         let outputComplete = false;
         let flashInfo = '';
         let ramInfo = '';
@@ -413,6 +413,7 @@ export class BuilderService {
             if (!this.isErrored && output.type == 'stderr') {
               if (output.data) {
                 lastStdErr = output.data.trim();
+                fullStdErr += output.data.trim() + '\n';
               }
             }
 
@@ -557,7 +558,7 @@ export class BuilderService {
               this.passed = false;
               // 终止Arduino CLI进程
               
-              reject({ state: 'error', text: `编译失败 (耗时: ${buildDuration}s)` });
+              reject({ state: 'error', text: `编译失败 (耗时: ${buildDuration}s)`, fullStdErr: fullStdErr || lastStdErr });
             } else if (this.buildCompleted) {
               console.log('编译命令执行完成');
               // 计算编译耗时
