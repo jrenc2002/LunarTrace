@@ -254,14 +254,14 @@ export class BackgroundAgentService implements OnDestroy {
   private setupIpcListeners(): void {
     if (!this.electronService.isElectron || !window['ipcRenderer']) return;
 
-    window['ipcRenderer'].on('schematic-regenerate-request', () => {
-      console.log('[BackgroundAgent] 收到重新生成请求');
-      this.generateSchematic();
-    });
-
-    window['ipcRenderer'].on('schematic-sync-to-code-request', () => {
-      console.log('[BackgroundAgent] 收到同步到代码请求');
-      this.handleSyncToCodeRequest();
+    window['ipcRenderer'].on('iframe-message-connection-graph', (_event: any, payload: { type: string; data?: unknown }) => {
+      if (payload?.type === 'generate-graph-data') {
+        console.log('[BackgroundAgent] 收到重新生成请求');
+        this.generateSchematic();
+      } else if (payload?.type === 'generate-graph-code') {
+        console.log('[BackgroundAgent] 收到同步到代码请求');
+        this.handleSyncToCodeRequest();
+      }
     });
   }
 
@@ -770,9 +770,9 @@ ${(connectionData.connections || []).length} 条连线
     // RxJS Subject（供主窗口内组件订阅）
     this.progress$.next(event);
 
-    // IPC 推送到连线图子窗口
+    // IPC 推送到连线图子窗口（规范：iframe-message-connection-graph）
     if (this.electronService.isElectron && window['ipcRenderer']) {
-      window['ipcRenderer'].send('schematic-generation-progress', event);
+      window['ipcRenderer'].send('iframe-message-connection-graph', { type: 'generate-graph-progress', data: event });
     }
   }
 }

@@ -359,92 +359,31 @@ function registerWindowHandlers(mainWindow) {
         mainWindow.webContents.send('state-update', data);
     });
 
-    // 连线图数据更新通知 - 从主窗口转发给所有子窗口
-    ipcMain.on('connection-graph-updated', (event, payload) => {
-        console.log('[IPC] connection-graph-updated, 转发给', openWindows.size, '个子窗口');
-        openWindows.forEach((subWindow, windowUrl) => {
-            try {
-                if (subWindow && !subWindow.isDestroyed() && subWindow.webContents && !subWindow.webContents.isDestroyed()) {
-                    subWindow.webContents.send('connection-graph-updated', payload);
-                }
-            } catch (error) {
-                console.error('[IPC] 转发 connection-graph-updated 失败:', error.message);
-            }
-        });
-    });
-
-    // 子窗口请求主窗口保存连线图数据
-    ipcMain.on('save-connection-graph', (event, data) => {
-        console.log('[IPC] save-connection-graph, 转发给主窗口');
-        mainWindow.webContents.send('save-connection-graph', data);
-    });
-
     // =====================================================
-    // 连线图自动生成 - IPC 中继
+    // iframe 模块 IPC 通讯（规范：iframe-message-{模块名}，参数 {type, data}）
     // =====================================================
 
-    // 主窗口 → 子窗口：生成进度事件广播
-    ipcMain.on('schematic-generation-progress', (event, data) => {
-        openWindows.forEach((subWindow, windowUrl) => {
-            try {
-                if (subWindow && !subWindow.isDestroyed() && subWindow.webContents && !subWindow.webContents.isDestroyed()) {
-                    subWindow.webContents.send('schematic-generation-progress', data);
+    const IFRAME_CHANNEL_CONNECTION_GRAPH = 'iframe-message-connection-graph';
+
+    ipcMain.on(IFRAME_CHANNEL_CONNECTION_GRAPH, (event, payload) => {
+        console.log("🚀 ~ ipcMain.on ~ payload:", payload);
+        const senderWindow = BrowserWindow.fromWebContents(event.sender);
+        const isFromMain = senderWindow && senderWindow.id === mainWindow.id;
+        if (isFromMain) {
+            // 主窗口 → 子窗口：广播给所有子窗口，由各模块按 type 自行处理（含 get-graph-data）
+            openWindows.forEach((subWindow) => {
+                try {
+                    if (subWindow && !subWindow.isDestroyed() && subWindow.webContents && !subWindow.webContents.isDestroyed()) {
+                        subWindow.webContents.send(IFRAME_CHANNEL_CONNECTION_GRAPH, payload);
+                    }
+                } catch (error) {
+                    console.error('[IPC] 转发 iframe-message-connection-graph 失败:', error.message);
                 }
-            } catch (error) {
-                console.error('[IPC] 转发 schematic-generation-progress 失败:', error.message);
-            }
-        });
-    });
-
-    // 子窗口 → 主窗口：重新生成请求
-    ipcMain.on('schematic-regenerate-request', (event) => {
-        console.log('[IPC] schematic-regenerate-request, 转发给主窗口');
-        mainWindow.webContents.send('schematic-regenerate-request');
-    });
-
-    // 子窗口 → 主窗口：同步到代码请求
-    ipcMain.on('schematic-sync-to-code-request', (event) => {
-        console.log('[IPC] schematic-sync-to-code-request, 转发给主窗口');
-        mainWindow.webContents.send('schematic-sync-to-code-request');
-    });
-
-    // 主窗口通知子窗口切换到生成模式（当 getPayload 为 null 时）
-    ipcMain.on('schematic-start-generating', () => {
-        const connectionGraphWindow = Array.from(openWindows.entries()).find(([url]) => url.includes('connection-graph'));
-        if (connectionGraphWindow) {
-            const [, subWindow] = connectionGraphWindow;
-            if (subWindow && !subWindow.isDestroyed() && subWindow.webContents && !subWindow.webContents.isDestroyed()) {
-                subWindow.webContents.send('schematic-start-generating');
-            }
+            });
+        } else {
+            // 子窗口 → 主窗口：转发给主窗口（含 get-graph-data）
+            mainWindow.webContents.send(IFRAME_CHANNEL_CONNECTION_GRAPH, payload);
         }
-    });
-
-    // 主窗口请求子窗口的 getPayload（用于连线图窗口）
-    ipcMain.handle('get-connection-graph-payload', async () => {
-        const messageId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
-        const connectionGraphWindow = Array.from(openWindows.entries()).find(([url]) => url.includes('connection-graph'));
-        if (!connectionGraphWindow) {
-            return null;
-        }
-        const [, subWindow] = connectionGraphWindow;
-        if (!subWindow || subWindow.isDestroyed() || !subWindow.webContents || subWindow.webContents.isDestroyed()) {
-            return null;
-        }
-        return new Promise((resolve) => {
-            const timeout = setTimeout(() => {
-                ipcMain.removeListener('get-connection-graph-payload-response', responseHandler);
-                resolve(null);
-            }, 5000);
-            const responseHandler = (event, { messageId: respId, payload }) => {
-                if (respId === messageId) {
-                    clearTimeout(timeout);
-                    ipcMain.removeListener('get-connection-graph-payload-response', responseHandler);
-                    resolve(payload);
-                }
-            };
-            ipcMain.on('get-connection-graph-payload-response', responseHandler);
-            subWindow.webContents.send('get-connection-graph-payload-request', messageId);
-        });
     });
 }
 

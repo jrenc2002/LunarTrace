@@ -139,32 +139,11 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
     let windowUrl = 'https://tool.aily.pro/connection-graph?type=json&theme=dark';
     // let windowUrl = 'http://localhost:4201/connection-graph?type=json&theme=dark';
 
-    // 项目全路径的 MD5 作为 key，追加到 windowUrl 上
-    const projectPath = this.projectService.currentProjectPath || this.projectService.projectRootPath || '';
-    const key = projectPath && window['tools']?.calculateMD5
-      ? await window['tools'].calculateMD5(projectPath)
-      : '';
-    if (key) {
-      windowUrl += `&key=${encodeURIComponent(key)}`;
-    }
-
-    // 构建连线图 payload 并打开子窗口
-    const payload = this.connectionGraphService.buildPayload(this.boardPackagePath);
     this.uiService.openWindow({
       path: `iframe?url=${encodeURIComponent(windowUrl)}`,
-      data: payload,
+      data: null,
       width: 900,
       height: 700,
     });
-
-    // 延迟确保子窗口已打开并注册 IPC 监听，再获取子窗口的 payload
-    setTimeout(async () => {
-      if (!this.electronService.isElectron || !window['ipcRenderer']) return;
-      const childPayload = await window['ipcRenderer'].invoke('get-connection-graph-payload');
-      if (childPayload == null) {
-        window['ipcRenderer'].send('schematic-start-generating');
-        this.backgroundAgent.generateSchematic();
-      }
-    }, 800);
   }
 }
