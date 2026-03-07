@@ -366,7 +366,6 @@ function registerWindowHandlers(mainWindow) {
     const IFRAME_CHANNEL_CONNECTION_GRAPH = 'iframe-message-connection-graph';
 
     ipcMain.on(IFRAME_CHANNEL_CONNECTION_GRAPH, (event, payload) => {
-        console.log("🚀 ~ ipcMain.on ~ payload:", payload);
         const senderWindow = BrowserWindow.fromWebContents(event.sender);
         const isFromMain = senderWindow && senderWindow.id === mainWindow.id;
         if (isFromMain) {

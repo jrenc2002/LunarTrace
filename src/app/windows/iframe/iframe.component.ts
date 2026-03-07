@@ -72,6 +72,8 @@ export class IframeComponent implements OnInit, OnDestroy {
   isLoading = true;
   // 文件更新提示
   hasUpdate = false;
+  /** 是否为 component-viewer 窗口 */
+  isComponentViewerWindow = false;
 
   // ===== 连线图自动生成相关 =====
   /** 是否为连线图窗口 */
@@ -90,8 +92,6 @@ export class IframeComponent implements OnInit, OnDestroy {
     private noticeService: NoticeService,
     private ngZone: NgZone,
   ) {
-    // 如果是从 modal 打开，使用 modal data
-    console.log('🚀 ~ IframeComponent ~ constructor ~ data:', data);
     if (this.data) {
       if (this.data.url) {
         this.applyUrl(this.data.url);
@@ -148,6 +148,9 @@ export class IframeComponent implements OnInit, OnDestroy {
     }
     if (url.includes('connection-graph')) {
       this.isConnectionGraphWindow = true;
+    }
+    if (url.includes('component-viewer')) {
+      this.isComponentViewerWindow = true;
     }
   }
 
@@ -208,13 +211,13 @@ export class IframeComponent implements OnInit, OnDestroy {
       this.penpalConnection = connect({
         messenger,
         methods: {
-          inited: () => {
+          initedComponentViewer: () => {
+            this.pushDataToRemote();
+          },
+          initedGraph: () => {
             this.pushDataToRemote();
           },
           generateGraphData: () => {
-            console.log(
-              '🚀 ~ IframeComponent ~ startPenpalConnection ~ generateGraphData:',
-            );
             this.sendToMain('generate-graph-data');
           },
           // 子页面调用此方法通过 IPC 实时获取连线图 payload（type: get-graph-data）
@@ -223,7 +226,6 @@ export class IframeComponent implements OnInit, OnDestroy {
               return Promise.resolve(this.iframeData ?? null);
             }
             const messageId = Date.now() + '-' + Math.random().toString(36).slice(2);
-            console.log("🚀 ~ IframeComponent ~ getGraphData ~ messageId:", messageId)
             return new Promise<unknown>((resolve) => {
               const timeoutId = setTimeout(() => {
                 // window['ipcRenderer'].removeListener(IFRAME_CHANNEL_CONNECTION_GRAPH, listener);
