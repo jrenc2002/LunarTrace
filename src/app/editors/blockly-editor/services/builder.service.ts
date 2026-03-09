@@ -721,7 +721,21 @@ export class _BuilderService {
           return;
         }
 
-        // 3. 检查是否存在预编译缓存文件，如果不存在则启动预编译
+        // 3. 如果有待处理的预编译（AI操作期间依赖发生了变更），先清除旧缓存
+        if (this.pendingPrecompile) {
+          console.log('检测到待处理的预编译（AI操作期间依赖已变更），清除旧缓存并重新预编译');
+          this.pendingPrecompile = false;
+          if (window['path'].isExists(preprocessCachePath)) {
+            try {
+              window['fs'].unlinkSync(preprocessCachePath);
+              console.log('已清除过期的预编译缓存');
+            } catch (error) {
+              console.warn('清除预编译缓存失败:', error);
+            }
+          }
+        }
+
+        // 4. 检查是否存在预编译缓存文件，如果不存在则启动预编译
         if (!window['path'].isExists(preprocessCachePath)) {
           this.safeUpdateNotice({
             title: "编译准备中",

@@ -13,6 +13,7 @@ import {
   dragSelectionWeakMap, hasSelectedParent, copyData,
   connectionDBList, dataCopyToStorage, dataCopyFromStorage,
   blockNumGetFromStorage, registeredContextMenu, multiDraggableWeakMap, getByID,
+  incrementFieldInputValues,
 } from './global';
 import {MultiselectDraggable} from './multiselect_draggable';
 
@@ -189,8 +190,11 @@ const registerDuplicate = function() {
           // Set the new ID in the copy data
           blockCopyData.blockState.id = newId;
           // Paste the block with the modified copy data
-          duplicatedBlocks[block.id] =
-              Blockly.clipboard.paste(blockCopyData, workspace);
+          const duplicated = Blockly.clipboard.paste(blockCopyData, workspace);
+          duplicatedBlocks[block.id] = duplicated;
+          if (duplicated) {
+            incrementFieldInputValues(duplicated, workspace);
+          }
         }
       };
       const dragSelection = dragSelectionWeakMap.get(workspace);
@@ -758,6 +762,7 @@ const registerPaste = function(useCopyPasteCrossTab) {
           const element = Blockly.clipboard.paste(data, workspace);
           if (element) {
             blockList.push(element);
+            incrementFieldInputValues(element, workspace);
           }
           if (element.type !== 'drag_to_dupe') {
             dragSelectionWeakMap.get(workspace).add(element.id);

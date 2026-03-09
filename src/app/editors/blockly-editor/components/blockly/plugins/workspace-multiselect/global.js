@@ -165,3 +165,76 @@ export const blockNumGetFromStorage = function(useCopyPasteCrossTab) {
   }
   return copyData.size;
 };
+
+/**
+ * Get the next available name by incrementing trailing number.
+ * @param {string} name The current field value.
+ * @param {!Blockly.Workspace} workspace The workspace to check against.
+ * @param {string} fieldName The field name to check.
+ * @returns {string} The next available name.
+ */
+const getNextAvailableName = function(name, workspace, fieldName) {
+  const match = name.match(/^(.*?)(\d+)$/);
+  let baseName, num;
+  if (match) {
+    baseName = match[1];
+    num = parseInt(match[2], 10);
+  } else {
+    baseName = name;
+    num = 1;
+  }
+
+  // Collect existing field_input values with the same field name
+  const existingValues = new Set();
+  const allBlocks = workspace.getAllBlocks(false);
+  for (const block of allBlocks) {
+    for (const input of block.inputList || []) {
+      for (const field of input.fieldRow || []) {
+        if (field instanceof Blockly.FieldTextInput &&
+            field.name === fieldName) {
+          existingValues.add(field.getValue());
+        }
+      }
+    }
+  }
+
+  if (!existingValues.has(name)) {
+    return name;
+  }
+
+  let nextNum = num + 1;
+  let candidate = baseName + nextNum;
+  while (existingValues.has(candidate)) {
+    nextNum++;
+    candidate = baseName + nextNum;
+  }
+  return candidate;
+};
+
+/**
+ * Increment field_input (FieldTextInput) values on a pasted/duplicated block
+ * to generate unique names and avoid duplicates.
+ * @param {!Blockly.Block} block The newly pasted/duplicated block.
+ * @param {!Blockly.Workspace} workspace The target workspace.
+ */
+export const incrementFieldInputValues = function(block, workspace) {
+  if (!block || !workspace) return;
+
+  const descendants = block.getDescendants ?
+      block.getDescendants(false) : [block];
+
+  for (const b of descendants) {
+    for (const input of b.inputList || []) {
+      for (const field of input.fieldRow || []) {
+        if (field instanceof Blockly.FieldTextInput) {
+          const currentValue = field.getValue();
+          const newValue = getNextAvailableName(
+              currentValue, workspace, field.name);
+          if (newValue !== currentValue) {
+            field.setValue(newValue);
+          }
+        }
+      }
+    }
+  }
+};

@@ -13,6 +13,7 @@ import {
   dragSelectionWeakMap, hasSelectedParent, copyData, connectionDBList,
   dataCopyToStorage, dataCopyFromStorage, registeredShortcut,
   multiDraggableWeakMap, inPasteShortcut, getByID, shortcutNames,
+  incrementFieldInputValues,
 } from './global';
 import {MultiselectDraggable} from './multiselect_draggable';
 
@@ -392,6 +393,7 @@ const registerPaste = function(useCopyPasteCrossTab) {
           const element = Blockly.clipboard.paste(data, workspace);
           if (element) {
             blockList.push(element);
+            incrementFieldInputValues(element, workspace);
           }
           if (element.type !== 'drag_to_dupe') {
             dragSelectionWeakMap.get(workspace).add(element.id);

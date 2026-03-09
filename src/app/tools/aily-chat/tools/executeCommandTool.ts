@@ -29,11 +29,7 @@ export async function executeCommandTool(
         if (!data || !data.command) {
             toolResult = "执行command命令失败: 缺少必要的参数 'command'";
             is_error = true;
-            const toolResults = {
-                is_error,
-                content: toolResult
-            };
-            return toolResult;
+            return { is_error, content: toolResult };
         }
 
         // console.log('Executing command:', data.command, 'in directory:', data.cwd);
@@ -41,11 +37,7 @@ export async function executeCommandTool(
         if (!data.cwd) {
             toolResult = "执行command命令失败: 当前未打开项目";
             is_error = true;
-            const toolResults = {
-                is_error,
-                content: toolResult
-            };
-            return toolResult;
+            return { is_error, content: toolResult };
         }
 
         // ==================== 安全验证 ====================
@@ -73,11 +65,7 @@ export async function executeCommandTool(
                 });
             }
             
-            const toolResults = {
-                is_error,
-                content: toolResult
-            };
-            return toolResult;
+            return { is_error, content: toolResult };
         }
         
         // 验证工作目录和删除命令路径
@@ -95,11 +83,7 @@ export async function executeCommandTool(
                     });
                 }
                 
-                const toolResults = {
-                    is_error,
-                    content: toolResult
-                };
-                return toolResult;
+                return { is_error, content: toolResult };
             }
             
             // 验证文件操作命令的目标路径是否在安全范围内（删除、移动、复制、修改、重定向）
@@ -120,11 +104,7 @@ export async function executeCommandTool(
                     });
                 }
                 
-                const toolResults = {
-                    is_error,
-                    content: toolResult
-                };
-                return toolResult;
+                return { is_error, content: toolResult };
             }
         }
         // ==================== 安全验证结束 ====================
@@ -197,10 +177,9 @@ export async function executeCommandTool(
         }
     } finally {
         // console.log('executeCommandTool result:', toolResult, 'is_error:', is_error);
-        const toolResults = {
+        return {
             is_error,
             content: toolResult
-        };
-        return toolResult;
+        } as ToolUseResult;
     }
 }

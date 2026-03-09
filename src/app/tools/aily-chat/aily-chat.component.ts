@@ -70,6 +70,7 @@ import { getAbsSyntaxTool } from './tools/getAbsSyntaxTool';
 // 连线图工具
 import { generateConnectionGraphTool, getPinmapSummaryTool, validateConnectionGraphTool, getSensorPinmapCatalogTool, generatePinmapTool, savePinmapTool, getCurrentSchematicTool, applySchematicTool } from './tools/connectionGraphTool';
 import { buildProjectTool } from './tools/buildProjectTool';
+import { reloadProjectTool } from './tools/reloadProjectTool';
 import { ConnectionGraphService } from '../../services/connection-graph.service';
 // // 原子化块操作工具
 // import {
@@ -1788,17 +1789,41 @@ Do not create non-existent boards and libraries.
       cleaned = cleaned.substring(0, openThinkIdx);
     }
 
-    // 3. 移除 UI-only 的代码块（aily-state / aily-button / aily-mermaid）
+    // 3. 移除 UI-only 的代码块（aily-state / aily-mermaid）
     //    这些在 x-dialog 中由专用组件渲染，对 LLM 历史上下文无意义
     cleaned = cleaned.replace(/```aily-state[\s\S]*?```/g, '');
-    cleaned = cleaned.replace(/```aily-button[\s\S]*?```/g, '');
     cleaned = cleaned.replace(/```aily-mermaid[\s\S]*?```/g, '');
 
-    // 4. 压缩连续空行为最多两个换行
+    // // 4. 将 aily-button 块转换为纯文本选项列表，保留 LLM 提供的选项上下文
+    // //    否则 LLM 不知道自己给了什么选项，无法理解用户的选择
+    // cleaned = cleaned.replace(/```aily-button\n?([\s\S]*?)\n?```/g, (_match, json) => {
+    //   return this.convertAilyButtonToText(json);
+    // });
+
+    // 5. 压缩连续空行为最多两个换行
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
 
     return cleaned.trim();
   }
+
+  // /**
+  //  * 将 aily-button JSON 转换为纯文本选项列表
+  //  * 例: [{"text":"1秒"},{"text":"2秒"}] → "[选项: 1秒 | 2秒]"
+  //  */
+  // private convertAilyButtonToText(json: string): string {
+  //   try {
+  //     const buttons = JSON.parse(json.trim());
+  //     if (Array.isArray(buttons) && buttons.length > 0) {
+  //       const labels = buttons.map((b: any) => b.text || b.label || '').filter(Boolean);
+  //       if (labels.length > 0) {
+  //         return `\n[aily-button选项转换后: ${labels.join(' | ')}]\n`;
+  //       }
+  //     }
+  //   } catch {
+  //     // JSON 解析失败，静默丢弃
+  //   }
+  //   return '';
+  // }
 
   // ==================== 工具结果清理与截断 ====================
 
@@ -2293,6 +2318,7 @@ ${JSON.stringify(errData)}
 
     if (sender === 'user') {
       if (this.isWaiting) {
+        // console.warn(`[无状态诊断] ⚠️ send() 被 isWaiting=true 阻止, 消息被丢弃: "${content.substring(0, 60)}", isCancelled=${this.isCancelled}, isCompleted=${this.isCompleted}`);
         return;
       }
 
@@ -2314,10 +2340,10 @@ ${JSON.stringify(errData)}
 
       const resourcesText = this.getResourcesText();
       if (resourcesText) {
-        llmText = `${resourcesText}\n\n<userRequest>${text}</userRequest>`;
+        llmText = `${resourcesText}\n\n<user_query>${text}</user_query>`;
         displayText = resourcesText + '\n\n' + text;
       } else {
-        llmText = `<userRequest>${text}</userRequest>`;
+        llmText = `<user_query>${text}</user_query>`;
         displayText = text;
       }
 
@@ -2327,6 +2353,8 @@ ${JSON.stringify(errData)}
       // ==================== 无状态模式：用户消息直接启动工具调用循环 ====================
       if (this.useStatelessMode) {
         this.conversationMessages.push({ role: 'user', content: llmText });
+        // console.log(`[无状态诊断] send() 新增 user 消息, conversationMessages 共 ${this.conversationMessages.length} 条:`,
+        //   this.conversationMessages.map((m, i) => `[${i}] ${m.role}${m.tool_calls ? '(+tool_calls)' : ''}: ${(m.content || '').substring(0, 60)}...`));
         this.isWaiting = true;
         this.currentMessageSource = 'mainAgent';
         this.toolCallingIteration = 0;
@@ -2439,6 +2467,17 @@ ${JSON.stringify(errData)}
     this.activeToolExecutions = 0;
     this.currentStatelessMode = false;
 
+    // ★ 关键修复：立即断开 SSE 订阅，从根源上消除竞态窗口。
+    //   如果不在此处断开，当用户快速点击按钮时会出现以下竞态：
+    //   stop() 设置 isCancelled=true → send() 重置 isCancelled=false →
+    //   startChatTurn() 中 await compressIfNeeded() 让出事件循环 →
+    //   旧 SSE complete 回调此时触发，发现 isCancelled=false →
+    //   错误调用 finalizeStatelessTurn() → 用旧的 currentTurnAssistantContent 重复 push。
+    if (this.messageSubscription) {
+      this.messageSubscription.unsubscribe();
+      this.messageSubscription = null;
+    }
+
     // 取消所有正在执行的 subagent 调用
     this.subagentSessionService.cleanupAll();
 
@@ -2475,6 +2514,12 @@ ${JSON.stringify(errData)}
           });
         }
       }
+
+      // ★ 防御性清空：push 完成后立即清空轮次收集器，
+      //   即使有其他回调意外触发 finalizeStatelessTurn()，也不会造成重复 push
+      this.currentTurnAssistantContent = '';
+      this.currentTurnToolCalls = [];
+      this.pendingToolResults = [];
 
       // 更新上下文预算
       this.contextBudgetService.updateBudget(this.conversationMessages, this.getCurrentTools());
@@ -2676,7 +2721,8 @@ ${JSON.stringify(errData)}
     this.currentStatelessMode = true;
 
     const budget = this.contextBudgetService.getSnapshot();
-    // console.log(`[无状态模式] 启动第 ${this.toolCallingIteration + 1} 轮聊天请求, messages: ${this.conversationMessages.length} 条, tokens: ~${budget.currentTokens}/${budget.maxContextTokens} (${budget.usagePercent}%)`);
+    // console.log(`[无状态诊断] startChatTurn() 第 ${this.toolCallingIteration + 1} 轮, messages: ${this.conversationMessages.length} 条, tokens: ~${budget.currentTokens}/${budget.maxContextTokens} (${budget.usagePercent}%)`);
+    // console.log(`[无状态诊断] 发送的 messages:`, this.conversationMessages.map((m, i) => `[${i}] ${m.role}${m.tool_calls ? `(+${m.tool_calls.length}tool_calls)` : ''}: ${(m.content || '').substring(0, 80)}...`));
 
     // 使用修改后的 streamConnect，传入 stateless 标志
     this.streamConnect(true);
@@ -2702,6 +2748,8 @@ ${JSON.stringify(errData)}
         }
       }));
     }
+
+    // console.log(`[无状态诊断] continueToolCallingLoop() ${this.currentTurnToolCalls.length} 个工具调用, ${this.pendingToolResults.length} 个结果, assistantContent长度=${this.currentTurnAssistantContent.length}`);
 
     this.conversationMessages.push(assistantMessage);
 
@@ -2753,11 +2801,16 @@ ${JSON.stringify(errData)}
       this.continueToolCallingLoop();
     } else {
       // 无工具调用，正常结束
+      const sanitized = this.currentTurnAssistantContent ? this.sanitizeAssistantContent(this.currentTurnAssistantContent) : '';
+      // console.log(`[无状态诊断] finalizeStatelessTurn() 正常结束, currentTurnAssistantContent长度=${this.currentTurnAssistantContent.length}, sanitized长度=${sanitized.length}`);
       if (this.currentTurnAssistantContent) {
         this.conversationMessages.push({
           role: 'assistant',
-          content: this.sanitizeAssistantContent(this.currentTurnAssistantContent)
+          content: sanitized
         });
+        // console.log(`[无状态诊断] 已存入 assistant 消息, conversationMessages 共 ${this.conversationMessages.length} 条`);
+      } else {
+        // console.warn(`[无状态诊断] ⚠️ currentTurnAssistantContent 为空, 未存入 assistant 消息!`);
       }
       // 更新上下文预算（轮次结束时的最终状态，含工具定义）
       this.contextBudgetService.updateBudget(this.conversationMessages, this.getCurrentTools());
@@ -2904,7 +2957,7 @@ ${JSON.stringify(errData)}
   "id": "repetition-check-${Date.now()}"
 }
 \`\`\`
-
+\n
 \`\`\`aily-button
 [{"text":"继续","action":"retry","type":"primary"}]
 \`\`\`
@@ -3273,6 +3326,7 @@ ${JSON.stringify(errData)}
                     const command = toolArgs.command;
                     const isNpmInstall = command.includes('npm i') || command.includes('npm install')
                     const isNpmUninstall = command.includes('npm uninstall');
+                    let unloadResults: string[] = [];
 
                     // 如果是 npm uninstall，需要在执行命令之前先卸载库（因为命令执行后文件就被删除了）
                     if (isNpmUninstall) {
@@ -3329,13 +3383,14 @@ ${JSON.stringify(errData)}
                         }
 
                         // 遍历所有匹配到的库包名进行卸载
+                        const unloadResults: string[] = [];
                         for (const libPackageName of uniqueLibs) {
                           try {
                             await this.blocklyService.unloadLibrary(libPackageName, projectPath);
-                            // console.log("库卸载成功:", libPackageName);
+                            unloadResults.push(`${libPackageName} 卸载成功`);
                           } catch (e) {
                             console.warn("卸载库失败:", libPackageName, e);
-                            // 卸载失败不影响其他库的处理，继续
+                            unloadResults.push(`${libPackageName} 卸载失败: ${e.message || e}`);
                           }
                         }
                       }
@@ -3343,6 +3398,11 @@ ${JSON.stringify(errData)}
 
                     // 执行命令，传递安全上下文用于路径验证
                     toolResult = await executeCommandTool(this.cmdService, toolArgs, this.securityContext);
+
+                    // npm uninstall 成功后，将库卸载结果附加到返回内容中
+                    if (isNpmUninstall && unloadResults && unloadResults.length > 0) {
+                      toolResult.content = (toolResult.content || '') + `\n\n库卸载结果:\n${unloadResults.join('\n')}`;
+                    }
 
                     if (!toolResult?.is_error) {
                       if (isNpmInstall) {
@@ -3395,14 +3455,19 @@ ${JSON.stringify(errData)}
                         const uniqueLibs = [...new Set(libsToLoad)];
                         // console.log('去重后的库列表:', uniqueLibs);
 
+                        const loadResults: string[] = [];
                         for (const libPackageName of uniqueLibs) {
                           try {
                             await this.blocklyService.loadLibrary(libPackageName, projectPath);
-                            // console.log("库加载成功:", libPackageName);
+                            loadResults.push(`${libPackageName} 加载成功`);
                           } catch (e) {
                             console.warn("加载库失败:", libPackageName, e);
-                            // 加载失败不影响其他库的加载，继续处理
+                            loadResults.push(`${libPackageName} 加载失败: ${e.message || e}`);
                           }
+                        }
+                        // 将库加载结果附加到返回内容中，让 LLM 知道哪些库加载成功/失败
+                        if (loadResults.length > 0) {
+                          toolResult.content = (toolResult.content || '') + `\n\n库加载结果:\n${loadResults.join('\n')}`;
                         }
                       }
                       // console.log(`命令 ${displayCommand} 执行成功`);
@@ -3868,6 +3933,13 @@ ${JSON.stringify(errData)}
                   case 'reload_project':
                     // console.log('[重新加载项目工具被调用]', toolArgs);
                     this.startToolCall(toolCallId, data.tool_name, "重新加载项目...", toolArgs);
+                    toolResult = await reloadProjectTool(this.projectService, toolArgs);
+                    if (toolResult?.is_error) {
+                      resultState = "error";
+                      resultText = '项目重新加载失败';
+                    } else {
+                      resultText = '项目重新加载成功';
+                    }
                     break;
                   case 'edit_abi_file':
                     // console.log('[编辑ABI文件工具被调用]', toolArgs);
@@ -4812,11 +4884,13 @@ ${JSON.stringify(errData)}
                 }
               }
 
-              // 根据执行结果确定状态
-              if (toolResult && toolResult?.is_error) {
-                resultState = "error";
-              } else if (toolResult && toolResult.warning) {
-                resultState = "warn";
+              // 根据执行结果确定状态（仅在 resultState 仍为默认值 "done" 时应用，避免覆盖各 case 中已明确设置的状态）
+              if (resultState === "done") {
+                if (toolResult && toolResult?.is_error) {
+                  resultState = "error";
+                } else if (toolResult && toolResult.warning) {
+                  resultState = "warn";
+                }
               }
             } catch (error) {
               console.warn('工具执行出错:', error);
@@ -4941,7 +5015,7 @@ ${JSON.stringify(errData)}
 // - 复杂结构分步创建，先创建外层再填充内层
 // - 使用get_abs_syntax工具了解ABS语法规范，确保代码符合要求
                 toolContent += `
-<rules>Blockly代码编辑流程:
+<rules># Blockly代码编辑流程:
 【需求分析】
 仔细分析用户需求，理解要实现的功能和目标。对于不明确的需求，提出澄清问题。
 

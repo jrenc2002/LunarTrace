@@ -594,7 +594,17 @@ export class ContextBudgetService {
         let cleanedContent = (msg.content || '')
           .replace(/<think>[\s\S]*?<\/think>/g, '')
           .replace(/```aily-state[\s\S]*?```/g, '')
-          .replace(/```aily-button[\s\S]*?```/g, '')
+          // .replace(/```aily-button\n?([\s\S]*?)\n?```/g, (_match: string, json: string) => {
+          //   // 保留选项上下文，转为纯文本（同 sanitizeAssistantContent 逻辑）
+          //   try {
+          //     const buttons = JSON.parse(json.trim());
+          //     if (Array.isArray(buttons) && buttons.length > 0) {
+          //       const labels = buttons.map((b: any) => b.text || b.label || '').filter(Boolean);
+          //       if (labels.length > 0) return `\n[aily-button选项转换后: ${labels.join(' | ')}]\n`;
+          //     }
+          //   } catch { /* ignore */ }
+          //   return '';
+          // })
           .replace(/```aily-mermaid[\s\S]*?```/g, '')
           .replace(/\[thinking\.\.\.?\]/g, '')
           .replace(/\n{3,}/g, '\n\n')
