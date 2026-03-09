@@ -151,8 +151,16 @@ export class NotificationComponent {
     this.uiService.openBottomSider('log');
   }
 
-  askAI() {
-    console.log('askAI');
+  sendAI() {
+    this.uiService.openTool("aily-chat");
+    console.log(this.data);
+    const detail = this.data?.detail || '';
+    setTimeout(() => {
+      window.sendToAilyChat(`运行日志：\n${detail}`, {
+        sender: 'NotificationComponent',
+        type: 'log'
+      });
+    }, 100);
   }
 
 }
