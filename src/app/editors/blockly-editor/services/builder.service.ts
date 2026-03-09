@@ -582,7 +582,7 @@ export class _BuilderService {
   }
 
   // 添加这个错误处理方法
-  private handleCompileError(errorMessage: string, sendToLog: boolean = true): void {
+  private handleCompileError(errorMessage: string, sendToLog: boolean = true, details?: string): void {
     // 计算编译耗时
     const buildEndTime = Date.now();
     const buildDuration = this.buildStartTime > 0 ? ((buildEndTime - this.buildStartTime) / 1000).toFixed(2) : '0.00';
@@ -590,12 +590,13 @@ export class _BuilderService {
 
     // 去除前后空格，保持排版整洁
     const cleanErrorMessage = errorMessage.trim();
+    const cleanDetailMessage = (details || errorMessage).trim();
 
     this.noticeService.update({
       title: "编译失败",
       text: `${cleanErrorMessage} (耗时: ${buildDuration}s)`,
       state: 'error',
-      detail: cleanErrorMessage,
+      detail: cleanDetailMessage,
       setTimeout: 600000,
       sendToLog: sendToLog
     });
@@ -999,7 +1000,8 @@ export class _BuilderService {
               this.isErrored = true;
               this.buildSubscription = null; // 清理订阅引用
               this.buildPromiseReject = null; // 清理 reject 引用
-              this.handleCompileError(error.message);
+              const fullErrorMessage = (error?.error || error?.stack || error?.message || String(error)).toString();
+              this.handleCompileError(error.message, true, fullErrorMessage);
               this.workflowService.finishBuild(false, error.message || 'Build error'); // 确保完成工作流状态
               reject({ state: 'error', text: error.message });
             },
@@ -1040,7 +1042,7 @@ export class _BuilderService {
                 console.log(`编译失败，耗时: ${buildDuration} 秒`);
 
                 lastStdErr = lastStdErr.replace(/\[\d+(;\d+)*m/g, '');
-                this.handleCompileError(lastStdErr || '编译未完成', false);
+                this.handleCompileError(lastStdErr || '编译未完成', false, fullStdErr || lastStdErr || '编译未完成');
                 this.logService.update({ detail: fullStdErr, state: 'error' });
                 this.passed = false;
                 
@@ -1110,7 +1112,8 @@ export class _BuilderService {
           throw error;
         }
       } catch (error) {
-        this.handleCompileError(error.message);
+        const fullErrorMessage = (error?.error || error?.stack || error?.message || String(error)).toString();
+        this.handleCompileError(error.message, true, fullErrorMessage);
         this.workflowService.finishBuild(false, error.message);
         reject({ state: 'error', text: error.message });
       }

@@ -128,12 +128,13 @@ export class _UploaderService {
   }
 
   // 添加这个错误处理方法
-  private handleUploadError(errorMessage: string, title = "上传失败") {
+  private handleUploadError(errorMessage: string, title = "上传失败", details?: string) {
     // console.error("handle errror: ", errorMessage);
+    const cleanDetailMessage = (details || errorMessage || '').toString().trim();
     this.noticeService.update({
       title: title,
       text: errorMessage,
-      detail: errorMessage,
+      detail: cleanDetailMessage,
       state: 'error',
       setTimeout: 600000
     });
@@ -206,7 +207,8 @@ export class _UploaderService {
               reject({ state: 'warn', text: '编译已取消' });
               return;
             } else {
-              this.handleUploadError('编译失败，请检查代码', "编译失败");
+              const buildErrorDetails = (error?.fullStdErr || error?.text || error?.message || error || '').toString();
+              this.handleUploadError('编译失败，请检查代码', "编译失败", buildErrorDetails);
               reject({ state: 'error', text: '编译失败，请检查代码' });
               return;
             }
@@ -216,7 +218,7 @@ export class _UploaderService {
           // 检查编译是否成功
           if (!this._builderService.passed) {
             this.uploadInProgress = false; // 重置状态
-            this.handleUploadError('编译失败，请检查代码', "编译失败");
+            this.handleUploadError('编译失败，请检查代码', "编译失败", '编译结果未通过，未检测到可用构建产物');
             reject({ state: 'error', text: '编译失败，请检查代码' });
             return;
           }
@@ -318,6 +320,7 @@ export class _UploaderService {
         let lastProgress = 0;
 
         let errorText = '';
+        let fullErrorText = '';
 
         this.uploadInProgress = true;
         this.noticeService.update({ title: title, text: lastUploadText, state: 'doing', progress: 0, setTimeout: 0, stop: () => { this.cancel(); } });
@@ -364,8 +367,8 @@ export class _UploaderService {
                       trimmedLine.toLowerCase().includes('failed') ||
                       trimmedLine.toLowerCase().includes('a fatal error occurred') ||
                       trimmedLine.toLowerCase().includes("can't open device")) {
-
-                      this.handleUploadError(trimmedLine);
+                      fullErrorText += trimmedLine + '\n';
+                      this.handleUploadError(trimmedLine, '上传失败', fullErrorText);
                     }
 
                     if (this.isErrored) {
@@ -517,7 +520,8 @@ export class _UploaderService {
             console.log("上传命令错误:", error);
             this.uploadInProgress = false; // 确保重置上传状态
             this._builderService.isUploading = false;
-            this.handleUploadError(error.message || '上传过程中发生错误');
+            const fullErrorMessage = (error?.error || error?.stack || error?.message || String(error)).toString();
+            this.handleUploadError(error.message || '上传过程中发生错误', '上传失败', fullErrorMessage);
             this.workflowService.finishUpload(false, error.message || 'Upload error');
             this.uploadPromiseReject = null;
             reject({ state: 'error', text: error.message || '上传失败' });
@@ -554,7 +558,7 @@ export class _UploaderService {
             } else if (this.isErrored) {
               console.log("上传命令完成 - 发生错误");
               this._builderService.isUploading = false;
-              this.handleUploadError('上传过程中发生错误');
+              this.handleUploadError('上传过程中发生错误', '上传失败', fullErrorText || errorText || '上传过程中发生错误');
               this.workflowService.finishUpload(false, errorText);
               this.uploadPromiseReject = null;
               reject({ state: 'error', text: errorText });
@@ -594,7 +598,8 @@ export class _UploaderService {
         })
       } catch (error) {
         this._builderService.isUploading = false; // 确保在异常情况下设置为false
-        this.handleUploadError(error.message || '上传失败');
+        const fullErrorMessage = (error?.error || error?.stack || error?.message || String(error)).toString();
+        this.handleUploadError(error.message || '上传失败', '上传失败', fullErrorMessage);
         this.workflowService.finishUpload(false, error.message || 'Upload failed');
         this.uploadPromiseReject = null;
         reject({ state: 'error', text: error.message || '上传失败' });
