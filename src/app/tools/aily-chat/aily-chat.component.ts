@@ -70,6 +70,7 @@ import { getAbsSyntaxTool } from './tools/getAbsSyntaxTool';
 // 连线图工具
 import { generateConnectionGraphTool, getPinmapSummaryTool, validateConnectionGraphTool, getSensorPinmapCatalogTool, generatePinmapTool, savePinmapTool, getCurrentSchematicTool, applySchematicTool } from './tools/connectionGraphTool';
 import { buildProjectTool } from './tools/buildProjectTool';
+import { reloadProjectTool } from './tools/reloadProjectTool';
 import { ConnectionGraphService } from '../../services/connection-graph.service';
 // // 原子化块操作工具
 // import {
@@ -1779,17 +1780,41 @@ Do not create non-existent boards and libraries.
       cleaned = cleaned.substring(0, openThinkIdx);
     }
 
-    // 3. 移除 UI-only 的代码块（aily-state / aily-button / aily-mermaid）
+    // 3. 移除 UI-only 的代码块（aily-state / aily-mermaid）
     //    这些在 x-dialog 中由专用组件渲染，对 LLM 历史上下文无意义
     cleaned = cleaned.replace(/```aily-state[\s\S]*?```/g, '');
-    cleaned = cleaned.replace(/```aily-button[\s\S]*?```/g, '');
     cleaned = cleaned.replace(/```aily-mermaid[\s\S]*?```/g, '');
 
-    // 4. 压缩连续空行为最多两个换行
+    // // 4. 将 aily-button 块转换为纯文本选项列表，保留 LLM 提供的选项上下文
+    // //    否则 LLM 不知道自己给了什么选项，无法理解用户的选择
+    // cleaned = cleaned.replace(/```aily-button\n?([\s\S]*?)\n?```/g, (_match, json) => {
+    //   return this.convertAilyButtonToText(json);
+    // });
+
+    // 5. 压缩连续空行为最多两个换行
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
 
     return cleaned.trim();
   }
+
+  // /**
+  //  * 将 aily-button JSON 转换为纯文本选项列表
+  //  * 例: [{"text":"1秒"},{"text":"2秒"}] → "[选项: 1秒 | 2秒]"
+  //  */
+  // private convertAilyButtonToText(json: string): string {
+  //   try {
+  //     const buttons = JSON.parse(json.trim());
+  //     if (Array.isArray(buttons) && buttons.length > 0) {
+  //       const labels = buttons.map((b: any) => b.text || b.label || '').filter(Boolean);
+  //       if (labels.length > 0) {
+  //         return `\n[aily-button选项转换后: ${labels.join(' | ')}]\n`;
+  //       }
+  //     }
+  //   } catch {
+  //     // JSON 解析失败，静默丢弃
+  //   }
+  //   return '';
+  // }
 
   // ==================== 工具结果清理与截断 ====================
 
@@ -2284,6 +2309,7 @@ ${JSON.stringify(errData)}
 
     if (sender === 'user') {
       if (this.isWaiting) {
+        // console.warn(`[无状态诊断] ⚠️ send() 被 isWaiting=true 阻止, 消息被丢弃: "${content.substring(0, 60)}", isCancelled=${this.isCancelled}, isCompleted=${this.isCompleted}`);
         return;
       }
 
@@ -2407,6 +2433,17 @@ ${JSON.stringify(errData)}
     // 标记任务已取消，防止后续工具结果触发重连
     this.isCancelled = true;
 
+    // ★ 关键修复：立即断开 SSE 订阅，从根源上消除竞态窗口。
+    //   如果不在此处断开，当用户快速点击按钮时会出现以下竞态：
+    //   stop() 设置 isCancelled=true → send() 重置 isCancelled=false →
+    //   startChatTurn() 中 await compressIfNeeded() 让出事件循环 →
+    //   旧 SSE complete 回调此时触发，发现 isCancelled=false →
+    //   错误调用 finalizeStatelessTurn() → 用旧的 currentTurnAssistantContent 重复 push。
+    if (this.messageSubscription) {
+      this.messageSubscription.unsubscribe();
+      this.messageSubscription = null;
+    }
+
     // 取消所有正在执行的 subagent 调用
     this.subagentSessionService.cleanupAll();
 
@@ -2444,6 +2481,12 @@ ${JSON.stringify(errData)}
         }
       }
 
+      // ★ 防御性清空：push 完成后立即清空轮次收集器，
+      //   即使有其他回调意外触发 finalizeStatelessTurn()，也不会造成重复 push
+      this.currentTurnAssistantContent = '';
+      this.currentTurnToolCalls = [];
+      this.pendingToolResults = [];
+
       // 更新上下文预算
       this.contextBudgetService.updateBudget(this.conversationMessages, this.getCurrentTools());
 
@@ -2464,18 +2507,21 @@ ${JSON.stringify(errData)}
       this.list[this.list.length - 1].state = 'done';
     }
 
+    // ★ 同步设置 isWaiting=false / isCompleted=true，
+    //   防止 aily-button 截断后用户立即点击按钮时 send() 因 isWaiting=true 静默丢弃消息。
+    this.isWaiting = false;
+    this.isCompleted = true;
+
+    // ★ 无状态模式：同步保存会话历史（不再依赖 cancelTask 回调，避免异步竞态）
+    if (this.currentStatelessMode) {
+      this.saveCurrentSession();
+    }
+
     this.chatService.cancelTask(this.sessionId).subscribe((res: any) => {
       if (res.status === 'success') {
         console.log('任务已取消:', res);
       } else {
         console.warn('取消任务失败:', res);
-      }
-      this.isWaiting = false;
-      this.isCompleted = true;
-
-      // ★ 无状态模式：stop 完成后保存会话历史
-      if (this.currentStatelessMode) {
-        this.saveCurrentSession();
       }
     });
   }
@@ -2868,7 +2914,7 @@ ${JSON.stringify(errData)}
   "id": "repetition-check-${Date.now()}"
 }
 \`\`\`
-
+\n
 \`\`\`aily-button
 [{"text":"继续","action":"retry","type":"primary"}]
 \`\`\`
@@ -3844,6 +3890,13 @@ ${JSON.stringify(errData)}
                   case 'reload_project':
                     // console.log('[重新加载项目工具被调用]', toolArgs);
                     this.startToolCall(toolCallId, data.tool_name, "重新加载项目...", toolArgs);
+                    toolResult = await reloadProjectTool(this.projectService, toolArgs);
+                    if (toolResult?.is_error) {
+                      resultState = "error";
+                      resultText = '项目重新加载失败';
+                    } else {
+                      resultText = '项目重新加载成功';
+                    }
                     break;
                   case 'edit_abi_file':
                     // console.log('[编辑ABI文件工具被调用]', toolArgs);

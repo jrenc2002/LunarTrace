@@ -8614,6 +8614,7 @@ function formatWorkspaceOverviewText(
         }
       } else {
         lines.push('  ❌ 发现语法问题:');
+        lines.push('  可使用 build_project 工具进行编译测试，定位具体错误行数和类型，辅助修复。');
         // lines.push('【修复原则】⚠️**严禁随意删除代码块，必须严格遵守以下原则**：');
         // lines.push('- 诊断优先：先完整分析代码逻辑和块结构，定位具体问题');
         // lines.push('  · 读取对应库readme和文档');

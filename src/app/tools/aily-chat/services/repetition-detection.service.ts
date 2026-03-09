@@ -510,9 +510,9 @@ export class RepetitionDetectionService {
       // 阈值根据模式长度调整
       let threshold: number;
       if (patternLen === 1) {
-        threshold = 15; // 15 个相同字符（如 \t\t\t...）
+        threshold = 50; // 50 个相同字符（如 \t\t\t...）
       } else if (patternLen === 2) {
-        threshold = 8;  // 8 次 2 字符模式（如 \t}\t}...）
+        threshold = 10;  // 10 次 2 字符模式（如 \t}\t}...）
       } else {
         threshold = 5;  // 5 次 3-5 字符模式
       }
