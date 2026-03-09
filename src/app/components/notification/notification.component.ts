@@ -45,7 +45,7 @@ export class NotificationComponent {
 
       const closable = data ? (data.closable ?? data.state !== 'doing') : true;
       this.isClosable = closable;
-      this.data = data ? { ...data, closable } : data;
+      this.data = data ? { ...data, closable, text: data.text ? this.cleanAnsi(data.text) : data.text } : data;
 
       // 如果有进度值，启动进度动画
       if (this.data && this.data.progress !== undefined) {
@@ -151,10 +151,23 @@ export class NotificationComponent {
     this.uiService.openBottomSider('log');
   }
 
+  // 清除 ANSI 格式化字符，先移除 SGR 颜色序列，再清除残留 ESC 字符
+  private cleanAnsi(text: string): string {
+    if (!text) return '';
+    return text.replace(/\x1b\[[\d;]*m/g, '').replace(/\x1b/g, '');
+  }
+
+  private cleanLogContent(text: string): string {
+    if (!text) return '';
+    let cleaned = this.cleanAnsi(text);
+    cleaned = cleaned.replace(/^\s*\[(ERROR|INFO|WARN|WARNING|DEBUG|TRACE|FATAL)\]\s*/gim, '');
+    return cleaned;
+  }
+
   sendAI() {
     this.uiService.openTool("aily-chat");
     console.log(this.data);
-    const detail = this.data?.detail || '';
+    const detail = this.cleanLogContent(this.data?.detail || '');
     setTimeout(() => {
       window.sendToAilyChat(`运行日志：\n${detail}`, {
         sender: 'NotificationComponent',
