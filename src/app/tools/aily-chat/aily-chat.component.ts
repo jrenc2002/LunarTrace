@@ -228,6 +228,8 @@ export class AilyChatComponent implements OnDestroy {
   private currentTurnAssistantContent = '';
   /** 当前轮次收集的工具调用元信息（用于构建 assistant 消息的 tool_calls 字段） */
   private currentTurnToolCalls: any[] = [];
+  /** 当前轮次是否被服务端标记为“未终止，需要继续下一轮” */
+  private currentTurnNeedContinue = false;
   /** 工具调用循环计数器 */
   private toolCallingIteration = 0;
   /** 无状态模式：正在执行中的工具数量（用于解决 async next 回调与 complete 回调的竞态） */
@@ -2110,6 +2112,21 @@ Do not create non-existent boards and libraries.
     const selectModel = this.currentModel?.model || null;
 
 
+    const extractErrorMessage = (value: any): string => {
+      if (typeof value === 'string') {
+        return value;
+      }
+      if (value instanceof Error) {
+        return value.message || '';
+      }
+      return value?.message || value?.error?.message || '';
+    };
+
+    const isTokenExpiredError = (value: any): boolean => {
+      const msg = extractErrorMessage(value);
+      return msg.includes('Token已过期') || msg.includes('token已过期');
+    };
+
     return new Promise<void>((resolve, reject) => {
       this.chatService.startSession(this.currentMode, tools, maxCount, customllmConfig, selectModel).subscribe({
         next: (res: any) => {
@@ -2139,8 +2156,8 @@ Do not create non-existent boards and libraries.
 
             resolve();
           } else {
-            if (res?.data === 401) {
-              this.message.error(res.message);
+            if (isTokenExpiredError(res)) {
+              this.message.error(extractErrorMessage(res) || '认证失败，请检查登录状态或 API Key。');
             } else {
               let errData = { "message": res.message || '启动会话失败，请稍后重试。' }
               this.appendMessage('aily', `
@@ -2156,14 +2173,18 @@ ${JSON.stringify(errData)}
         },
         error: (err) => {
           console.warn('启动会话失败:', err);
-          let errData = {
-            status: err.status,
-            message: err.message
-          }
-          this.appendMessage('aily', `
+          if (isTokenExpiredError(err)) {
+            this.message.error(extractErrorMessage(err) || '认证失败，请检查登录状态或 API Key。');
+          } else {
+            let errData = {
+              status: err?.status ?? err?.error?.status ?? null,
+              message: extractErrorMessage(err) || '启动会话失败，请稍后重试。'
+            }
+            this.appendMessage('aily', `
 \`\`\`aily-error
 ${JSON.stringify(errData)}
 \`\`\`\n\n`)
+          }
           this.isSessionStarting = false;
           reject(err);
         }
@@ -2465,6 +2486,7 @@ ${JSON.stringify(errData)}
     this.streamCompleted = false;
     this.sseStreamCompleted = false;
     this.activeToolExecutions = 0;
+    this.currentTurnNeedContinue = false;
     this.currentStatelessMode = false;
 
     // ★ 关键修复：立即断开 SSE 订阅，从根源上消除竞态窗口。
@@ -2716,6 +2738,7 @@ ${JSON.stringify(errData)}
     this.pendingToolResults = [];
     this.currentTurnAssistantContent = '';
     this.currentTurnToolCalls = [];
+    this.currentTurnNeedContinue = false;
     this.activeToolExecutions = 0;
     this.sseStreamCompleted = false;
     this.currentStatelessMode = true;
@@ -2796,8 +2819,8 @@ ${JSON.stringify(errData)}
    * 决策：有工具结果 → 继续循环；无工具结果 → 正常结束
    */
   private finalizeStatelessTurn(): void {
-    if (this.pendingToolResults.length > 0 && !this.isCancelled) {
-      // console.log(`[无状态模式] ${this.pendingToolResults.length} 个工具结果待处理，继续循环`);
+    if ((this.pendingToolResults.length > 0 || this.currentTurnNeedContinue) && !this.isCancelled) {
+      // console.log(`[无状态模式] tools=${this.pendingToolResults.length}, needContinue=${this.currentTurnNeedContinue}，继续循环`);
       this.continueToolCallingLoop();
     } else {
       // 无工具调用，正常结束
@@ -2847,6 +2870,8 @@ ${JSON.stringify(errData)}
     // console.log("stream connect sessionId: ", this.sessionId);
     let newConnect = true;
     let newProject = false;
+    let lastStreamEvent: any = null;
+    let completionReason = 'unknown';
     if (!this.sessionId) {
       console.warn('无法建立流连接：sessionId 为空');
       return;
@@ -2906,6 +2931,16 @@ ${JSON.stringify(errData)}
         }
         if (this.isCancelled) {
           return; // 用户已中断，阻止流继续渲染（含 think loading 被覆盖）
+        }
+
+        // 记录最后收到的一条流事件，供 complete 回调诊断结束原因
+        lastStreamEvent = data;
+        if (data?.type === 'TaskCompleted') {
+          completionReason = data.stop_reason || 'TaskCompleted without stop_reason';
+        } else if (data?.type === 'StreamComplete') {
+          completionReason = 'StreamComplete';
+        } else if (data?.type === 'error') {
+          completionReason = `error: ${data.message || 'unknown'}`;
         }
 
         // console.log("Recv: ", data);
@@ -2989,6 +3024,16 @@ ${JSON.stringify(errData)}
                   }
                 }
                 this.stop();
+              }
+            }
+          } else if (data.type === 'TEXT_NO_TERMINATE') {
+            // 服务端标记：当前轮次文本未终止，需要进入下一轮继续请求
+            if (statelessMode) {
+              this.currentTurnNeedContinue = true;
+              // 兼容后端可能附带的补充文本
+              if (data.content) {
+                this.appendMessage('aily', data.content, messageSource);
+                this.currentTurnAssistantContent += data.content;
               }
             }
           } else if (data.type === 'TextMessage') {
@@ -5220,6 +5265,14 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
         }
       },
       complete: () => {
+        console.log('[stream complete]', {
+          reason: completionReason,
+          lastEventType: lastStreamEvent?.type || 'none',
+          lastEvent: lastStreamEvent,
+          isCancelled: this.isCancelled,
+          statelessMode,
+        });
+        
         // 清理流式残留内容
         this.cleanupLastAiMessage();
 
