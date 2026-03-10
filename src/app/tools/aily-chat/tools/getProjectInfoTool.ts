@@ -1,5 +1,6 @@
-import { ToolUseResult } from "./tools";
+﻿import { ToolUseResult } from "./tools";
 import { ProjectService } from "../../../services/project.service";
+import { AilyHost } from '../core/host';
 
 interface GetProjectInfoInput {
     include_readme?: boolean; // 是否包含readme_ai.md路径，默认true
@@ -60,8 +61,8 @@ export async function getProjectInfoTool(prjService: ProjectService, input: GetP
         // 尝试读取项目名称
         try {
             const packageJsonPath = window["path"].join(currentProjectPath, 'package.json');
-            if (window['fs'].existsSync(packageJsonPath)) {
-                const packageJson = JSON.parse(window['fs'].readFileSync(packageJsonPath, 'utf8'));
+            if (AilyHost.get().fs.existsSync(packageJsonPath)) {
+                const packageJson = JSON.parse(AilyHost.get().fs.readFileSync(packageJsonPath, 'utf8'));
                 result.projectName = packageJson.name;
             }
         } catch (e) {
@@ -74,7 +75,7 @@ export async function getProjectInfoTool(prjService: ProjectService, input: GetP
         // 调试：输出路径信息
         // console.log('[getProjectInfoTool] 检查依赖目录:', ailyProjectPath);
         
-        if (!window['fs'].existsSync(ailyProjectPath)) {
+        if (!AilyHost.get().fs.existsSync(ailyProjectPath)) {
             result.message = "项目依赖目录不存在，可能需要先安装依赖。";
             // console.log('[getProjectInfoTool] 依赖目录不存在');
             return {
@@ -84,7 +85,7 @@ export async function getProjectInfoTool(prjService: ProjectService, input: GetP
         }
 
         // 读取目录内容
-        const items = window['fs'].readdirSync(ailyProjectPath);
+        const items = AilyHost.get().fs.readdirSync(ailyProjectPath);
         // console.log('[getProjectInfoTool] 目录内容:', items);
         
         const libraries: LibraryInfo[] = [];
@@ -95,7 +96,7 @@ export async function getProjectInfoTool(prjService: ProjectService, input: GetP
             
             // 检查是否是目录
             try {
-                const isDir = window['fs'].isDirectory(itemPath);
+                const isDir = AilyHost.get().fs.isDirectory(itemPath);
                 if (!isDir) {
                     // console.log(`[getProjectInfoTool] 跳过非目录项: ${item}`);
                     continue;
@@ -127,7 +128,7 @@ export async function getProjectInfoTool(prjService: ProjectService, input: GetP
                 // 检查是否存在 readme_ai.md
                 if (include_readme) {
                     const readmePath = window["path"].join(itemPath, 'readme_ai.md');
-                    if (window['fs'].existsSync(readmePath)) {
+                    if (AilyHost.get().fs.existsSync(readmePath)) {
                         libInfo.readmePath = `${simplifiedPath}/readme_ai.md`;
                     }
                 }

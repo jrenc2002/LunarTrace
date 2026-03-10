@@ -1,3 +1,4 @@
+﻿import { AilyHost } from '../core/host';
 export interface TodoItem {
   id: number
   content: string
@@ -38,16 +39,16 @@ export interface ValidationResult {
   meta?: any
 }
 
-// 文件存储适配器 - 适配现有的 window['fs'] API
+// 文件存储适配器 - 适配现有的 AilyHost.get().fs API
 const FileStorageAdapter = {
-  exists: (path: string) => window['fs'].existsSync(path),
-  read: (path: string) => window['fs'].readFileSync(path, 'utf-8'),
+  exists: (path: string) => AilyHost.get().fs.existsSync(path),
+  read: (path: string) => AilyHost.get().fs.readFileSync(path, 'utf-8'),
   write: (path: string, content: string) => {
-    const dir = window['path'].dirname(path);
-    if (!window['fs'].existsSync(dir)) {
-      window['fs'].mkdirSync(dir, { recursive: true });
+    const dir = AilyHost.get().path.dirname(path);
+    if (!AilyHost.get().fs.existsSync(dir)) {
+      AilyHost.get().fs.mkdirSync(dir, { recursive: true });
     }
-    window['fs'].writeFileSync(path, content, 'utf-8');
+    AilyHost.get().fs.writeFileSync(path, content);
   }
 };
 
@@ -144,7 +145,7 @@ export function validateTodos(todos: TodoItem[]): ValidationResult {
 // 指标管理
 function updateMetrics(sessionId: string, operation: string, cacheHit: boolean = false): void {
   try {
-    const metricsFile = `${window['path'].getAppDataPath()}/aily-todos/metrics_${sessionId}.json`
+    const metricsFile = `${AilyHost.get().path.getAppDataPath()}/aily-todos/metrics_${sessionId}.json`
     let metrics: TodoMetrics = {
       totalOperations: 0,
       cacheHits: 0,
@@ -187,7 +188,7 @@ export function getTodos(sessionId: string = 'default'): TodoItem[] {
 
   updateMetrics(sessionId, 'getTodos', false)
   
-  const todoFile = `${window['path'].getAppDataPath()}/aily-todos/todos_${sessionId}.json`
+  const todoFile = `${AilyHost.get().path.getAppDataPath()}/aily-todos/todos_${sessionId}.json`
   let todos: TodoItem[] = []
   
   try {
@@ -221,7 +222,7 @@ export function setTodos(todos: TodoItem[], sessionId: string = 'default'): void
     // 智能排序
     const sortedTodos = smartSort(processedTodos)
     
-    const todoFile = `${window['path'].getAppDataPath()}/aily-todos/todos_${sessionId}.json`
+    const todoFile = `${AilyHost.get().path.getAppDataPath()}/aily-todos/todos_${sessionId}.json`
     FileStorageAdapter.write(todoFile, JSON.stringify(sortedTodos, null, 2))
     
     // 清除缓存
@@ -357,7 +358,7 @@ export function getTodoStatistics(sessionId: string = 'default') {
   }
 
   try {
-    const metricsFile = `${window['path'].getAppDataPath()}/aily-todos/metrics_${sessionId}.json`
+    const metricsFile = `${AilyHost.get().path.getAppDataPath()}/aily-todos/metrics_${sessionId}.json`
     if (FileStorageAdapter.exists(metricsFile)) {
       const fileContent = FileStorageAdapter.read(metricsFile)
       metrics = { ...metrics, ...JSON.parse(fileContent) }
@@ -460,12 +461,12 @@ export function getNextTask(sessionId: string = 'default'): TodoItem | null {
 export function clearTodoStorage(): void {
   // 删除所有存储文件
   try {
-    const dir = `${window['path'].getAppDataPath()}/aily-todos`
+    const dir = `${AilyHost.get().path.getAppDataPath()}/aily-todos`
     if (FileStorageAdapter.exists(dir)) {
-      const files = window['fs'].readdirSync(dir)
+      const files = AilyHost.get().fs.readdirSync(dir)
       for (const file of files) {
         if (file.startsWith('todos_') || file.startsWith('metrics_')) {
-          window['fs'].unlinkSync(window['path'].join(dir, file))
+          AilyHost.get().fs.unlinkSync(AilyHost.get().path.join(dir, file))
         }
       }
     }

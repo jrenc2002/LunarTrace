@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ChatHistoryService - Copilot 风格的聊天历史管理服务
  *
  * 采用「全局索引 + 分项目/全局兜底数据」双轨架构：
@@ -19,6 +19,7 @@
  */
 
 import { Injectable, OnDestroy } from '@angular/core';
+import { AilyHost } from '../core/host';
 
 // ===== 类型定义 =====
 
@@ -616,12 +617,12 @@ export class ChatHistoryService implements OnDestroy {
       if (projectPath) {
         const filePath = this.joinPath(projectPath, this.PROJECT_CHAT_DIR, `${sessionId}.json`);
         if (this.fileExists(filePath)) {
-          window['fs'].unlinkSync(filePath);
+          AilyHost.get().fs.unlinkSync(filePath);
         }
       } else {
         const filePath = this.joinPath(this.getGlobalChatDataDir(), `${sessionId}.json`);
         if (this.fileExists(filePath)) {
-          window['fs'].unlinkSync(filePath);
+          AilyHost.get().fs.unlinkSync(filePath);
         }
       }
     } catch { }
@@ -652,42 +653,42 @@ export class ChatHistoryService implements OnDestroy {
   // =========================================================================
 
   private hasFs(): boolean {
-    return typeof window !== 'undefined' && !!window['fs'];
+    return typeof window !== 'undefined' && !!AilyHost.get().fs;
   }
 
   private fileExists(path: string): boolean {
     try {
-      return window['fs'].existsSync(path);
+      return AilyHost.get().fs.existsSync(path);
     } catch {
       return false;
     }
   }
 
   private readFileSync(path: string): string {
-    return window['fs'].readFileSync(path, 'utf-8');
+    return AilyHost.get().fs.readFileSync(path, 'utf-8');
   }
 
   private writeFileSync(path: string, content: string): void {
-    window['fs'].writeFileSync(path, content, 'utf-8');
+    AilyHost.get().fs.writeFileSync(path, content, 'utf-8');
   }
 
   private ensureDir(dirPath: string): void {
     if (!this.fileExists(dirPath)) {
-      window['fs'].mkdirSync(dirPath, { recursive: true });
+      AilyHost.get().fs.mkdirSync(dirPath, { recursive: true });
     }
   }
 
   private joinPath(...parts: string[]): string {
     // 优先使用 Electron 的 path API
-    if (window['path']?.join) {
-      return window['path'].join(...parts);
+    if (AilyHost.get().path?.join) {
+      return AilyHost.get().path.join(...parts);
     }
     // 降级：简单拼接
     return parts.join('/').replace(/\/+/g, '/');
   }
 
   private getGlobalAilyDir(): string {
-    return window['path']?.getAppDataPath?.() || '';
+    return AilyHost.get().path?.getAppDataPath?.() || '';
   }
 
   private getGlobalIndexPath(): string {

@@ -1,5 +1,6 @@
-import { ToolUseResult } from "./tools";
+﻿import { ToolUseResult } from "./tools";
 import { lintAndFormat, shouldLint } from "../services/lintService";
+import { AilyHost } from '../core/host';
 import { 
     PathSecurityContext, 
     validateFileWrite,
@@ -74,7 +75,7 @@ export async function createFileTool(
         // ==================== 安全验证结束 ====================
 
         // 检查文件是否已存在
-        if (window['fs'].existsSync(filePath) && !overwrite) {
+        if (AilyHost.get().fs.existsSync(filePath) && !overwrite) {
             const toolResult = {
                 is_error: true,
                 content: `文件已存在: ${filePath}。如需覆盖，请设置 overwrite 参数为 true。`
@@ -82,24 +83,24 @@ export async function createFileTool(
             return toolResult;
         }
 
-        const dir = window['path'].dirname(filePath);
+        const dir = AilyHost.get().path.dirname(filePath);
         // console.log(`文件目录: ${dir}`);
         
         // 确保目录存在
-        if (!window['fs'].existsSync(dir)) {
+        if (!AilyHost.get().fs.existsSync(dir)) {
             // console.log(`创建目录: ${dir}`);
-            await window['fs'].mkdirSync(dir, { recursive: true });
+            await AilyHost.get().fs.mkdirSync(dir, { recursive: true });
         }
         
         // 创建备份（如果文件存在且配置了备份）
-        if (securityContext && FILE_WRITE_LIMITS.createBackup && window['fs'].existsSync(filePath)) {
+        if (securityContext && FILE_WRITE_LIMITS.createBackup && AilyHost.get().fs.existsSync(filePath)) {
             try {
-                const ext = window['path'].extname(filePath);
-                const baseName = window['path'].basename(filePath, ext);
-                const dirName = window['path'].dirname(filePath);
-                const backupPath = window['path'].join(dirName, `${FILE_WRITE_LIMITS.backupPrefix}${baseName}${ext}`);
-                const originalContent = await window['fs'].readFileSync(filePath, 'utf-8');
-                await window['fs'].writeFileSync(backupPath, originalContent);
+                const ext = AilyHost.get().path.extname(filePath);
+                const baseName = AilyHost.get().path.basename(filePath, ext);
+                const dirName = AilyHost.get().path.dirname(filePath);
+                const backupPath = AilyHost.get().path.join(dirName, `${FILE_WRITE_LIMITS.backupPrefix}${baseName}${ext}`);
+                const originalContent = await AilyHost.get().fs.readFileSync(filePath, 'utf-8');
+                await AilyHost.get().fs.writeFileSync(backupPath, originalContent);
             } catch (backupError) {
                 console.warn('备份文件失败:', backupError);
             }
@@ -107,7 +108,7 @@ export async function createFileTool(
         
         // 写入文件
         // console.log(`写入文件内容，长度: ${content.length}`);
-        await window['fs'].writeFileSync(filePath, content, encoding);
+        await AilyHost.get().fs.writeFileSync(filePath, content, encoding);
         
         // 对 .json 和 .js 文件进行 lint 检测
         let lintMessage = '';
