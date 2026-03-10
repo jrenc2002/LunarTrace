@@ -1586,7 +1586,7 @@ export class ProjectService {
         throw new Error('当前项目路径未设置');
       }
       // 0. 保存当前项目
-      this.save();
+      await this.save();
       this.message.loading(this.translate.instant('PROJECT.SWITCHING_BOARD'), { nzDuration: 5000 });
 
       // 记录开发板使用次数
@@ -1599,11 +1599,13 @@ export class ProjectService {
         this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('PROJECT.UNINSTALLING_CURRENT_BOARD') });
         await this.cmdService.runAsync(`npm uninstall ${currentBoardModule}`, this.currentProjectPath);
       }
-      // 2. npm install 安装boardInfo.name@boardInfo.version
+      // 2. npm install 安装boardInfo.name@boardInfo.version 到 appDataPath（与 projectNew 一致）
+      const appDataPath = window['path'].getAppDataPath();
       const newBoardPackage = `${boardInfo.name}@${boardInfo.version}`;
       console.log('安装新开发板模块:', newBoardPackage);
       this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('PROJECT.INSTALLING_NEW_BOARD') });
       await this.cmdService.runAsync(`npm install ${newBoardPackage}`, this.currentProjectPath);
+      await this.cmdService.runAsync(`npm install ${newBoardPackage} --prefix "${appDataPath}"`);
 
       // 2.5. 获取新开发板的模板并更新package.json
       console.log('更新项目配置文件...');
@@ -1612,8 +1614,7 @@ export class ProjectService {
       // 读取当前package.json保留项目基本信息
       const currentPackageJson = await this.getPackageJson();
       
-      // 获取新开发板的模板package.json
-      const appDataPath = window['path'].getAppDataPath();
+      // 获取新开发板的模板package.json（从 appDataPath 读取）
       const templatePath = `${appDataPath}${pt}node_modules${pt}${boardInfo.name}${pt}template`;
       const templatePackageJsonPath = `${templatePath}${pt}package.json`;
       
@@ -1649,6 +1650,9 @@ export class ProjectService {
         console.warn('未找到新开发板的模板package.json，跳过配置更新');
       }
 
+      // 同步更新 temp 副本，防止 projectOpen 重新加载时被旧的 temp/package.json 覆盖
+      await this.copyPackageJsonToTemp(this.currentProjectPath);
+
       // 3. 重新加载项目
       console.log('重新加载项目...');
       await this.projectOpen(this.currentProjectPath);
@@ -1661,6 +1665,7 @@ export class ProjectService {
     } catch (error) {
       console.error('切换开发板失败:', error);
       this.message.error(this.translate.instant('PROJECT.BOARD_SWITCH_FAILED') + error.message);
+      throw error;
     }
   }
 
