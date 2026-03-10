@@ -2933,7 +2933,17 @@ ${JSON.stringify(errData)}
               // 检测 aily-button 块：think 标签内不匹配；通过 last message content 正则匹配，截断 ```aily-button内容``` 后的多余内容并中断 SSE
               if (!this.insideThink && this.checkAndTruncateAilyButtonBlock()) {
                 if (statelessMode) {
-                  this.currentTurnAssistantContent = this.list[this.list.length - 1]?.content || this.currentTurnAssistantContent;
+                  // ★ 关键修复：在 currentTurnAssistantContent 上直接截断，
+                  //   而不是用 list[last].content 覆盖。
+                  //   list[last].content 包含所有轮次的累积 UI 内容（因为 appendMessage 追加到同一条 aily 消息），
+                  //   但 currentTurnAssistantContent 只包含当前轮次的文本（每轮 startChatTurn 时重置）。
+                  //   用 UI 内容覆盖会导致前几轮的文字被重复存入 conversationMessages。
+                  const ailyBtnMatch = this.currentTurnAssistantContent.match(/```aily-button[\s\S]*?```/);
+                  if (ailyBtnMatch) {
+                    this.currentTurnAssistantContent = this.currentTurnAssistantContent.substring(
+                      0, ailyBtnMatch.index! + ailyBtnMatch[0].length
+                    );
+                  }
                 }
                 this.stop();
               }
