@@ -15,7 +15,7 @@ import {
   getPreferredHttpErrorMessage as _getPreferredHttpErrorMessage,
 } from '../services/http-error-handler.service';
 import {
-  BLOCK_TOOLS, BLOCKLY_TOOL_NAMES, PATH_INFO_TOOL_NAMES,
+  BLOCK_TOOLS, BLOCKLY_TOOL_NAMES,
   BLOCKLY_RULES_TEXT, ASK_MODE_ROLE_TEXT,
 } from '../services/stream-constants';
 
@@ -32,7 +32,7 @@ export class StreamProcessorHelper {
   }
 
   streamConnect(statelessMode: boolean = false): void {
-    let newConnect = true;
+    console.log('发起流连接，statelessMode:', statelessMode);
     if (!this.engine.sessionId) { console.warn('无法建立流连接：sessionId 为空'); return; }
 
     if (this.engine.messageSubscription) { this.engine.messageSubscription.unsubscribe(); this.engine.messageSubscription = null; }
@@ -106,12 +106,15 @@ export class StreamProcessorHelper {
               const execState = data.is_error ? ToolCallState.ERROR : ToolCallState.DONE;
               this.engine.msg.completeToolCall(data.tool_id, data.tool_name || 'unknown', execState, execResultText);
             }
+          } else if (data.type === 'context_trimmed' || data.type === 'safety_net_trimmed') {
+            console.warn('[安全兜底] 服务端触发了上下文裁剪:', data);
           } else if (data.type.startsWith('context_compression_')) {
             if (data.type.startsWith('context_compression_start')) {
               this.engine.msg.appendMessage('aily', `\n\n\n\`\`\`aily-state\n{\n  "state": "doing",\n  "text": "${data.content}",\n  "id": "${data.id}"\n}\n\`\`\`\n\n\n`, messageSource);
             } else {
               this.engine.msg.appendMessage('aily', `\n\n\n\`\`\`aily-state\n{\n  "state": "done",\n  "text": "${data.content}",\n  "id": "${data.id}"\n}\n\`\`\`\n\n\n`, messageSource);
-              newConnect = true;
+              // 上下文压缩后规则可能被清除，允许下一次工具调用重新注入
+              this.engine.rulesInjectedThisSession = false;
             }
           } else if (data.type === 'error') {
             if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
@@ -233,6 +236,7 @@ export class StreamProcessorHelper {
                 toolResult = await this.engine.mcpService.use_tool(data.tool_name, toolArgs);
               } else {
                 if (ToolRegistry.has(data.tool_name)) {
+                  console.log(`[ToolDispatch] 调用工具: ${data.tool_name}，参数:`, toolArgs);
                   const regResult = await this.engine.executeRegisteredTool(toolCallId, data.tool_name, toolArgs);
                   toolResult = regResult.toolResult;
                   resultState = regResult.resultState;
@@ -266,22 +270,26 @@ export class StreamProcessorHelper {
               ? '<info>如果子任务已完成，请返回结果给主Agent</info>'
               : '<info>如果想结束对话，转交给用户，可以使用[to_xxx]，这里的xxx为user</info>';
 
+            // 会话级注入：仅首次工具调用注入规则/角色提示词
+            const shouldInjectRules = !this.engine.rulesInjectedThisSession;
+
             if (toolResult?.content && this.engine.chatService.currentMode === 'agent') {
               const isBlocklyTool = BLOCKLY_TOOL_NAMES.includes(data.tool_name);
-              const needsPathInfo = PATH_INFO_TOOL_NAMES.includes(data.tool_name);
               const needsRules = !isSubagent && isBlocklyTool && (toolResult?.is_error || resultState === 'warn');
-              const shouldIncludeKeyInfo = needsPathInfo || toolResult?.is_error || resultState === 'warn';
 
-              if (!isSubagent && (needsRules || newConnect || toolResult?.metadata?.newProject)) {
-                newConnect = false;
+              if (!isSubagent && (needsRules || shouldInjectRules || toolResult?.metadata?.newProject)) {
+                this.engine.rulesInjectedThisSession = true;
                 toolContent += `\n${BLOCKLY_RULES_TEXT}\n<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
-              } else if (shouldIncludeKeyInfo) {
-                toolContent += `\n<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}${reminder}`;
               } else {
-                toolContent += `<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}${reminder}`;
+                toolContent += `<toolResult>${toolResult?.content}</toolResult>${reminder}`;
               }
             } else {
-              toolContent = `\n${ASK_MODE_ROLE_TEXT}\n<toolResult>${toolResult?.content || '工具执行完成，无返回内容'}</toolResult>\n${agentInfoTip}`;
+              if (shouldInjectRules) {
+                this.engine.rulesInjectedThisSession = true;
+                toolContent = `\n<rules>${ASK_MODE_ROLE_TEXT}</rules>\n<toolResult>${toolResult?.content || '工具执行完成，无返回内容'}</toolResult>\n${agentInfoTip}`;
+              } else {
+                toolContent = `<toolResult>${toolResult?.content || '工具执行完成，无返回内容'}</toolResult>`;
+              }
             }
 
             if (data.tool_name !== 'todo_write_tool' && resultText) {
@@ -295,6 +303,7 @@ export class StreamProcessorHelper {
             }
 
             if (statelessMode) {
+              console.log('工具调用结果（无状态模式）:', { tool_id: data.tool_id, tool_name: data.tool_name, content: toolContent, resultText, is_error: toolResult?.is_error ?? false });
               this.engine.pendingToolResults.push({
                 tool_id: data.tool_id, tool_name: data.tool_name,
                 content: toolContent, resultText: this.engine.msg.makeJsonSafe(resultText),

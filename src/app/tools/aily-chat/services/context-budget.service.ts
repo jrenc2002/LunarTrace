@@ -220,7 +220,13 @@ export class ContextBudgetService {
   private static readonly TOOL_RESULT_TRUNCATE_LENGTH = 500;
 
   /** 保留最近 N 条消息不压缩（确保最近上下文完整） */
-  private static readonly RECENT_MESSAGES_PRESERVE = 6;
+  private static readonly RECENT_MESSAGES_PRESERVE = 8;
+
+  /**
+   * 留给模型输出的 token 比例（不能把上下文窗口全填满）
+   * 参考 Copilot: 预留 15% 给模型生成
+   */
+  private static readonly OUTPUT_RESERVE_RATIO = 0.15;
 
   /**
    * 服务端系统提示词的预估 token 数
@@ -229,7 +235,7 @@ export class ContextBudgetService {
    * 通过人工预估给出合理值。后续可由服务端 API 返回精确值。
    * 当前 系统提示词约 10000+ 中文字符 → ~4500 tokens
    */
-  private static readonly ESTIMATED_SYSTEM_PROMPT_TOKENS = 4500;
+  private static readonly ESTIMATED_SYSTEM_PROMPT_TOKENS = 6000;
 
   // ==================== 状态 ====================
 
@@ -356,6 +362,15 @@ export class ContextBudgetService {
   }
 
   /**
+   * 更新服务端返回的准确工具定义 token 数。
+   * 当服务端提供了精确值时，优先使用服务端值而非本地估算。
+   */
+  private _serverToolsTokens: number | null = null;
+  updateServerToolsTokens(tokenCount: number): void {
+    this._serverToolsTokens = tokenCount;
+  }
+
+  /**
    * 更新工具定义 token 估算
    * @param tools 当前工具数组
    */
@@ -388,7 +403,8 @@ export class ContextBudgetService {
 
     const messagesTokens = estimateMessagesTokens(messages);
     const systemTokens = this._cachedSystemTokens;
-    const toolsTokens = this._cachedToolsTokens;
+    // 优先使用服务端返回的准确工具定义 token 数
+    const toolsTokens = this._serverToolsTokens ?? this._cachedToolsTokens;
     const currentTokens = systemTokens + toolsTokens + messagesTokens;
     const max = this.maxContextTokens;
 
@@ -486,41 +502,41 @@ export class ContextBudgetService {
       return messages;
     }
 
-    // ==================== 层级 2: 工具结果压缩 ====================
-    if (currentTokens < this.summarizationThreshold) {
-      const compressed = this.compressToolResults(messages);
-      const afterTokens = estimateMessagesTokens(compressed);
-      console.log(`[上下文压缩] 工具结果压缩: ${currentTokens} → ${afterTokens} tokens (节省 ${currentTokens - afterTokens})`);
+    // ==================== 层级 2: 优先级裁剪（Copilot PrioritizedList 策略） ====================
+    // 参考 Copilot prompt-tsx: 所有裁剪在前端完成，服务端只做安全兜底
+    // 先做内容压缩 + 优先级消息丢弃，再决定是否需要 LLM 摘要
+    const trimmed = this.prioritizedTrim(messages);
+    const trimmedTokens = estimateMessagesTokens(trimmed);
 
+    if (trimmedTokens < this.summarizationThreshold) {
+      console.log(`[上下文压缩] 优先级裁剪: ${currentTokens} → ${trimmedTokens} tokens (节省 ${currentTokens - trimmedTokens})`);
       this.compressionEventSubject.next({
         type: 'tool_compression',
         beforeTokens: currentTokens,
-        afterTokens,
-        compressedMessages: messages.length - compressed.length,
+        afterTokens: trimmedTokens,
+        compressedMessages: messages.length - trimmed.length,
         timestamp: Date.now()
       });
-
-      this.updateBudget(compressed);
-      return compressed;
+      this.updateBudget(trimmed);
+      return trimmed;
     }
 
     // ==================== 层级 3: 前台 LLM 摘要 ====================
     // 若后台摘要正在进行，不发起重复的前台调用（防止并行竞态），
-    // 回退到工具结果压缩先缓解，下次请求时后台摘要应已完成
+    // 回退到优先级裁剪先缓解，下次请求时后台摘要应已完成
     if (bg.state === BackgroundSummarizationState.InProgress) {
-      console.log(`[上下文压缩] 后台摘要正在进行，跳过前台 LLM 调用，回退到工具结果压缩`);
-      const compressed = this.compressToolResults(messages);
-      this.updateBudget(compressed);
-      return compressed;
+      console.log(`[上下文压缩] 后台摘要正在进行，跳过前台 LLM 调用，使用优先级裁剪`);
+      this.updateBudget(trimmed);
+      return trimmed;
     }
 
-    console.log(`[上下文压缩] Token 数 (${currentTokens}) 超过摘要阈值 (${this.summarizationThreshold})，触发前台 LLM 摘要`);
+    console.log(`[上下文压缩] Token 数 (${trimmedTokens}) 超过摘要阈值 (${this.summarizationThreshold})，触发前台 LLM 摘要`);
 
     try {
       // 委托给 BackgroundSummarizerService，复用其 findPreservePoint / buildConversationText / validateAndTruncateSummary
-      const summarized = await this.backgroundSummarizer.foregroundSummarize(messages, sessionId, llmConfig, selectModel);
+      const summarized = await this.backgroundSummarizer.foregroundSummarize(trimmed, sessionId, llmConfig, selectModel);
       const afterTokens = estimateMessagesTokens(summarized);
-      console.log(`[上下文压缩] LLM 摘要: ${currentTokens} → ${afterTokens} tokens (节省 ${currentTokens - afterTokens})`);
+      console.log(`[上下文压缩] LLM 摘要: ${trimmedTokens} → ${afterTokens} tokens (节省 ${trimmedTokens - afterTokens})`);
 
       this.compressionEventSubject.next({
         type: 'llm_summarization',
@@ -533,43 +549,124 @@ export class ContextBudgetService {
       this.updateBudget(summarized);
       return summarized;
     } catch (error) {
-      console.warn('[上下文压缩] LLM 摘要失败，回退到工具结果压缩（Simple mode fallback）:', error);
-      // 层级 4: Simple mode fallback — 纯截断压缩（不需要 LLM）
-      const compressed = this.compressToolResults(messages);
-      this.updateBudget(compressed);
-      return compressed;
+      console.warn('[上下文压缩] LLM 摘要失败，回退到优先级裁剪（Simple mode fallback）:', error);
+      // 层级 4: Simple mode fallback — 已经做过优先级裁剪，直接用
+      this.updateBudget(trimmed);
+      return trimmed;
     }
   }
 
-  // ==================== 第一层：工具结果压缩 ====================
+  // ==================== Copilot 风格优先级裁剪 ====================
 
   /**
-   * 压缩旧的工具结果消息
+   * 优先级裁剪 — 参考 Copilot 的 PrioritizedList 策略
    *
-   * 策略：
-   * - 保留最近 N 条消息不动（确保当前上下文完整）
-   * - 对更早的 tool 消息，截断 content 到指定长度
-   * - 对更早的 assistant 消息中大的 tool_calls arguments，截断
-   * - 保留 user 和 system 消息原样
+   * 优先级（前端作为唯一权威裁剪者）：
+   *   Priority 900  → 用户最新消息（永远保留，不截断）
+   *   Priority 899  → 最近 N 条消息（尽量完整保留）
+   *   Priority 700  → 历史消息（先压缩内容，超预算时从旧到新丢弃）
+   *
+   * 策略分两步：
+   *   Step 1: 对历史区消息做内容级压缩（截断工具结果/arguments、移除 UI 标签）
+   *   Step 2: 如果仍超预算，从最旧的历史消息开始丢弃整条消息
+   *
+   * @param messages 完整对话历史
+   * @returns 裁剪后的消息数组（保证 fit 到 token 预算内）
    */
-  compressToolResults(messages: any[]): any[] {
+  prioritizedTrim(messages: any[]): any[] {
     if (messages.length <= ContextBudgetService.RECENT_MESSAGES_PRESERVE) {
       return messages;
     }
 
-    const preserveStart = messages.length - ContextBudgetService.RECENT_MESSAGES_PRESERVE;
+    const maxTokens = this.maxContextTokens;
+    const systemTokens = this._cachedSystemTokens;
+    const toolsTokens = this._serverToolsTokens ?? this._cachedToolsTokens;
+    const outputReserve = Math.floor(maxTokens * ContextBudgetService.OUTPUT_RESERVE_RATIO);
+    const availableForMessages = maxTokens - systemTokens - toolsTokens - outputReserve;
+
+    // Step 1: 找到用户最新消息（Priority 900）
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        lastUserIdx = i;
+        break;
+      }
+    }
+
+    // Step 2: 分割为 recent（P899）和 older（P700）
+    let preserveStart = Math.max(0, messages.length - ContextBudgetService.RECENT_MESSAGES_PRESERVE);
+    // 确保用户最新消息在 recent 区间内
+    if (lastUserIdx >= 0 && lastUserIdx < preserveStart) {
+      preserveStart = lastUserIdx;
+    }
+
+    const olderMessages = messages.slice(0, preserveStart);
+    const recentMessages = messages.slice(preserveStart);
+
+    // Step 3: 对历史区做内容级压缩
+    const compressedOlder = this.compressToolResults(olderMessages, lastUserIdx);
+
+    // Step 4: 计算 recent 区 token
+    const recentTokens = estimateMessagesTokens(recentMessages);
+    const budgetForOlder = Math.max(0, availableForMessages - recentTokens);
+
+    // Step 5: 从最新的历史消息开始填入，超预算则丢弃更旧的
+    const keptOlder: any[] = [];
+    let accumulatedTokens = 0;
+    for (let i = compressedOlder.length - 1; i >= 0; i--) {
+      const msgTokens = estimateMessageTokens(compressedOlder[i]);
+      if (accumulatedTokens + msgTokens <= budgetForOlder) {
+        keptOlder.unshift(compressedOlder[i]);
+        accumulatedTokens += msgTokens;
+      } else {
+        break;
+      }
+    }
+
+    const result = [...keptOlder, ...recentMessages];
+    const droppedCount = olderMessages.length - keptOlder.length;
+    if (droppedCount > 0) {
+      console.log(
+        `[优先级裁剪] 丢弃 ${droppedCount} 条历史消息, ` +
+        `保留 ${keptOlder.length} 条历史 + ${recentMessages.length} 条最近 = ${result.length} 条`
+      );
+    }
+    return result;
+  }
+
+  // ==================== 内容级压缩 ====================
+
+  /**
+   * 压缩消息内容（不丢弃消息，只截断内容）
+   *
+   * 策略：
+   * - 用户最新消息永远不压缩（protectedUserIdx 指定）
+   * - 对 tool 消息，清理冗余标签后截断 content
+   * - 对 assistant 消息，清理 UI 标签，截断大 arguments
+   * - user / system 消息保持原样
+   *
+   * @param messages 要压缩的消息数组
+   * @param protectedUserIdx 永远不压缩的用户消息索引（-1 表示全部可压缩）
+   */
+  compressToolResults(messages: any[], protectedUserIdx: number = -1): any[] {
     const result: any[] = [];
 
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
 
-      // 保留最近 N 条消息不压缩
-      if (i >= preserveStart) {
+      // 用户最新消息（P900）永远不压缩
+      if (i === protectedUserIdx) {
         result.push(msg);
         continue;
       }
 
-      // 压缩旧的 tool 消息：先清理冗余标签，再截断
+      // user / system 消息保持原样（保留完整用户意图链）
+      if (msg.role === 'user' || msg.role === 'system') {
+        result.push(msg);
+        continue;
+      }
+
+      // 压缩 tool 消息：先清理冗余标签，再截断
       if (msg.role === 'tool') {
         let cleaned = (msg.content || '')
           .replace(/<rules>[\s\S]*?<\/rules>/g, '')
@@ -588,9 +685,9 @@ export class ContextBudgetService {
         continue;
       }
 
-      // 压缩旧的 assistant 消息
+      // 压缩 assistant 消息
       if (msg.role === 'assistant') {
-        // 清理 assistant 内容中的 UI-only 元素（历史数据可能含有未清理的 think/aily-state）
+        // 清理 UI-only 元素（think/aily-state 等仅用于前端展示）
         let cleanedContent = (msg.content || '')
           .replace(/<think>[\s\S]*?<\/think>/g, '')
           .replace(/```aily-state[\s\S]*?```/g, '')
@@ -700,6 +797,7 @@ export class ContextBudgetService {
   reset(): void {
     // 注意：不清除 _cachedSystemTokens，因为系统提示词在会话间不变
     this._cachedToolsTokens = 0;
+    this._serverToolsTokens = null;
     this._lastToolsCount = 0;
     this.budgetSubject.next(this.createEmptySnapshot());
     this.compressionEventSubject.next(null);

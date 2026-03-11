@@ -115,9 +115,66 @@ export class ToolCallLoopHelper {
         content: this.engine.msg.truncateToolResult(this.engine.msg.sanitizeToolContent(result.content), result.tool_name)
       });
     }
+
+    // 去重：如果新工具结果与旧结果内容相同，折叠旧结果
+    this.deduplicateToolResults();
+
     this.engine.toolCallingIteration++;
     this.engine.contextBudgetService.updateBudget(this.engine.conversationMessages, this.getCurrentTools());
     this.startChatTurn();
+  }
+
+  // ==================== 工具结果去重 ====================
+
+  /**
+   * 扫描 conversationMessages 中的 tool 消息，
+   * 如果同名工具的旧结果与新结果内容相同（或高度相似），折叠旧结果以节省上下文。
+   */
+  private deduplicateToolResults(): void {
+    const messages = this.engine.conversationMessages;
+    // 按工具名收集所有 tool 消息的索引
+    const toolsByName = new Map<string, number[]>();
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i].role === 'tool' && messages[i].name) {
+        const indices = toolsByName.get(messages[i].name) || [];
+        indices.push(i);
+        toolsByName.set(messages[i].name, indices);
+      }
+    }
+
+    let foldedCount = 0;
+    for (const [name, indices] of toolsByName) {
+      if (indices.length <= 1) continue;
+      // 从最新往回比较，折叠与更新结果相同的旧结果
+      for (let i = indices.length - 1; i > 0; i--) {
+        const newerContent = messages[indices[i]].content || '';
+        for (let j = 0; j < i; j++) {
+          const olderContent = messages[indices[j]].content || '';
+          if (this.isContentDuplicate(olderContent, newerContent)) {
+            messages[indices[j]].content = `[与后续 ${name} 调用结果相同，已折叠]`;
+            foldedCount++;
+          }
+        }
+      }
+    }
+    if (foldedCount > 0) {
+      console.log(`[工具去重] 折叠了 ${foldedCount} 条重复工具结果`);
+    }
+  }
+
+  /**
+   * 判断两段内容是否为重复。
+   * 精确匹配 或 长文本首尾匹配（长度误差 ±5%）。
+   */
+  private isContentDuplicate(a: string, b: string): boolean {
+    if (!a || !b || a.length < 80) return false;
+    if (a === b) return true;
+    const ratio = a.length / b.length;
+    if (ratio < 0.95 || ratio > 1.05) return false;
+    const checkLen = Math.min(200, Math.min(a.length, b.length));
+    const suffixLen = Math.min(200, Math.min(a.length, b.length));
+    return a.substring(0, checkLen) === b.substring(0, checkLen) &&
+           a.substring(a.length - suffixLen) === b.substring(b.length - suffixLen);
   }
 
   // ==================== 完成回调 ====================

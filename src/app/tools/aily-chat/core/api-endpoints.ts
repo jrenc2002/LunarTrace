@@ -17,6 +17,7 @@ export const ChatAPI = {
   get streamConnect() { return `${base()}/api/v1/stream`; },
   get sendMessage()   { return `${base()}/api/v1/send_message`; },
   get chatRequest()   { return `${base()}/api/v1/chat`; },
+  get contextInfo()   { return `${base()}/api/v1/context_info`; },
   get getHistory()    { return `${base()}/api/v1/conversation_history`; },
   get stopSession()   { return `${base()}/api/v1/stop_session`; },
   get cancelTask()    { return `${base()}/api/v1/cancel_task`; },

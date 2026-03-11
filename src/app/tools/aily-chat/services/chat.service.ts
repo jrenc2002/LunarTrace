@@ -249,6 +249,29 @@ export class ChatService {
     return this.http.post(ChatAPI.startSession, payload);
   }
 
+  /**
+   * 获取服务端准确的系统提示词 / 工具定义 token 数和模型上下文窗口大小。
+   * 用于前端 ContextBudgetService 精确计算可用 token 预算。
+   */
+  async fetchContextInfo(sessionId: string): Promise<{
+    system_tokens: number;
+    tools_tokens: number;
+    model_context_limit: number;
+    model_name?: string;
+  } | null> {
+    try {
+      const token = await AilyHost.get().auth.getToken!();
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const resp = await fetch(`${ChatAPI.contextInfo}/${sessionId}`, { headers });
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch (e) {
+      console.warn('[ChatService] fetchContextInfo failed:', e);
+      return null;
+    }
+  }
+
   closeSession(sessionId: string) {
     return this.http.post(`${ChatAPI.closeSession}/${sessionId}`, {});
   }

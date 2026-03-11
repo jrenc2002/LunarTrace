@@ -416,7 +416,7 @@ class GetBoardParametersTool implements IAilyTool {
   }
 
   getStartText(args: any): string {
-    const params = args?.parameters?.join(', ') || '所有参数';
+    const params = Array.isArray(args?.parameters) ? args.parameters.join(', ') : (args?.parameters || '所有参数');
     return `正在获取当前开发板参数 (${params})`;
   }
 

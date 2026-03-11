@@ -180,6 +180,10 @@ export function createElectronHostAdapter(deps: ElectronAdapterDeps): IAilyHostA
     getLibrariesList: () => deps.configService?.getLibrariesList?.(),
     getHardwareCategories: () => deps.configService?.getHardwareCategories?.(),
     loadHardwareIndexForAI: () => deps.configService?.loadHardwareIndexForAI?.(),
+    get boardIndex() { return (deps.configService as any)?.boardIndex; },
+    get boardList() { return (deps.configService as any)?.boardList; },
+    get libraryIndex() { return (deps.configService as any)?.libraryIndex; },
+    get libraryList() { return (deps.configService as any)?.libraryList; },
   };
 
   // ----- builder -----

@@ -85,7 +85,7 @@ export function getResourcesText(selectContent: ResourceItem[]): string {
   }
 
   if (text) {
-    text = `<context>\n${text}\n</context>`;
+    text = `<attachments>\n${text}</attachments>`;
   }
 
   return text.trim();

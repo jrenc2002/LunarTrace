@@ -92,6 +92,8 @@ export class ChatEngineService {
   mcpInitialized = false;
   private _aiNoticeShown = false;
   lastStopReason = '';
+  /** 会话级标记：规则/角色提示词是否已注入（仅首次工具调用时注入） */
+  rulesInjectedThisSession = false;
 
   // ==================== 订阅 ====================
   messageSubscription: any;
@@ -509,10 +511,10 @@ Do not create non-existent boards and libraries.
 
       const resourcesText = this.resourceManager.getResourcesText();
       if (resourcesText) {
-        llmText = `${resourcesText}\n\n<user_query>${text}</user_query>`;
+        llmText = `${resourcesText}\n\n${text}`;
         displayText = resourcesText + '\n\n' + text;
       } else {
-        llmText = `<user_query>${text}</user_query>`;
+        llmText = text;
         displayText = text;
       }
 

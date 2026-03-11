@@ -82,6 +82,7 @@ export class SessionLifecycleHelper {
     this.engine.sessionAllowedPaths = [];
     this.engine.repetitionDetectionService.resetAll();
     this.engine.insideThink = false;
+    this.engine.rulesInjectedThisSession = false;
 
     if (!this.engine.mcpInitialized) {
       this.engine.mcpInitialized = true;
@@ -131,6 +132,22 @@ export class SessionLifecycleHelper {
             this.engine.isSessionStarting = false;
             this.engine.serverSessionActive = true;
             this.engine.contextBudgetService.updateBudget(this.engine.conversationMessages, this.engine.turnLoop.getCurrentTools());
+
+            // 异步获取服务端准确的系统提示词/工具定义 token 数
+            this.engine.chatService.fetchContextInfo(this.engine.sessionId).then(info => {
+              if (info) {
+                this.engine.contextBudgetService.updateSystemPromptTokens(info.system_tokens);
+                this.engine.contextBudgetService.updateServerToolsTokens(info.tools_tokens);
+                if (info.model_context_limit) {
+                  this.engine.contextBudgetService.updateModelContextSize(info.model_name || null);
+                }
+                this.engine.contextBudgetService.updateBudget(
+                  this.engine.conversationMessages, this.engine.turnLoop.getCurrentTools()
+                );
+                console.log(`[ContextBudget] 服务端 token 信息已同步: system=${info.system_tokens}, tools=${info.tools_tokens}, limit=${info.model_context_limit}`);
+              }
+            }).catch(() => { /* ignore */ });
+
             if (this.engine.list.length === 0) { this.engine.list = []; }
             resolve();
           } else {

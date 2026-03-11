@@ -246,6 +246,8 @@ export interface IProjectProvider {
   getPackageJson?(): Promise<any>;
   /** 获取 board.json 内容 */
   getBoardJson?(): Promise<any>;
+  /** 获取当前开发板模块标识（如 @aily-project/board-xxx） */
+  getBoardModule?(): Promise<string>;
   /** 获取 board 的 package.json 内容 */
   getBoardPackageJson?(): Promise<any>;
   /** 当前项目路径变化通知（Observable，宿主环境提供） */
@@ -293,6 +295,15 @@ export interface IConfigProvider {
   getHardwareCategories?(): any[];
   /** 加载硬件索引数据（用于 AI 工具的开发板/库搜索） */
   loadHardwareIndexForAI?(): Promise<any>;
+
+  /** 板卡索引数据（新版） */
+  readonly boardIndex?: any[];
+  /** 板卡列表数据（旧版） */
+  readonly boardList?: any[];
+  /** 库索引数据（新版） */
+  readonly libraryIndex?: any[];
+  /** 库列表数据（旧版） */
+  readonly libraryList?: any[];
 }
 
 // ============================================================
