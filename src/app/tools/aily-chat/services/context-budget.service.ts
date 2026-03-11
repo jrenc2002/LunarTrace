@@ -205,10 +205,12 @@ export class ContextBudgetService {
     'qwen-turbo': 131072,
     'qwen-plus': 131072,
     'qwen-max': 32768,
+    'GLM-5': 200000,
+    'GLM-4.7': 128000,
   };
 
   /** 默认上下文窗口大小 */
-  private static readonly DEFAULT_CONTEXT_SIZE = 128000;
+  private static readonly DEFAULT_CONTEXT_SIZE = 200000;
 
   /** 工具结果压缩阈值比例（占 maxContextTokens 的百分比） */
   private static readonly COMPRESSION_THRESHOLD_RATIO = 0.50;
@@ -216,8 +218,26 @@ export class ContextBudgetService {
   /** LLM 摘要阈值比例（占 maxContextTokens 的百分比） */
   private static readonly SUMMARIZATION_THRESHOLD_RATIO = 0.75;
 
-  /** 工具结果截断长度（字符数） */
+  /** 工具结果截断长度（字符数）— 操作类工具的默认限额 */
   private static readonly TOOL_RESULT_TRUNCATE_LENGTH = 500;
+
+  /**
+   * 信息类工具结果截断长度（字符数）— read_file / fetch / grep 等
+   * 策略：信息类工具结果是 LLM 推理的事实依据，
+   * 截断后 LLM 只能靠猜测，准确率大幅下降。给 4x 预算。
+   */
+  private static readonly INFO_TOOL_TRUNCATE_LENGTH = 2000;
+
+  /**
+   * 信息类工具名称集合（结果为 LLM 推理事实依据的工具）
+   * 这些工具的返回内容通常是代码、文档、网页等高信息密度文本，
+   * 截断后会导致 LLM 丢失关键上下文。
+   */
+  private static readonly INFO_TOOLS = new Set([
+    'read_file', 'fetch', 'web_search', 'grep', 'grep_tool', 'glob_tool',
+    'get_directory_tree', 'list_directory', 'search_boards_libraries',
+    'get_abs_syntax', 'get_workspace_overview_tool',
+  ]);
 
   /** 保留最近 N 条消息不压缩（确保最近上下文完整） */
   private static readonly RECENT_MESSAGES_PRESERVE = 8;
@@ -362,16 +382,7 @@ export class ContextBudgetService {
   }
 
   /**
-   * 更新服务端返回的准确工具定义 token 数。
-   * 当服务端提供了精确值时，优先使用服务端值而非本地估算。
-   */
-  private _serverToolsTokens: number | null = null;
-  updateServerToolsTokens(tokenCount: number): void {
-    this._serverToolsTokens = tokenCount;
-  }
-
-  /**
-   * 更新工具定义 token 估算
+   * 更新工具定义 token（前端 tiktoken 精确计算）
    * @param tools 当前工具数组
    */
   updateToolsTokens(tools: any[]): void {
@@ -403,8 +414,7 @@ export class ContextBudgetService {
 
     const messagesTokens = estimateMessagesTokens(messages);
     const systemTokens = this._cachedSystemTokens;
-    // 优先使用服务端返回的准确工具定义 token 数
-    const toolsTokens = this._serverToolsTokens ?? this._cachedToolsTokens;
+    const toolsTokens = this._cachedToolsTokens;
     const currentTokens = systemTokens + toolsTokens + messagesTokens;
     const max = this.maxContextTokens;
 
@@ -580,7 +590,7 @@ export class ContextBudgetService {
 
     const maxTokens = this.maxContextTokens;
     const systemTokens = this._cachedSystemTokens;
-    const toolsTokens = this._serverToolsTokens ?? this._cachedToolsTokens;
+    const toolsTokens = this._cachedToolsTokens;
     const outputReserve = Math.floor(maxTokens * ContextBudgetService.OUTPUT_RESERVE_RATIO);
     const availableForMessages = maxTokens - systemTokens - toolsTokens - outputReserve;
 
@@ -610,17 +620,67 @@ export class ContextBudgetService {
     const recentTokens = estimateMessagesTokens(recentMessages);
     const budgetForOlder = Math.max(0, availableForMessages - recentTokens);
 
-    // Step 5: 从最新的历史消息开始填入，超预算则丢弃更旧的
-    const keptOlder: any[] = [];
+    // Step 5: 智能丢弃 — 优先丢弃操作类工具结果，保留信息类工具结果
+    // 信息类(read_file/fetch/grep)是 LLM 推理依据，值得保留
+    // 操作类(create_file/execute_command/"success")信息密度低，优先牺牲
+    let keptOlder: any[] = [];
     let accumulatedTokens = 0;
+
+    // Pass 1: 从最新开始尝试全部填入
+    const allFit: any[] = [];
+    let totalOlderTokens = 0;
     for (let i = compressedOlder.length - 1; i >= 0; i--) {
       const msgTokens = estimateMessageTokens(compressedOlder[i]);
-      if (accumulatedTokens + msgTokens <= budgetForOlder) {
-        keptOlder.unshift(compressedOlder[i]);
-        accumulatedTokens += msgTokens;
+      if (totalOlderTokens + msgTokens <= budgetForOlder) {
+        allFit.unshift(compressedOlder[i]);
+        totalOlderTokens += msgTokens;
       } else {
         break;
       }
+    }
+
+    if (allFit.length === compressedOlder.length || budgetForOlder <= 0) {
+      // 全部 fit 或无预算，直接使用
+      keptOlder = allFit;
+      accumulatedTokens = totalOlderTokens;
+    } else {
+      // Pass 2: 预算不足 — 按工具类型分级，优先保留信息类工具结果
+      const highValue: { idx: number; msg: any; tokens: number }[] = [];
+      const lowValue: { idx: number; msg: any; tokens: number }[] = [];
+
+      for (let i = compressedOlder.length - 1; i >= 0; i--) {
+        const m = compressedOlder[i];
+        const t = estimateMessageTokens(m);
+        const isInfoTool = m.role === 'tool' && ContextBudgetService.INFO_TOOLS.has(m.name || '');
+        const isUser = m.role === 'user';
+        if (isInfoTool || isUser) {
+          highValue.unshift({ idx: i, msg: m, tokens: t });
+        } else {
+          lowValue.unshift({ idx: i, msg: m, tokens: t });
+        }
+      }
+
+      // 先填入高价值（从最新开始）
+      accumulatedTokens = 0;
+      const selectedIndices = new Set<number>();
+      for (let i = highValue.length - 1; i >= 0; i--) {
+        if (accumulatedTokens + highValue[i].tokens <= budgetForOlder) {
+          selectedIndices.add(highValue[i].idx);
+          accumulatedTokens += highValue[i].tokens;
+        } else {
+          break;  // 连高价值都放不下了
+        }
+      }
+      // 再用剩余预算填入低价值（从最新开始）
+      for (let i = lowValue.length - 1; i >= 0; i--) {
+        if (accumulatedTokens + lowValue[i].tokens <= budgetForOlder) {
+          selectedIndices.add(lowValue[i].idx);
+          accumulatedTokens += lowValue[i].tokens;
+        }
+        // 低价值不 break，继续尝试更旧但更小的消息
+      }
+      // 按原始顺序输出
+      keptOlder = compressedOlder.filter((_, idx) => selectedIndices.has(idx));
     }
 
     const result = [...keptOlder, ...recentMessages];
@@ -666,7 +726,7 @@ export class ContextBudgetService {
         continue;
       }
 
-      // 压缩 tool 消息：先清理冗余标签，再截断
+      // 压缩 tool 消息：先清理冗余标签，再按工具类型分级截断
       if (msg.role === 'tool') {
         let cleaned = (msg.content || '')
           .replace(/<rules>[\s\S]*?<\/rules>/g, '')
@@ -674,10 +734,15 @@ export class ContextBudgetService {
           .replace(/<toolResult>([\s\S]*?)<\/toolResult>/g, '$1')
           .replace(/\n{3,}/g, '\n\n')
           .trim();
-        const truncatedContent = this.truncateText(
-          cleaned,
-          ContextBudgetService.TOOL_RESULT_TRUNCATE_LENGTH
-        );
+
+        // 信息类工具保留更多内容
+        const toolName = msg.name || '';
+        const isInfoTool = ContextBudgetService.INFO_TOOLS.has(toolName);
+        const truncateLimit = isInfoTool
+          ? ContextBudgetService.INFO_TOOL_TRUNCATE_LENGTH
+          : ContextBudgetService.TOOL_RESULT_TRUNCATE_LENGTH;
+
+        const truncatedContent = this.truncateText(cleaned, truncateLimit);
         result.push({
           ...msg,
           content: truncatedContent
@@ -797,7 +862,6 @@ export class ContextBudgetService {
   reset(): void {
     // 注意：不清除 _cachedSystemTokens，因为系统提示词在会话间不变
     this._cachedToolsTokens = 0;
-    this._serverToolsTokens = null;
     this._lastToolsCount = 0;
     this.budgetSubject.next(this.createEmptySnapshot());
     this.compressionEventSubject.next(null);

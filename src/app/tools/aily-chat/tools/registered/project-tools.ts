@@ -168,9 +168,9 @@ class ExecuteCommandTool implements IAilyTool {
           loadResults.push(`${libPackageName} 加载失败: ${e.message || e}`);
         }
       }
-      if (loadResults.length > 0) {
-        toolResult.content = (toolResult.content || '') + `\n\n库加载结果:\n${loadResults.join('\n')}`;
-      }
+      // if (loadResults.length > 0) {
+      //   toolResult.content = (toolResult.content || '') + `\n\n库加载结果:\n${loadResults.join('\n')}`;
+      // }
     }
 
     // Handle npm install failure: mark as non-retryable (via warning = false, is_error = true stays)

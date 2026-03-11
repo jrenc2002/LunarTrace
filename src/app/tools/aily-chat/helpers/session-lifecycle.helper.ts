@@ -133,20 +133,14 @@ export class SessionLifecycleHelper {
             this.engine.serverSessionActive = true;
             this.engine.contextBudgetService.updateBudget(this.engine.conversationMessages, this.engine.turnLoop.getCurrentTools());
 
-            // 异步获取服务端准确的系统提示词/工具定义 token 数
-            this.engine.chatService.fetchContextInfo(this.engine.sessionId).then(info => {
-              if (info) {
-                this.engine.contextBudgetService.updateSystemPromptTokens(info.system_tokens);
-                this.engine.contextBudgetService.updateServerToolsTokens(info.tools_tokens);
-                if (info.model_context_limit) {
-                  this.engine.contextBudgetService.updateModelContextSize(info.model_name || null);
-                }
-                this.engine.contextBudgetService.updateBudget(
-                  this.engine.conversationMessages, this.engine.turnLoop.getCurrentTools()
-                );
-                console.log(`[ContextBudget] 服务端 token 信息已同步: system=${info.system_tokens}, tools=${info.tools_tokens}, limit=${info.model_context_limit}`);
-              }
-            }).catch(() => { /* ignore */ });
+            // 从 startSession 响应直接获取系统提示词 token 数（无需额外 HTTP 请求）
+            if (res.system_tokens != null) {
+              this.engine.contextBudgetService.updateSystemPromptTokens(res.system_tokens);
+              this.engine.contextBudgetService.updateBudget(
+                this.engine.conversationMessages, this.engine.turnLoop.getCurrentTools()
+              );
+              console.log(`[ContextBudget] 系统提示词 token 已同步: system=${res.system_tokens}`);
+            }
 
             if (this.engine.list.length === 0) { this.engine.list = []; }
             resolve();
