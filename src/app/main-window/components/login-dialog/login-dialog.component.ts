@@ -125,12 +125,12 @@ export class LoginDialogComponent {
           }
         },
         error: (error) => {
-          console.error('启动 GitHub OAuth 失败:', error);
+          console.warn('启动 GitHub OAuth 失败:', error);
           this.message.error('启动 GitHub 登录失败，请检查网络连接');
         }
       });
     } catch (error) {
-      console.error('GitHub 登录出错:', error);
+      console.warn('GitHub 登录出错:', error);
       this.message.error('GitHub 登录失败');
     }
   }
@@ -158,7 +158,7 @@ export class LoginDialogComponent {
             }
           },
           error: (error) => {
-            console.error('登录错误:', error);
+            console.warn('登录错误:', error);
             this.message.error('登录失败，请检查网络连接');
           },
           complete: () => {
@@ -166,7 +166,7 @@ export class LoginDialogComponent {
           }
         });
       } catch (error) {
-        console.error('登录过程中出错:', error);
+        console.warn('登录过程中出错:', error);
         this.message.error('登录失败');
         this.isWaiting = false;
       }

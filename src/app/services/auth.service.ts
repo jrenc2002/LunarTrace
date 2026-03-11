@@ -466,7 +466,7 @@ export class AuthService {
         return localStorage.getItem('aily_auth_token');
       }
     } catch (error) {
-      console.error('获取token失败:', error);
+      // console.warn('获取token失败:', error);
       return null;
     }
   }
