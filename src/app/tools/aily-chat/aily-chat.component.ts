@@ -228,6 +228,8 @@ export class AilyChatComponent implements OnDestroy {
   private currentTurnAssistantContent = '';
   /** 当前轮次收集的工具调用元信息（用于构建 assistant 消息的 tool_calls 字段） */
   private currentTurnToolCalls: any[] = [];
+  /** 当前轮次是否被服务端标记为“未终止，需要继续下一轮” */
+  private currentTurnNeedContinue = false;
   /** 工具调用循环计数器 */
   private toolCallingIteration = 0;
   /** 无状态模式：正在执行中的工具数量（用于解决 async next 回调与 complete 回调的竞态） */
@@ -238,6 +240,8 @@ export class AilyChatComponent implements OnDestroy {
   private currentStatelessMode = false;
   /** 服务端会话是否有效（从历史记录加载的 sessionId 服务端可能不存在） */
   private serverSessionActive = false;
+  /** 记录最近一次 startSession 时使用的模式；用于发送前按需重建会话 */
+  private sessionModeAtStart = '';
 
   // ==================== 上下文预算（供 UI 消费） ====================
   /** 上下文预算状态 Observable（供模板绑定） */
@@ -1987,6 +1991,7 @@ Do not create non-existent boards and libraries.
   async startSession(): Promise<void> {
     if (this.debug) {
       this.sessionId = new Date().getTime().toString();
+      this.sessionModeAtStart = this.currentMode;
       this.isWaiting = true;
       this.streamConnect();
       return;
@@ -2110,6 +2115,21 @@ Do not create non-existent boards and libraries.
     const selectModel = this.currentModel?.model || null;
 
 
+    const extractErrorMessage = (value: any): string => {
+      if (typeof value === 'string') {
+        return value;
+      }
+      if (value instanceof Error) {
+        return value.message || '';
+      }
+      return value?.message || value?.error?.message || '';
+    };
+
+    const isTokenExpiredError = (value: any): boolean => {
+      const msg = extractErrorMessage(value);
+      return msg.includes('Token已过期') || msg.includes('token已过期');
+    };
+
     return new Promise<void>((resolve, reject) => {
       this.chatService.startSession(this.currentMode, tools, maxCount, customllmConfig, selectModel).subscribe({
         next: (res: any) => {
@@ -2129,6 +2149,7 @@ Do not create non-existent boards and libraries.
 
             // ★ 服务端会话已建立
             this.serverSessionActive = true;
+            this.sessionModeAtStart = this.currentMode;
 
             // ★ 会话启动后立即更新上下文预算（显示 System + Tools 基础开销）
             this.contextBudgetService.updateBudget(this.conversationMessages, this.getCurrentTools());
@@ -2139,8 +2160,8 @@ Do not create non-existent boards and libraries.
 
             resolve();
           } else {
-            if (res?.data === 401) {
-              this.message.error(res.message);
+            if (isTokenExpiredError(res)) {
+              this.message.error(extractErrorMessage(res) || '认证失败，请检查登录状态或 API Key。');
             } else {
               let errData = { "message": res.message || '启动会话失败，请稍后重试。' }
               this.appendMessage('aily', `
@@ -2156,14 +2177,18 @@ ${JSON.stringify(errData)}
         },
         error: (err) => {
           console.warn('启动会话失败:', err);
-          let errData = {
-            status: err.status,
-            message: err.message
-          }
-          this.appendMessage('aily', `
+          if (isTokenExpiredError(err)) {
+            this.message.error(extractErrorMessage(err) || '认证失败，请检查登录状态或 API Key。');
+          } else {
+            let errData = {
+              status: err?.status ?? err?.error?.status ?? null,
+              message: extractErrorMessage(err) || '启动会话失败，请稍后重试。'
+            }
+            this.appendMessage('aily', `
 \`\`\`aily-error
 ${JSON.stringify(errData)}
 \`\`\`\n\n`)
+          }
           this.isSessionStarting = false;
           reject(err);
         }
@@ -2212,6 +2237,58 @@ ${JSON.stringify(errData)}
       this.chatHistoryService.migrateSessionId(oldSessionId, newSessionId);
       // console.log(`[AilyChat] 服务端会话已重新注册: ${oldSessionId} → ${newSessionId}`);
     }
+  }
+
+  /**
+   * 发送前确保服务端会话模式与当前 UI 模式一致。
+   * 仅在模式变更时重建会话，并保留客户端上下文与历史索引。
+   */
+  private async ensureSessionModeAlignedBeforeSend(): Promise<void> {
+    if (!this.sessionId) {
+      return;
+    }
+
+    if (!this.sessionModeAtStart || this.sessionModeAtStart === this.currentMode) {
+      return;
+    }
+
+    const previousSessionMode = this.sessionModeAtStart;
+    const savedMessages = [...this.conversationMessages];
+    const savedIteration = this.toolCallingIteration;
+    const savedTitle = this.chatService.currentSessionTitle;
+    const savedPath = this.chatService.currentSessionPath;
+    const savedList = [...this.list];
+    const oldSessionId = this.sessionId;
+
+    await this.stopAndCloseSession(true);
+
+    try {
+      await this.startSession();
+    } catch (err) {
+      // 重建失败时恢复客户端状态，并保留旧会话模式快照用于后续重试。
+      this.conversationMessages = savedMessages;
+      this.toolCallingIteration = savedIteration;
+      this.list = savedList;
+      this.chatService.currentSessionTitle = savedTitle;
+      this.chatService.currentSessionPath = savedPath;
+      this.sessionModeAtStart = previousSessionMode;
+      throw err;
+    }
+
+    // 恢复客户端对话上下文
+    this.conversationMessages = savedMessages;
+    this.toolCallingIteration = savedIteration;
+    this.chatService.currentSessionTitle = savedTitle;
+    this.chatService.currentSessionPath = savedPath;
+    this.list = savedList;
+
+    // 若服务端返回了新会话 ID，迁移本地历史索引
+    const newSessionId = this.sessionId;
+    if (oldSessionId && newSessionId && oldSessionId !== newSessionId) {
+      this.chatHistoryService.migrateSessionId(oldSessionId, newSessionId);
+    }
+
+    this.contextBudgetService?.updateBudget(this.conversationMessages, this.getCurrentTools());
   }
 
   closeSession(): void {
@@ -2334,6 +2411,14 @@ ${JSON.stringify(errData)}
       // 重置流式文本检测状态（新消息开始）
       this.repetitionDetectionService.resetStreamTokens();
       this.insideThink = false;
+
+      // 模式切换后不立即中断会话；仅在真正发送消息前按需重建。
+      try {
+        await this.ensureSessionModeAlignedBeforeSend();
+      } catch (err) {
+        console.warn('发送前模式对齐失败:', err);
+        return;
+      }
 
       // ★ 先生成标题（使用原始用户输入，不包含附件 context 块）
       this.generateTitle(text);
@@ -2465,6 +2550,7 @@ ${JSON.stringify(errData)}
     this.streamCompleted = false;
     this.sseStreamCompleted = false;
     this.activeToolExecutions = 0;
+    this.currentTurnNeedContinue = false;
     this.currentStatelessMode = false;
 
     // ★ 关键修复：立即断开 SSE 订阅，从根源上消除竞态窗口。
@@ -2716,6 +2802,7 @@ ${JSON.stringify(errData)}
     this.pendingToolResults = [];
     this.currentTurnAssistantContent = '';
     this.currentTurnToolCalls = [];
+    this.currentTurnNeedContinue = false;
     this.activeToolExecutions = 0;
     this.sseStreamCompleted = false;
     this.currentStatelessMode = true;
@@ -2796,8 +2883,8 @@ ${JSON.stringify(errData)}
    * 决策：有工具结果 → 继续循环；无工具结果 → 正常结束
    */
   private finalizeStatelessTurn(): void {
-    if (this.pendingToolResults.length > 0 && !this.isCancelled) {
-      // console.log(`[无状态模式] ${this.pendingToolResults.length} 个工具结果待处理，继续循环`);
+    if ((this.pendingToolResults.length > 0 || this.currentTurnNeedContinue) && !this.isCancelled) {
+      // console.log(`[无状态模式] tools=${this.pendingToolResults.length}, needContinue=${this.currentTurnNeedContinue}，继续循环`);
       this.continueToolCallingLoop();
     } else {
       // 无工具调用，正常结束
@@ -2847,6 +2934,8 @@ ${JSON.stringify(errData)}
     // console.log("stream connect sessionId: ", this.sessionId);
     let newConnect = true;
     let newProject = false;
+    let lastStreamEvent: any = null;
+    let completionReason = 'unknown';
     if (!this.sessionId) {
       console.warn('无法建立流连接：sessionId 为空');
       return;
@@ -2906,6 +2995,16 @@ ${JSON.stringify(errData)}
         }
         if (this.isCancelled) {
           return; // 用户已中断，阻止流继续渲染（含 think loading 被覆盖）
+        }
+
+        // 记录最后收到的一条流事件，供 complete 回调诊断结束原因
+        lastStreamEvent = data;
+        if (data?.type === 'TaskCompleted') {
+          completionReason = data.stop_reason || 'TaskCompleted without stop_reason';
+        } else if (data?.type === 'StreamComplete') {
+          completionReason = 'StreamComplete';
+        } else if (data?.type === 'error') {
+          completionReason = `error: ${data.message || 'unknown'}`;
         }
 
         // console.log("Recv: ", data);
@@ -2976,9 +3075,29 @@ ${JSON.stringify(errData)}
               // 检测 aily-button 块：think 标签内不匹配；通过 last message content 正则匹配，截断 ```aily-button内容``` 后的多余内容并中断 SSE
               if (!this.insideThink && this.checkAndTruncateAilyButtonBlock()) {
                 if (statelessMode) {
-                  this.currentTurnAssistantContent = this.list[this.list.length - 1]?.content || this.currentTurnAssistantContent;
+                  // ★ 关键修复：在 currentTurnAssistantContent 上直接截断，
+                  //   而不是用 list[last].content 覆盖。
+                  //   list[last].content 包含所有轮次的累积 UI 内容（因为 appendMessage 追加到同一条 aily 消息），
+                  //   但 currentTurnAssistantContent 只包含当前轮次的文本（每轮 startChatTurn 时重置）。
+                  //   用 UI 内容覆盖会导致前几轮的文字被重复存入 conversationMessages。
+                  const ailyBtnMatch = this.currentTurnAssistantContent.match(/```aily-button[\s\S]*?```/);
+                  if (ailyBtnMatch) {
+                    this.currentTurnAssistantContent = this.currentTurnAssistantContent.substring(
+                      0, ailyBtnMatch.index! + ailyBtnMatch[0].length
+                    );
+                  }
                 }
                 this.stop();
+              }
+            }
+          } else if (data.type === 'TEXT_NO_TERMINATE') {
+            // 服务端标记：当前轮次文本未终止，需要进入下一轮继续请求
+            if (statelessMode) {
+              this.currentTurnNeedContinue = true;
+              // 兼容后端可能附带的补充文本
+              if (data.content) {
+                this.appendMessage('aily', data.content, messageSource);
+                this.currentTurnAssistantContent += data.content;
               }
             }
           } else if (data.type === 'TextMessage') {
@@ -5210,6 +5329,14 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
         }
       },
       complete: () => {
+        console.log('[stream complete]', {
+          reason: completionReason,
+          lastEventType: lastStreamEvent?.type || 'none',
+          lastEvent: lastStreamEvent,
+          isCancelled: this.isCancelled,
+          statelessMode,
+        });
+        
         // 清理流式残留内容
         this.cleanupLastAiMessage();
 
@@ -6379,7 +6506,7 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
   }
 
   /**
-   * 切换AI模式并创建新会话
+   * 切换AI模式（不立即重建会话）
    * @param mode 要切换到的模式
    */
   private async switchToMode(mode: string) {
@@ -6389,44 +6516,7 @@ Your role is ASK (Advisory & Quick Support) - you provide analysis, recommendati
 
     // 保存模式到配置
     this.chatService.saveChatMode(mode as 'agent' | 'ask');
-
-    // ★ 切换模式时保留对话上下文（与 ensureServerSession 同策略）
-    const savedMessages = [...this.conversationMessages];
-    const savedIteration = this.toolCallingIteration;
-    const savedTitle = this.chatService.currentSessionTitle;
-    const savedPath = this.chatService.currentSessionPath;
-    const savedList = [...this.list];
-    const oldSessionId = this.sessionId;
-
-    await this.stopAndCloseSession();
-
-    try {
-      await this.startSession();
-    } catch (err) {
-      console.error('切换模式失败:', err);
-      // 恢复状态
-      this.conversationMessages = savedMessages;
-      this.toolCallingIteration = savedIteration;
-      this.list = savedList;
-      // 回退模式
-      this.chatService.saveChatMode('agent');
-      return;
-    }
-
-    // ★ 恢复客户端对话上下文
-    this.conversationMessages = savedMessages;
-    this.toolCallingIteration = savedIteration;
-    this.chatService.currentSessionTitle = savedTitle;
-    this.chatService.currentSessionPath = savedPath;
-    this.list = savedList;
-
-    // ★ 如果 sessionId 发生变化，迁移历史索引
-    const newSessionId = this.sessionId;
-    if (oldSessionId && newSessionId && oldSessionId !== newSessionId) {
-      this.chatHistoryService.migrateSessionId(oldSessionId, newSessionId);
-    }
-
-    // ★ 重新计算上下文预算
+    // 立即更新预算展示（工具集合可能随模式变化）
     this.contextBudgetService?.updateBudget(this.conversationMessages, this.getCurrentTools());
   }
 

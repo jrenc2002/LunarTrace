@@ -94,7 +94,7 @@ export class UserCenterComponent {
     try {
       await this.authService.checkAndSyncAuthStatus();
     } catch (error) {
-      console.error('同步认证状态失败:', error);
+      console.warn('同步认证状态失败:', error);
     }
   }
 
@@ -102,6 +102,8 @@ export class UserCenterComponent {
     this.authService.refreshMe().then(() => {
       // console.log('Auth token refreshed.');
       this.calculateQuotaUsagePercent();
+    }).catch((error) => {
+      console.warn('刷新用户信息失败:', error);
     });
   }
 
@@ -139,7 +141,7 @@ export class UserCenterComponent {
           this.userInfo.email = '';
         },
         error: (error) => {
-          console.error('注册错误:', error);
+          console.warn('注册错误:', error);
           this.message.error('注册失败，请检查网络连接');
         },
         complete: () => {
@@ -147,7 +149,7 @@ export class UserCenterComponent {
         }
       });
     } catch (error) {
-      console.error('注册过程中出错:', error);
+      console.warn('注册过程中出错:', error);
       this.message.error('注册失败');
       this.isWaiting = false;
     }
@@ -159,7 +161,7 @@ export class UserCenterComponent {
       await this.authService.logout();
       this.message.success('已退出登录');
     } catch (error) {
-      console.error('退出登录失败:', error);
+      console.warn('退出登录失败:', error);
       this.message.error('退出登录失败');
     } finally {
       this.isWaiting = false;

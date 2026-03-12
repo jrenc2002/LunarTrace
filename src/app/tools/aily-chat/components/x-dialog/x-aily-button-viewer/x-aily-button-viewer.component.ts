@@ -2,6 +2,19 @@ import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ChatService } from '../../../services/chat.service';
 import { NzButtonModule } from 'ng-zorro-antd/button';
+import { CmdService } from '../../../../../services/cmd.service';
+import { ElectronService } from '../../../../../services/electron.service';
+import { ProjectService } from '../../../../../services/project.service';
+import { executeCommandTool } from '../../../tools/executeCommandTool';
+
+/**
+ * actionType 标识按钮点击后的行为：
+ * - 'chat'  (默认) 发送 text 到对话
+ * - 'cmd'   执行 actionPayload 中的命令，结果回显到对话
+ * - 'url'   用浏览器打开 actionPayload 中的链接
+ * - 'path'  用资源管理器打开 actionPayload 中的本地路径
+ */
+type ButtonActionType = 'chat' | 'cmd' | 'url' | 'path';
 
 interface ButtonData {
   text: string;
@@ -12,6 +25,8 @@ interface ButtonData {
   loading?: boolean;
   size?: 'small' | 'default' | 'large';
   danger?: boolean;
+  actionType?: ButtonActionType;
+  actionPayload?: string;
 }
 
 @Component({
@@ -26,12 +41,13 @@ interface ButtonData {
             class="ac-btn"
             nz-button
             [nzType]="btn.type"
-            [disabled]="isDisabled || btn.disabled"
+            [disabled]="isDisabled || btn.disabled || btn.loading"
             [nzSize]="btn.size"
             [nzDanger]="btn.danger"
+            [nzLoading]="!!btn.loading"
             (click)="onButtonClick(btn)"
           >
-            @if (btn.icon) { <i class="fa-light" [class]="btn.icon"></i> }
+            @if (btn.icon && !btn.loading) { <i class="fa-light" [class]="btn.icon"></i> }
             {{ btn.text }}
           </button>
         }
@@ -70,7 +86,12 @@ export class XAilyButtonViewerComponent implements OnChanges {
   isDisabled = false;
   isHistory = false;
 
-  constructor(private chatService: ChatService) {}
+  constructor(
+    private chatService: ChatService,
+    private cmdService: CmdService,
+    private electronService: ElectronService,
+    private projectService: ProjectService,
+  ) {}
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['data']) this.processData();
@@ -103,13 +124,85 @@ export class XAilyButtonViewerComponent implements OnChanges {
       type: b.type ?? 'primary',
       icon: b.icon,
       disabled: b.disabled,
-      loading: b.loading,
+      loading: false,
       size: b.size ?? 'default',
       danger: b.danger ?? false,
+      actionType: b.actionType ?? b.action_type ?? 'chat',
+      actionPayload: b.actionPayload ?? b.action_payload ?? b.payload ?? b.command ?? '',
     };
   }
 
   onButtonClick(btn: ButtonData): void {
-    this.chatService.sendTextToChat(btn.text, { sender: 'button', type: 'button', cover: false });
+    switch (btn.actionType) {
+      case 'cmd':
+        this.handleCmd(btn);
+        break;
+      case 'url':
+        this.handleUrl(btn);
+        break;
+      case 'path':
+        this.handlePath(btn);
+        break;
+      default:
+        this.chatService.sendTextToChat(btn.text, { sender: 'button', type: 'button', cover: false });
+        break;
+    }
+  }
+
+  /** 执行命令并将结果回显到对话 */
+  private async handleCmd(btn: ButtonData): Promise<void> {
+    const command = btn.actionPayload;
+    if (!command) return;
+
+    const cwd = this.projectService.currentProjectPath;
+
+    // 回显「正在执行」状态到对话
+    this.chatService.sendTextToChat(
+      `\`\`\`aily-state\n${JSON.stringify({ state: 'doing', text: `${btn.text}: ${command}` })}\n\`\`\``,
+      { sender: 'button', type: 'button-cmd', cover: false },
+    );
+
+    btn.loading = true;
+    btn.disabled = true;
+
+    try {
+      const result = await executeCommandTool(this.cmdService, { command, cwd }, {
+        currentProjectPath: cwd,
+        allowProjectPathAccess: true,
+      });
+
+      const state = result.is_error ? 'error' : 'done';
+      const stateText = result.is_error ? `${btn.text} 执行失败` : `${btn.text} 执行完成`;
+
+      // 回显执行结果
+      this.chatService.sendTextToChat(
+        `\`\`\`aily-state\n${JSON.stringify({ state, text: stateText })}\n\`\`\`\n\`\`\`\n${result.content}\n\`\`\``,
+        { sender: 'button', type: 'button-cmd-result', cover: false },
+      );
+    } catch (e: any) {
+      this.chatService.sendTextToChat(
+        `\`\`\`aily-state\n${JSON.stringify({ state: 'error', text: `${btn.text} 执行异常` })}\n\`\`\`\n\`\`\`\n${e.message ?? e}\n\`\`\``,
+        { sender: 'button', type: 'button-cmd-result', cover: false },
+      );
+    } finally {
+      btn.loading = false;
+      btn.disabled = false;
+    }
+  }
+
+  /** 用浏览器打开 URL */
+  private handleUrl(btn: ButtonData): void {
+    const url = btn.actionPayload;
+    if (!url) return;
+    this.electronService.openUrl(url);
+  }
+
+  /** 用资源管理器打开本地路径 */
+  private handlePath(btn: ButtonData): void {
+    const path = btn.actionPayload;
+    if (!path) return;
+    if (window['other']?.openByExplorer) {
+      window['other'].openByExplorer(path);
+    }
   }
 }
