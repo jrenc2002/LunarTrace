@@ -199,7 +199,8 @@ class QueryBlockDefinitionTool implements IAilyTool {
   readonly environment = 'gui' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return queryBlockDefinitionHandler(ctx.host!.project, args);
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    return queryBlockDefinitionHandler(ctx.host.project, args);
   }
 
   getStartText(): string {
@@ -237,7 +238,7 @@ class AnalyzeLibraryBlocksTool implements IAilyTool {
         }
       }
     }
-    return analyzeLibraryBlocksHandler(ctx.host!.project, args);
+    return analyzeLibraryBlocksHandler(ctx.host?.project, args);
   }
 
   getStartText(args: any): string {
@@ -290,7 +291,7 @@ class VerifyBlockExistenceTool implements IAilyTool {
         // keep as-is, handler may handle string
       }
     }
-    return verifyBlockExistenceHandler(ctx.host!.project, args);
+    return verifyBlockExistenceHandler(ctx.host?.project, args);
   }
 
   getStartText(args: any): string {

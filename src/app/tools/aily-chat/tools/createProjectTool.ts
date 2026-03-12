@@ -1,6 +1,4 @@
 ﻿import { ToolUseResult } from "./tools";
-import { ProjectService } from "../../../services/project.service";
-import { ConfigService } from '../../../services/config.service';
 import { AilyHost } from '../core/host';
 
 interface LibraryInfo {
@@ -84,11 +82,18 @@ function collectProjectInfo(projectPath: string, projectName: string): CreatePro
     return result;
 }
 
-export async function newProjectTool(prjRootPath: string, toolArgs: any, prjService: ProjectService, configService: ConfigService): Promise<ToolUseResult> {
+export async function newProjectTool(prjRootPath: string, toolArgs: any, prjService: any, configService: any): Promise<ToolUseResult> {
     let is_error = false;
     let toolResult: string;
 
     try {
+        if (!prjService) {
+            throw new Error('项目服务不可用，无法创建项目');
+        }
+        if (!configService) {
+            throw new Error('配置服务不可用，无法获取开发板信息');
+        }
+
         // 判断toolArgs.board是否是JSON字符串
         let boardInfo;
         let boardName;
@@ -105,7 +110,13 @@ export async function newProjectTool(prjRootPath: string, toolArgs: any, prjServ
             }
         }
 
-        boardInfo = configService.boardDict[boardName] || null;
+        // 优先使用 boardDict（原始 ConfigService），降级到 boardList 搜索（IConfigProvider 适配器）
+        if (configService.boardDict) {
+            boardInfo = configService.boardDict[boardName] || null;
+        } else {
+            const boardList = configService.boardList || [];
+            boardInfo = boardList.find((b: any) => b.name === boardName) || null;
+        }
         if (!boardInfo) {
             throw new Error(`未找到开发板信息: ${toolArgs.board}`);
         }

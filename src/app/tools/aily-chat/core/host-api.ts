@@ -300,10 +300,14 @@ export interface IConfigProvider {
   readonly boardIndex?: any[];
   /** 板卡列表数据（旧版） */
   readonly boardList?: any[];
+  /** 板卡字典（按 name 索引） */
+  readonly boardDict?: Record<string, any>;
   /** 库索引数据（新版） */
   readonly libraryIndex?: any[];
   /** 库列表数据（旧版） */
   readonly libraryList?: any[];
+  /** 库字典（按 name 索引） */
+  readonly libraryDict?: Record<string, any>;
 }
 
 // ============================================================

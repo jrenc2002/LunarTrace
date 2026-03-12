@@ -32,7 +32,9 @@ class CreateProjectTool implements IAilyTool {
   readonly schema = findLegacySchema('create_project');
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    const result = await newProjectHandler(ctx.host!.project.projectRootPath || '', args, ctx.host!.project as any, ctx.host!.config as any);
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用，无法创建项目' };
+    if (!ctx.host?.config) return { is_error: true, content: '配置服务不可用，无法获取开发板信息' };
+    const result = await newProjectHandler(ctx.host.project.projectRootPath || '', args, ctx.host.project as any, ctx.host.config as any);
     if (!result.is_error) {
       // Signal to post-switch logic that Blockly rules injection is needed
       result.metadata = { ...result.metadata, newProject: true };
@@ -57,11 +59,12 @@ class ExecuteCommandTool implements IAilyTool {
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
     const host = ctx.host!;
+    if (!host.cmd) return { is_error: true, content: '命令执行服务不可用' };
     if (!args.cwd && host.project) {
       args.cwd = host.project.currentProjectPath || host.project.projectRootPath;
     }
 
-    const projectPath = args.cwd || host.project.currentProjectPath;
+    const projectPath = args.cwd || host.project?.currentProjectPath;
     const command = args.command || '';
     const isNpmInstall = command.includes('npm i') || command.includes('npm install');
     const isNpmUninstall = command.includes('npm uninstall');
@@ -219,7 +222,8 @@ class GetContextTool implements IAilyTool {
   readonly schema = findLegacySchema('get_context');
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return getContextHandler(ctx.host!.project as any, args);
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    return getContextHandler(ctx.host.project as any, args);
   }
 
   getStartText() { return '获取 上下文信息...'; }
@@ -237,7 +241,8 @@ class GetProjectInfoTool implements IAilyTool {
   readonly schema = findLegacySchema('get_project_info');
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return getProjectInfoHandler(ctx.host!.project as any, args);
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    return getProjectInfoHandler(ctx.host.project as any, args);
   }
 
   getStartText() { return '获取 项目信息...'; }
@@ -255,7 +260,8 @@ class BuildProjectTool implements IAilyTool {
   readonly schema = findLegacySchema('build_project');
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return buildProjectHandler(ctx.host!.builder as any, args);
+    if (!ctx.host?.builder) return { is_error: true, content: '编译服务不可用' };
+    return buildProjectHandler(ctx.host.builder as any, args);
   }
 
   getStartText() { return '正在编译项目...'; }
@@ -273,7 +279,8 @@ class ReloadProjectTool implements IAilyTool {
   readonly schema = findLegacySchema('reload_project');
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return reloadProjectHandler(ctx.host!.project as any, args);
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    return reloadProjectHandler(ctx.host.project as any, args);
   }
 
   getStartText() { return '重新加载项目...'; }
@@ -311,7 +318,8 @@ class SearchBoardsLibrariesTool implements IAilyTool {
   readonly displayMode = 'appendMessage' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return searchBoardsLibrariesTool.handler(args, ctx.host!.config as any);
+    if (!ctx.host?.config) return { is_error: true, content: '配置服务不可用，无法搜索硬件' };
+    return searchBoardsLibrariesTool.handler(args, ctx.host.config as any);
   }
 
   getStartText(args: any): string {
@@ -386,7 +394,8 @@ class GetHardwareCategoriesTool implements IAilyTool {
   readonly displayMode = 'appendMessage' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return getHardwareCategoriesTool.handler(args, ctx.host!.config as any);
+    if (!ctx.host?.config) return { is_error: true, content: '配置服务不可用，无法获取硬件分类' };
+    return getHardwareCategoriesTool.handler(args, ctx.host.config as any);
   }
 
   getStartText(args: any): string {
@@ -412,7 +421,8 @@ class GetBoardParametersTool implements IAilyTool {
   readonly displayMode = 'appendMessage' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return getBoardParametersTool.handler(ctx.host!.project as any, args);
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用，无法获取开发板参数' };
+    return getBoardParametersTool.handler(ctx.host.project as any, args);
   }
 
   getStartText(args: any): string {
@@ -436,7 +446,8 @@ class FetchTool implements IAilyTool {
   readonly schema = findLegacySchema('fetch');
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return fetchHandler(ctx.host!.fetch, args);
+    if (!ctx.host?.fetch) return { is_error: true, content: '网络请求服务不可用' };
+    return fetchHandler(ctx.host.fetch, args);
   }
 
   getStartText(args: any): string {
@@ -459,7 +470,8 @@ class WebSearchTool implements IAilyTool {
   readonly schema = findLegacySchema('web_search');
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return webSearchHandler(ctx.host!.webSearch, args);
+    if (!ctx.host?.webSearch) return { is_error: true, content: '网页搜索服务不可用' };
+    return webSearchHandler(ctx.host.webSearch, args);
   }
 
   getStartText(args: any): string {

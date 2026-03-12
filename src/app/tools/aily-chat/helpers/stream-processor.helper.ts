@@ -316,7 +316,7 @@ export class StreamProcessorHelper {
               }
             }
 
-            if (data.tool_name !== 'todo_write_tool' && resultText) {
+            if ((data.tool_name !== 'todo_write_tool' && data.tool_name !== 'search_available_tools') && resultText) {
               let finalState: ToolCallState;
               switch (resultState) {
                 case 'error': finalState = ToolCallState.ERROR; break;

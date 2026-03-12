@@ -47,7 +47,8 @@ export class SessionLifecycleHelper {
       { icon: 'fa-light fa-trash', action: 'delete-history', title: '删除' },
     ];
     const entries = this.engine.chatHistoryService.getHistoryList('current-project',
-      AilyHost.get().project.currentProjectPath || AilyHost.get().project.projectRootPath
+      AilyHost.get().project.currentProjectPath || AilyHost.get().project.projectRootPath,
+      AilyHost.get().project.projectRootPath
     );
     this.engine.menuManager.historyList = entries.map(e => ({
       sessionId: e.sessionId,
