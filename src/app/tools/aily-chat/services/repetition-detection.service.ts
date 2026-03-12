@@ -326,6 +326,12 @@ export class RepetitionDetectionService {
         return thinkSentenceResult;
       }
 
+      // Think Layer 3: 段落块循环重复（ABCDABCD...整段重复）
+      const thinkParagraphResult = this.checkParagraphCycleRepetitionOn(this.thinkTokens);
+      if (thinkParagraphResult.isRepetitive) {
+        return thinkParagraphResult;
+      }
+
       return { isRepetitive: false };
     }
 
@@ -355,6 +361,12 @@ export class RepetitionDetectionService {
     const sentenceResult = this.checkConsecutiveSentenceRepetition();
     if (sentenceResult.isRepetitive) {
       return sentenceResult;
+    }
+
+    // Layer 2.5: 段落块循环重复（ABCDABCD... 多句段落整体重复）
+    const paragraphResult = this.checkParagraphCycleRepetition();
+    if (paragraphResult.isRepetitive) {
+      return paragraphResult;
     }
 
     // Layer 3: 内容块跨边界重复（<think>/tool_call 前后相同内容块）
@@ -453,13 +465,13 @@ export class RepetitionDetectionService {
     // 根据模式长度调整阈值
     let threshold: number;
     if (patternLen <= 5) {
-      threshold = 15; // 15 次 3-5 字符模式（如 "哈哈哈哈"）
+      threshold = 6;
     } else if (patternLen <= 10) {
-      threshold = 8;
+      threshold = 4;
     } else if (patternLen <= 20) {
-      threshold = 5;
+      threshold = 3;
     } else {
-      threshold = 5; // 统一使用 5 次阈值
+      threshold = 3; // 统一使用 3 次阈值
     }
 
     if (consecutiveCount >= threshold) {
@@ -510,9 +522,9 @@ export class RepetitionDetectionService {
       // 阈值根据模式长度调整
       let threshold: number;
       if (patternLen === 1) {
-        threshold = 50; // 50 个相同字符（如 \t\t\t...）
+        threshold = 15; // 15 个相同字符（如 \t\t\t...）
       } else if (patternLen === 2) {
-        threshold = 10;  // 10 次 2 字符模式（如 \t}\t}...）
+        threshold = 8;  // 8 次 2 字符模式（如 \t}\t}...）
       } else {
         threshold = 5;  // 5 次 3-5 字符模式
       }
@@ -607,6 +619,82 @@ export class RepetitionDetectionService {
         pattern: `相同句子连续出现 ${consecutiveCount} 次: "${displaySentence}"`,
         suggestion: '检测到相同内容的连续重复输出。'
       };
+    }
+
+    return { isRepetitive: false };
+  }
+
+  // -------------------- Layer 2.5: 段落块循环重复 --------------------
+
+  /**
+   * 检测段落块循环重复
+   * 主缓冲区入口，委托给参数化版本
+   */
+  private checkParagraphCycleRepetition(): RepetitionCheckResult {
+    return this.checkParagraphCycleRepetitionOn(this.streamTokens);
+  }
+
+  /**
+   * 在指定 token 数组上检测段落块循环重复
+   * 场景：模型反复输出相同的 N 句话组成的段落（ABCDABCDABCD...）
+   * 与 Layer 2 不同点：Layer 2 检测单句重复（AAAA），本层检测多句组成的块整体重复
+   */
+  private checkParagraphCycleRepetitionOn(tokens: string[]): RepetitionCheckResult {
+    const text = tokens.join('');
+
+    // 段落块至少需要足够长的文本（3 次重复 × 至少 2 句 × 平均 30 字 ≈ 180 字符）
+    if (text.length < 150) {
+      return { isRepetitive: false };
+    }
+
+    const sentences = this.splitIntoSentences(text);
+
+    // 至少需要 6 个句子（最小 blockSize=2 × 3 次重复）
+    if (sentences.length < 6) {
+      return { isRepetitive: false };
+    }
+
+    const normalized = sentences.map(s => this.normalizeSentence(s));
+
+    // 尝试不同的块大小（2~10 句为一个块）
+    const maxBlockSize = Math.min(10, Math.floor(normalized.length / 3));
+
+    for (let blockSize = 2; blockSize <= maxBlockSize; blockSize++) {
+      // 取末尾 blockSize 个句子作为模式块
+      const patternBlock = normalized.slice(-blockSize);
+
+      // 从末尾往前匹配完整的块
+      let matchCount = 1; // 模式块本身算 1 次
+      let pos = normalized.length - blockSize;
+
+      while (pos >= blockSize) {
+        const candidate = normalized.slice(pos - blockSize, pos);
+        let isMatch = true;
+        for (let i = 0; i < blockSize; i++) {
+          if (candidate[i] !== patternBlock[i]) {
+            isMatch = false;
+            break;
+          }
+        }
+        if (isMatch) {
+          matchCount++;
+          pos -= blockSize;
+        } else {
+          break;
+        }
+      }
+
+      // 块重复 3 次以上即触发
+      if (matchCount >= 3) {
+        const displaySentence = sentences[sentences.length - blockSize].length > 30
+          ? sentences[sentences.length - blockSize].substring(0, 30) + '...'
+          : sentences[sentences.length - blockSize];
+        return {
+          isRepetitive: true,
+          pattern: `${blockSize} 句段落块连续循环 ${matchCount} 次: "${displaySentence}"...`,
+          suggestion: '检测到相同段落的循环重复输出。'
+        };
+      }
     }
 
     return { isRepetitive: false };

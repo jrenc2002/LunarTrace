@@ -86,7 +86,7 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
     // 过滤 think 标签内容，支持实时过滤
     let currentContent = this.filterThinkContent(this.content);
 
-    // 过滤 context / user-query 标签：折叠上下文，剥离 user-query 包裹
+    // 过滤 attachments 标签：折叠上下文附件
     currentContent = this.filterContextTags(currentContent);
     
     // 对一些常见错误的处理，确保markdown格式正确
@@ -594,7 +594,7 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
     // 移除最后几个元素（对应旧段落）
     const elementsToRemove = containerChildren.slice(-oldElementsCount);
     elementsToRemove.forEach(element => {
-      if (element.parentNode === container) {
+      if (element.parentElement === container) {
         container.removeChild(element);
       }
     });
@@ -710,7 +710,7 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
     // 移除多余的元素
     const children = Array.from(container.children);
     for (let i = elementsToKeep; i < children.length; i++) {
-      if (children[i] && children[i].parentNode === container) {
+      if (children[i] && children[i].parentElement === container) {
         container.removeChild(children[i]);
       }
     }
@@ -836,15 +836,14 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   /**
-   * 过滤 <context> 和 <user-query> 标签
-   * - <context>...</context> → 转为可折叠的 aily-context 代码块
-   * - <user-query>...</user-query> → 剥离标签，仅保留内部文本
+   * 过滤 <attachments> 标签
+   * - <attachments>...</attachments> → 转为可折叠的 aily-context 代码块
    */
   private filterContextTags(content: string): string {
     if (!content) return content;
 
-    // 1) 处理 <context>...</context> → 折叠式 HTML 块
-    content = content.replace(/<context>\n?([\s\S]*?)\n?<\/context>/g, (_match, inner: string) => {
+    // 处理 <attachments>...</attachments> → 折叠式 HTML 块（兼容旧 <context> 标签）
+    content = content.replace(/<(?:attachments|context)>\n?([\s\S]*?)\n?<\/(?:attachments|context)>/g, (_match, inner: string) => {
       const trimmed = inner.trim();
       if (!trimmed) return '';
 
@@ -860,9 +859,6 @@ export class DialogComponent implements OnInit, OnChanges, OnDestroy {
 
       return `<details class="aily-context-block"><summary class="aily-context-summary"><i class="fa-light fa-cube"></i> ${label}</summary><pre class="aily-context-content">${escaped}</pre></details>`;
     });
-
-    // 2) 剥离 <user-query>...</user-query> 标签
-    content = content.replace(/<user-query>([\s\S]*?)<\/user-query>/g, '$1');
 
     return content;
   }

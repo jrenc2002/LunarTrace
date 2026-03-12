@@ -1,5 +1,6 @@
-import { ToolUseResult } from "./tools";
+﻿import { ToolUseResult } from "./tools";
 import { normalizePath } from "../services/security.service";
+import { AilyHost } from '../core/host';
 
 /**
  * 检查 ripgrep 是否可用
@@ -133,21 +134,21 @@ function searchFilesRecursive(
         }
         
         // 防止循环引用
-        const realPath = window['fs'].realpathSync ? window['fs'].realpathSync(dirPath) : dirPath;
+        const realPath = AilyHost.get().fs.realpathSync ? AilyHost.get().fs.realpathSync(dirPath) : dirPath;
         if (visited.has(realPath)) {
             return;
         }
         visited.add(realPath);
         
         try {
-            const entries = window['fs'].readDirSync(dirPath);
+            const entries = AilyHost.get().fs.readDirSync(dirPath);
             
             for (const entry of entries) {
                 if (matchedFiles.length >= maxResults) {
                     break;
                 }
                 
-                const fullPath = window['path'].join(dirPath, entry.name);
+                const fullPath = AilyHost.get().path.join(dirPath, entry.name);
                 
                 // 跳过常见的需要忽略的目录
                 const skipDirs = ['node_modules', '.git', 'dist', 'build', '.next', 'out', 'coverage'];
@@ -156,7 +157,7 @@ function searchFilesRecursive(
                 }
                 
                 try {
-                    const stats = window['fs'].statSync(fullPath);
+                    const stats = AilyHost.get().fs.statSync(fullPath);
                     
                     if (stats.isDirectory()) {
                         // 递归搜索子目录
@@ -169,7 +170,7 @@ function searchFilesRecursive(
                         
                         // 读取文件内容并搜索
                         try {
-                            const content = window['fs'].readFileSync(fullPath, 'utf-8');
+                            const content = AilyHost.get().fs.readFileSync(fullPath, 'utf-8');
                             if (searchRegex.test(content)) {
                                 matchedFiles.push(fullPath);
                             }
@@ -196,8 +197,8 @@ function searchFilesRecursive(
     try {
         matchedFiles.sort((a, b) => {
             try {
-                const statsA = window['fs'].statSync(a);
-                const statsB = window['fs'].statSync(b);
+                const statsA = AilyHost.get().fs.statSync(a);
+                const statsB = AilyHost.get().fs.statSync(b);
                 const timeComparison = statsB.mtime.getTime() - statsA.mtime.getTime();
                 
                 if (timeComparison === 0) {
@@ -271,8 +272,8 @@ export async function grepTool(
         // 如果未提供路径，尝试获取当前项目路径
         if (!searchPath) {
             // 可以从全局上下文获取项目路径
-            if (window['prjService'] && window['prjService'].project && window['prjService'].project.path) {
-                searchPath = window['prjService'].project.path;
+            if (AilyHost.get().project && AilyHost.get().project.currentProjectPath) {
+                searchPath = AilyHost.get().project.currentProjectPath;
             } else {
                 const toolResult = {
                     is_error: true,
@@ -288,7 +289,7 @@ export async function grepTool(
         // console.log(`搜索文件内容: pattern="${pattern}", path="${searchPath}", include="${include || 'all'}"`);
         
         // 验证路径是否存在
-        if (!window['fs'].existsSync(searchPath)) {
+        if (!AilyHost.get().fs.existsSync(searchPath)) {
             const toolResult = {
                 is_error: true,
                 content: `搜索路径不存在: ${searchPath}`
@@ -297,7 +298,7 @@ export async function grepTool(
         }
         
         // 检查是否为目录
-        const isDirectory = window['fs'].isDirectory(searchPath);
+        const isDirectory = AilyHost.get().fs.isDirectory(searchPath);
         if (!isDirectory) {
             const toolResult = {
                 is_error: true,

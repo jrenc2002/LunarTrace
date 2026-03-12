@@ -6,6 +6,139 @@ export const toolParamNames = [
 
 export type ToolParamName = (typeof toolParamNames)[number];
 
+/**
+ * 工具延迟加载分组定义
+ * 参考 Copilot 的 deferred tool loading 策略：
+ * - Core 工具：始终发送给 LLM（name + description + input_schema）
+ * - Deferred 工具：仅在系统提示中列出名称，通过 search_available_tools 按需加载
+ */
+export interface DeferredToolGroup {
+  name: string;
+  brief: string; // 一行中文描述，用于 deferred listing
+  tools: string[]; // 该分组下的工具名称
+}
+
+export const DEFERRED_TOOL_GROUPS: DeferredToolGroup[] = [
+  {
+    name: '文件工具',
+    brief: '文件夹创建、文件/文件夹删除',
+    tools: ['create_folder', 'delete_file', 'delete_folder']
+  },
+  {
+    name: '搜索工具',
+    brief: '全局文本搜索(grep)、文件模式匹配(glob)',
+    tools: ['grep_tool', 'glob_tool']
+  },
+  {
+    name: '网络工具',
+    brief: '网页/API 请求(fetch)、网络搜索(web_search)',
+    tools: ['fetch', 'web_search']
+  },
+  {
+    name: '硬件/库搜索',
+    brief: '搜索开发板和库、获取硬件分类、查询开发板参数',
+    tools: ['search_boards_libraries', 'get_hardware_categories', 'get_board_parameters']
+  },
+  {
+    name: 'ABS/Blockly 工具',
+    brief: 'ABS 文件同步、版本控制、ABS 语法参考、库块定义分析',
+    tools: ['sync_abs_file', 'abs_version_control', 'get_abs_syntax', 'analyze_library_blocks']
+  },
+  {
+    name: '接线图工具',
+    brief: '生成/验证/保存接线图、组件目录、引脚映射',
+    tools: ['generate_schematic', 'get_pinmap_summary', 'get_component_catalog', 'validate_schematic', 'apply_schematic', 'get_current_schematic', 'generate_pinmap', 'save_pinmap']
+  },
+  {
+    name: '项目管理',
+    brief: '创建项目、重新加载项目、TODO 任务管理',
+    tools: ['create_project', 'reload_project', 'todo_write_tool']
+  }
+];
+
+/** 所有 deferred 工具名称的 Set（快速查找） */
+const DEFERRED_TOOL_NAMES = new Set(
+  DEFERRED_TOOL_GROUPS.flatMap(g => g.tools)
+);
+
+/** 获取核心工具（非 deferred，始终发送给 LLM） */
+export function getCoreTools(allTools: any[]): any[] {
+  return allTools.filter(t => !DEFERRED_TOOL_NAMES.has(t.name));
+}
+
+/** 获取 deferred 工具（按需加载） */
+export function getDeferredTools(allTools: any[]): any[] {
+  return allTools.filter(t => DEFERRED_TOOL_NAMES.has(t.name));
+}
+
+/** 检查工具是否为 deferred */
+export function isDeferredTool(name: string): boolean {
+  return DEFERRED_TOOL_NAMES.has(name);
+}
+
+/**
+ * 生成 deferred 工具列表文本（注入到规则中，告知 LLM 可用的延迟工具）
+ * 参考 Copilot 的 <availableDeferredTools> 系统提示词段
+ * @param agentName 当前 agent 名称，过滤工具的 agents 字段
+ * @param excludeTools 配置中禁用的工具名称集合
+ */
+export function getDeferredToolsListing(agentName?: string, excludeTools?: Set<string>): string {
+  const lines: string[] = [];
+  for (const g of DEFERRED_TOOL_GROUPS) {
+    const filteredTools = g.tools.filter(toolName => {
+      if (excludeTools?.has(toolName)) return false;
+      if (agentName) {
+        const toolDef = (TOOLS as any[]).find(t => t.name === toolName);
+        if (toolDef?.agents && !toolDef.agents.includes(agentName)) return false;
+      }
+      return true;
+    });
+    if (filteredTools.length === 0) continue;
+    lines.push(`- ${g.name}: ${filteredTools.join(', ')}（${g.brief}）`);
+  }
+  if (lines.length === 0) return '';
+  return `<availableTools>\n以下工具可通过 search_available_tools 按需加载后使用：\n${lines.join('\n')}\n调用 search_available_tools 时传入关键词或工具名即可加载对应工具的完整定义。\n</availableTools>`;
+}
+
+/**
+ * 搜索 deferred 工具（供 search_available_tools 元工具使用）
+ * @param query 搜索关键词
+ * @param allTools 全部工具定义数组
+ * @param agentName 当前 agent 名称，过滤工具的 agents 字段
+ * @param excludeTools 配置中禁用的工具名称集合
+ */
+export function searchDeferredTools(query: string, allTools: any[], agentName?: string, excludeTools?: Set<string>): any[] {
+  const q = query.toLowerCase();
+  let deferredTools = getDeferredTools(allTools);
+
+  // 按 agent 权限过滤
+  if (agentName) {
+    deferredTools = deferredTools.filter(t => !t.agents || t.agents.includes(agentName));
+  }
+  // 按配置过滤（尊重 aily config 中的 disabledTools）
+  if (excludeTools && excludeTools.size > 0) {
+    deferredTools = deferredTools.filter(t => !excludeTools.has(t.name));
+  }
+
+  // 1. 精确名称匹配
+  const exactMatch = deferredTools.filter(t => t.name === q);
+  if (exactMatch.length > 0) return exactMatch;
+
+  // 2. 分组名称匹配
+  const groupMatch = DEFERRED_TOOL_GROUPS.find(g =>
+    g.name.toLowerCase().includes(q) || g.brief.toLowerCase().includes(q)
+  );
+  if (groupMatch) {
+    return deferredTools.filter(t => groupMatch.tools.includes(t.name));
+  }
+
+  // 3. 名称/描述模糊匹配
+  return deferredTools.filter(t =>
+    t.name.toLowerCase().includes(q) ||
+    (t.description && t.description.toLowerCase().includes(q))
+  );
+}
+
 // export interface ToolUse {
 //     type: "tool_use"
 //     name: ToolName
@@ -19,6 +152,34 @@ export interface ToolUseResult {
 }
 
 export const TOOLS = [
+    // =============================================================================
+    // 元工具 - search_available_tools（始终可用，用于发现和加载 deferred 工具）
+    // =============================================================================
+    {
+        name: 'search_available_tools',
+        description: `搜索并加载可用的扩展工具。当你需要使用未在当前工具列表中的工具时，调用此工具按关键词搜索。
+成功后工具会被加载，可在后续对话中直接调用。
+
+搜索示例：
+- search_available_tools({query: "schematic"}) — 加载接线图相关工具
+- search_available_tools({query: "grep"}) — 加载代码搜索工具
+- search_available_tools({query: "fetch"}) — 加载网络请求工具
+- search_available_tools({query: "abs"}) — 加载 ABS/Blockly 工具`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                query: {
+                    type: 'string',
+                    description: '搜索关键词（工具名、分组名或功能描述）'
+                }
+            },
+            required: ['query']
+        },
+        agents: ["mainAgent", "schematicAgent"]
+    },
+    // =============================================================================
+    // 核心工具 - 始终发送给 LLM
+    // =============================================================================
     {
         name: 'create_project',
         description: '创建一个新项目，返回项目路径。需要提供使用的开发板（如 "@aily-project/board-arduino_uno", "@aily-project/board-arduino_uno_r4_minima"），传入的开发板名称以`https://blockly.diandeng.tech/boards.json`中的内容为准。',

@@ -33,7 +33,7 @@
       </x-markdown>
     }
   </div>
-  @if (doing) {
+  @if (doing || content==='[thinking...]') {
     <div class="loader"></div>
   }
 </div>

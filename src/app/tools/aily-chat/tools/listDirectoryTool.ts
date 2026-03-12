@@ -1,5 +1,6 @@
-import { ToolUseResult } from "./tools";
+﻿import { ToolUseResult } from "./tools";
 import { normalizePath } from "../services/security.service";
+import { AilyHost } from '../core/host';
 
 /**
  * 列出目录内容工具
@@ -29,7 +30,7 @@ export async function listDirectoryTool(
         }
 
         // 检查路径是否存在
-        if (!window['fs'].existsSync(dirPath)) {
+        if (!AilyHost.get().fs.existsSync(dirPath)) {
             const toolResult = {
                 is_error: true,
                 content: `目录不存在: ${dirPath}`
@@ -38,7 +39,7 @@ export async function listDirectoryTool(
         }
 
         // 检查是否为目录
-        const isDirectory = await window['fs'].isDirectory(dirPath);
+        const isDirectory = await AilyHost.get().fs.isDirectory(dirPath);
         if (!isDirectory) {
             const toolResult = {
                 is_error: true,
@@ -47,14 +48,14 @@ export async function listDirectoryTool(
             return toolResult;
         }
 
-        const files = await window['fs'].readDirSync(dirPath);
+        const files = await AilyHost.get().fs.readDirSync(dirPath);
         const fileDetails = await Promise.all(
             files.map(async (file) => {
-                const fullPath = window['path'].join(dirPath, file.name);
-                const stats = await window['fs'].statSync(fullPath);
+                const fullPath = AilyHost.get().path.join(dirPath, file.name);
+                const stats = await AilyHost.get().fs.statSync(fullPath);
                 return {
                     name: file.name,
-                    isDirectory: await window['fs'].isDirectory(fullPath),
+                    isDirectory: await AilyHost.get().fs.isDirectory(fullPath),
                     size: stats.size,
                     modifiedTime: stats.mtime,
                 };

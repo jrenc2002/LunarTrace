@@ -20,37 +20,15 @@ import { Injectable, OnDestroy } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Subject, Observable } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
-import { API } from '../../../configs/api.config';
-import { AuthService } from '../../../services/auth.service';
-import { ProjectService } from '../../../services/project.service';
-import { ConnectionGraphService } from '../../../services/connection-graph.service';
+import { ChatAPI } from '../core/api-endpoints';
+import { AilyHost } from '../core/host';
 import { AilyChatConfigService } from './aily-chat-config.service';
 import { TOOLS, ToolUseResult } from '../tools/tools';
 import { createSecurityContext } from './security.service';
+// ToolRegistry: 统一工具调度
+import { ToolRegistry } from '../core/tool-registry';
+import '../tools/registered/register-all';
 
-import {
-  generateConnectionGraphTool,
-  getPinmapSummaryTool,
-  validateConnectionGraphTool,
-  getSensorPinmapCatalogTool,
-  generatePinmapTool,
-  savePinmapTool,
-  getCurrentSchematicTool,
-  applySchematicTool
-} from '../tools/connectionGraphTool';
-import { getContextTool } from '../tools/getContextTool';
-import { getProjectInfoTool } from '../tools/getProjectInfoTool';
-import { readFileTool } from '../tools/readFileTool';
-import { createFileTool } from '../tools/createFileTool';
-import { editFileTool } from '../tools/editFileTool';
-import { deleteFileTool } from '../tools/deleteFileTool';
-import { deleteFolderTool } from '../tools/deleteFolderTool';
-import { createFolderTool } from '../tools/createFolderTool';
-import { listDirectoryTool } from '../tools/listDirectoryTool';
-import { getDirectoryTreeTool } from '../tools/getDirectoryTreeTool';
-import { grepTool } from '../tools/grepTool';
-import globTool from '../tools/globTool';
-import { getBoardParametersTool } from '../tools/getBoardParametersTool';
 import { fetchTool, FetchToolService } from '../tools/fetchTool';
 
 // ===== 类型定义 =====
@@ -122,13 +100,9 @@ export class SubagentSessionService implements OnDestroy {
 
   constructor(
     private http: HttpClient,
-    private authService: AuthService,
-    private projectService: ProjectService,
-    private connectionGraphService: ConnectionGraphService,
     private ailyChatConfigService: AilyChatConfigService,
   ) {
     this.fetchToolService = new FetchToolService(this.http);
-    // console.log('[SubagentSession] 服务初始化');
   }
 
   ngOnDestroy(): void {
@@ -298,7 +272,7 @@ export class SubagentSessionService implements OnDestroy {
     };
 
     try {
-      const result: any = await this.http.post(API.startSession, payload).toPromise();
+      const result: any = await this.http.post(ChatAPI.startSession, payload).toPromise();
       if (result?.status !== 'success') {
         throw new Error(result?.message || `创建 ${agentName} 会话失败`);
       }
@@ -322,7 +296,7 @@ export class SubagentSessionService implements OnDestroy {
    * 关闭服务端会话
    */
   private closeServerSession(sessionId: string): void {
-    this.http.post(`${API.closeSession}/${sessionId}`, {}).toPromise().catch(() => {});
+    this.http.post(`${ChatAPI.closeSession}/${sessionId}`, {}).toPromise().catch(() => {});
   }
 
   // =========================================================================
@@ -440,7 +414,7 @@ export class SubagentSessionService implements OnDestroy {
     timeout: number,
     turnState: SubagentTurnState,
   ): Promise<void> {
-    const token = await this.authService.getToken2();
+    const token = await AilyHost.get().auth.getToken!();
     const headers: HeadersInit = { 'Content-Type': 'application/json' };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -460,7 +434,7 @@ export class SubagentSessionService implements OnDestroy {
 
     let response: Response;
     try {
-      response = await fetch(`${API.chatRequest}/${session.sessionId}`, {
+      response = await fetch(`${ChatAPI.chatRequest}/${session.sessionId}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
@@ -650,59 +624,24 @@ export class SubagentSessionService implements OnDestroy {
   }
 
   /**
-   * 路由工具调用到具体的处理函数（与 BackgroundAgentService.executeTool 同逻辑）
+   * 路由工具调用到具体的处理函数。
+   * 优先通过 ToolRegistry 统一调度，减少重复 switch/case。
    */
   private async executeTool(toolName: string, args: any): Promise<ToolUseResult> {
-    const secCtx = createSecurityContext(this.projectService.currentProjectPath || '');
-
-    switch (toolName) {
-      case 'generate_schematic':
-        return generateConnectionGraphTool(this.connectionGraphService, this.projectService, args);
-      case 'get_pinmap_summary':
-        return getPinmapSummaryTool(this.connectionGraphService, this.projectService, args);
-      case 'get_component_catalog':
-        return getSensorPinmapCatalogTool(this.connectionGraphService, this.projectService, args);
-      case 'validate_schematic':
-        return validateConnectionGraphTool(this.connectionGraphService, this.projectService, args);
-      case 'apply_schematic':
-        return applySchematicTool(this.connectionGraphService, this.projectService, args);
-      case 'get_current_schematic':
-        return getCurrentSchematicTool(this.connectionGraphService, this.projectService, args);
-      case 'generate_pinmap':
-        return generatePinmapTool(this.connectionGraphService, this.projectService, args);
-      case 'save_pinmap':
-        return savePinmapTool(this.connectionGraphService, this.projectService, args);
-      case 'get_context':
-        return getContextTool(this.projectService, args);
-      case 'get_project_info':
-        return getProjectInfoTool(this.projectService, args);
-      case 'read_file':
-        return readFileTool(args, secCtx);
-      case 'create_file':
-        return createFileTool(args, secCtx);
-      case 'edit_file':
-        return editFileTool(args);
-      case 'delete_file':
-        return deleteFileTool(args, secCtx);
-      case 'delete_folder':
-        return deleteFolderTool(args, secCtx);
-      case 'create_folder':
-        return createFolderTool(args);
-      case 'list_directory':
-        return listDirectoryTool(args);
-      case 'get_directory_tree':
-        return getDirectoryTreeTool(args);
-      case 'grep_tool':
-        return grepTool(args);
-      case 'glob_tool':
-        return globTool(args);
-      case 'get_board_parameters':
-        return getBoardParametersTool.handler(this.projectService, args);
-      case 'fetch':
-        return fetchTool(this.fetchToolService, args);
-      default:
-        return { is_error: true, content: `Subagent 不支持工具: ${toolName}` };
+    // 已注册工具：通过 ToolRegistry 统一调度
+    if (ToolRegistry.has(toolName)) {
+      const ctx = {
+        projectService: AilyHost.get().project,
+        connectionGraphService: AilyHost.get().connectionGraph,
+        securityContext: createSecurityContext(AilyHost.get().project.currentProjectPath || ''),
+        fetchToolService: this.fetchToolService,
+        configService: AilyHost.get().config,
+      };
+      return ToolRegistry.execute(toolName, args, ctx);
     }
+
+    // 未注册工具：返回错误
+    return { is_error: true, content: `Subagent 不支持工具: ${toolName}` };
   }
 
   // =========================================================================
@@ -751,9 +690,17 @@ export class SubagentSessionService implements OnDestroy {
   // =========================================================================
 
   private getToolsForAgent(agentName: string): any[] {
-    return (TOOLS as any[]).filter(tool => {
+    // 1. 按 agents 字段过滤
+    let tools = (TOOLS as any[]).filter(tool => {
       if (!tool.agents) return false;
       return tool.agents.includes(agentName);
     });
+    // 2. 按 aily config 配置过滤（尊重用户的 enabledTools/disabledTools 设置）
+    const agentConfig = this.ailyChatConfigService.getAgentToolsConfig(agentName);
+    const disabledTools = new Set(agentConfig.disabledTools || []);
+    if (disabledTools.size > 0) {
+      tools = tools.filter(tool => !disabledTools.has(tool.name));
+    }
+    return tools;
   }
 }

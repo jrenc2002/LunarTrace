@@ -1,0 +1,153 @@
+/**
+ * 内容清洗与截断服务
+ *
+ * 从 AilyChatComponent 提取的纯函数/静态方法集合，用于：
+ * - 清理 assistant 文本中的 UI-only 标记
+ * - 清理工具结果中的临时元素
+ * - 截断过长工具结果
+ * - 解析 TERMINATE 前缀
+ * - JSON 安全化
+ * - 历史标记
+ */
+
+/** 单条工具结果的默认最大字符数（约 2000 tokens） */
+const TOOL_RESULT_MAX_CHARS = 8000;
+
+/** 已内置截断的工具名称（跳过二次截断） */
+const SELF_TRUNCATING_TOOLS = new Set(['fetch', 'web_search', 'read_file', 'grep']);
+
+/**
+ * 确保字符串在 JSON 中安全（转义特殊字符）
+ */
+export function makeJsonSafe(str: string): string {
+  if (!str) return str;
+  return str
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+}
+
+/**
+ * 清理 assistant 内容，移除仅供 UI 渲染的元素（think/aily-state/aily-button/aily-mermaid）
+ */
+export function sanitizeAssistantContent(content: string): string {
+  if (!content) return '';
+
+  let cleaned = content;
+  cleaned = cleaned.replace(/\[thinking\.\.\.?\]/g, '');
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/g, '');
+
+  const openThinkIdx = cleaned.lastIndexOf('<think>');
+  if (openThinkIdx >= 0 && !cleaned.substring(openThinkIdx).includes('</think>')) {
+    cleaned = cleaned.substring(0, openThinkIdx);
+  }
+
+  cleaned = cleaned.replace(/```aily-state[\s\S]*?```/g, '');
+  cleaned = cleaned.replace(/```aily-mermaid[\s\S]*?```/g, '');
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+  return cleaned.trim();
+}
+
+/**
+ * 清理工具结果，移除 rules/info/reminder 标签和 toolResult 包装
+ */
+export function sanitizeToolContent(content: string): string {
+  if (!content) return '';
+
+  let cleaned = content;
+  cleaned = cleaned.replace(/<rules>[\s\S]*?<\/rules>/g, '');
+  cleaned = cleaned.replace(/<info>[\s\S]*?<\/info>/g, '');
+  cleaned = cleaned.replace(/<reminder>[\s\S]*?<\/reminder>/g, '');
+  cleaned = cleaned.replace(/<toolResult>([\s\S]*?)<\/toolResult>/g, '$1');
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+  return cleaned.trim();
+}
+
+/**
+ * 截断过长工具结果（Copilot 风格 40/60 头尾分割）
+ */
+export function truncateToolResult(content: string, toolName?: string, maxChars?: number): string {
+  if (toolName && SELF_TRUNCATING_TOOLS.has(toolName)) {
+    return content;
+  }
+
+  const limit = maxChars ?? TOOL_RESULT_MAX_CHARS;
+  if (!content || content.length <= limit) return content;
+
+  const markerText = '\n\n[... 工具返回内容过长，已截断 ...]\n\n';
+  const available = limit - markerText.length;
+  const headSize = Math.floor(available * 0.4);
+  const tailSize = available - headSize;
+
+  const head = content.substring(0, headSize);
+  const tail = content.substring(content.length - tailSize);
+
+  return head + markerText + tail;
+}
+
+/**
+ * 在 text 中查找 TERMINATE 前缀的起始位置
+ */
+export function findTerminatePrefixStart(text: string, target: string): number {
+  for (let i = 0; i < text.length; i++) {
+    const suffix = text.slice(i);
+    if (target.startsWith(suffix)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * 标记内容为历史（将 doing 状态的 aily-state 块替换为 done）
+ */
+export function markContentAsHistory(content: string): string {
+  if (!content || typeof content !== 'string') {
+    return content;
+  }
+  return content.replace(
+    /```aily-state\n([\s\S]*?)```/g,
+    (match, json) => {
+      try {
+        const trimmedContent = json.trim();
+        if (!trimmedContent) {
+          return match;
+        }
+        const data = JSON.parse(trimmedContent);
+        if (data.state === 'doing') {
+          data.state = 'done';
+          return '```aily-state\n' + JSON.stringify(data) + '\n```';
+        }
+      } catch {
+        // JSON 解析失败保持原样
+      }
+      return match;
+    }
+  );
+}
+
+/**
+ * 检查最后一条消息中未闭合的 markdown 结构，返回需要插入的闭合标签
+ */
+export function getClosingTagsForOpenBlocks(content: string): string {
+  if (!content) return '';
+
+  let closingTags = '';
+
+  const thinkOpenCount = (content.match(/<think>/g) || []).length;
+  const thinkCloseCount = (content.match(/<\/think>/g) || []).length;
+  if (thinkOpenCount > thinkCloseCount) {
+    closingTags += '\n</think>\n';
+  }
+
+  const codeBlockMatches = content.match(/```/g) || [];
+  if (codeBlockMatches.length % 2 !== 0) {
+    closingTags += '\n```\n';
+  }
+
+  return closingTags;
+}

@@ -61,9 +61,9 @@ export class BoardSelectorDialogComponent implements OnInit {
     } else {
       this.filteredBoardList = this.boardList.filter(board =>
         board.name.toLowerCase().includes(keyword) ||
-        (board.data?.board?.nickname || '').toLowerCase().includes(keyword) ||
-        (board.data?.board?.brand || '').toLowerCase().includes(keyword) ||
-        (board.data?.board?.description || '').toLowerCase().includes(keyword)
+        (board.nickname || '').toLowerCase().includes(keyword) ||
+        (board.brand || '').toLowerCase().includes(keyword) ||
+        (board.description || '').toLowerCase().includes(keyword)
       );
     }
   }

@@ -1,5 +1,6 @@
-import { Injectable } from '@angular/core';
+﻿import { Injectable } from '@angular/core';
 import { Subject, Observable } from 'rxjs';
+import { AilyHost } from '../core/host';
 
 /**
  * 安全工作区配置项
@@ -153,8 +154,8 @@ export class AilyChatConfigService {
      * 获取配置文件路径
      */
     private getConfigPath(): string {
-        const appDataPath = window['path']?.getAppDataPath?.() || '';
-        return window['path']?.join(appDataPath, this.configFileName) || '';
+        const appDataPath = AilyHost.get().path?.getAppDataPath?.() || '';
+        return AilyHost.get().path?.join(appDataPath, this.configFileName) || '';
     }
 
     /**
@@ -163,8 +164,8 @@ export class AilyChatConfigService {
     load(): void {
         try {
             const configPath = this.getConfigPath();
-            if (configPath && window['fs']?.existsSync(configPath)) {
-                const content = window['fs'].readFileSync(configPath, 'utf-8');
+            if (configPath && AilyHost.get().fs?.existsSync(configPath)) {
+                const content = AilyHost.get().fs.readFileSync(configPath, 'utf-8');
                 const savedConfig = JSON.parse(content);
                 // 合并默认配置和已保存的配置
                 this.config = { ...DEFAULT_CONFIG, ...savedConfig };
@@ -187,7 +188,7 @@ export class AilyChatConfigService {
         try {
             const configPath = this.getConfigPath();
             if (configPath) {
-                window['fs'].writeFileSync(configPath, JSON.stringify(this.config, null, 2), 'utf-8');
+                AilyHost.get().fs.writeFileSync(configPath, JSON.stringify(this.config, null, 2), 'utf-8');
                 // 发送配置变更通知
                 this.configChangedSubject.next({ ...this.config });
                 return true;

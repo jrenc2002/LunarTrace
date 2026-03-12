@@ -18,16 +18,19 @@ import { v4 as uuidv4 } from 'uuid';
 import { API } from '../configs/api.config';
 import { AuthService } from './auth.service';
 import { ProjectService } from './project.service';
-import { AilyChatConfigService } from '../tools/aily-chat/services/aily-chat-config.service';
 import { ConnectionGraphService } from './connection-graph.service';
 import { ElectronService } from './electron.service';
-import { TOOLS, ToolUseResult } from '../tools/aily-chat/tools/tools';
-import { createSecurityContext } from '../tools/aily-chat/services/security.service';
-import { ContextBudgetService } from '../tools/aily-chat/services/context-budget.service';
-import { TiktokenService } from '../tools/aily-chat/services/tiktoken.service';
 
-// 工具函数导入 — 连线图专属
+// 统一从 aily-chat 公共 API 导入
 import {
+  AilyChatConfigService,
+  ContextBudgetService,
+  TiktokenService,
+  createSecurityContext,
+  ChatService,
+  TOOLS,
+  ToolUseResult,
+  // 连线图工具
   generateConnectionGraphTool,
   getPinmapSummaryTool,
   validateConnectionGraphTool,
@@ -35,25 +38,24 @@ import {
   generatePinmapTool,
   savePinmapTool,
   getCurrentSchematicTool,
-  applySchematicTool
-} from '../tools/aily-chat/tools/connectionGraphTool';
-
-// 工具函数导入 — 共享工具
-import { getContextTool } from '../tools/aily-chat/tools/getContextTool';
-import { getProjectInfoTool } from '../tools/aily-chat/tools/getProjectInfoTool';
-import { readFileTool } from '../tools/aily-chat/tools/readFileTool';
-import { createFileTool } from '../tools/aily-chat/tools/createFileTool';
-import { editFileTool } from '../tools/aily-chat/tools/editFileTool';
-import { deleteFileTool } from '../tools/aily-chat/tools/deleteFileTool';
-import { deleteFolderTool } from '../tools/aily-chat/tools/deleteFolderTool';
-import { createFolderTool } from '../tools/aily-chat/tools/createFolderTool';
-import { listDirectoryTool } from '../tools/aily-chat/tools/listDirectoryTool';
-import { getDirectoryTreeTool } from '../tools/aily-chat/tools/getDirectoryTreeTool';
-import { grepTool } from '../tools/aily-chat/tools/grepTool';
-import globTool from '../tools/aily-chat/tools/globTool';
-import { getBoardParametersTool } from '../tools/aily-chat/tools/getBoardParametersTool';
-import { fetchTool, FetchToolService } from '../tools/aily-chat/tools/fetchTool';
-import { ChatService } from '../tools/aily-chat/services/chat.service';
+  applySchematicTool,
+  // 共享工具
+  getContextTool,
+  getProjectInfoTool,
+  readFileTool,
+  createFileTool,
+  editFileTool,
+  deleteFileTool,
+  deleteFolderTool,
+  createFolderTool,
+  listDirectoryTool,
+  getDirectoryTreeTool,
+  grepTool,
+  globTool,
+  getBoardParametersTool,
+  fetchTool,
+  FetchToolService,
+} from '../tools/aily-chat/public-api';
 
 // ===== 类型定义 =====
 
@@ -692,8 +694,8 @@ export class BackgroundAgentService implements OnDestroy {
         // 尝试读取主要代码文件（如 project.abs 或 main.ino）
         const mainFiles = ['project.abs', 'src/main.ino', 'src/main.cpp', 'main.ino'];
         for (const file of mainFiles) {
-          const filePath = window['path']?.join(projectPath, file);
-          if (filePath && this.electronService.exists(filePath)) {
+          const filePath = projectPath.replace(/[\\/]$/, '') + '/' + file;
+          if (this.electronService.exists(filePath)) {
             const fileResult = await readFileTool({ path: filePath }, createSecurityContext(projectPath));
             if (!fileResult.is_error) {
               contextInfo += `\n## 项目代码 (${file})\n\`\`\`\n${fileResult.content}\n\`\`\`\n`;

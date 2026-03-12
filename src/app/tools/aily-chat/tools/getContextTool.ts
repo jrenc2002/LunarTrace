@@ -1,6 +1,7 @@
-import { ToolUseResult } from "./tools";
+﻿import { ToolUseResult } from "./tools";
 import { ProjectService } from "../../../services/project.service";
 import { getWorkspaceOverviewTool } from "./editBlockTool";
+import { AilyHost } from '../core/host';
 
 
 interface GetContextInput {
@@ -181,7 +182,7 @@ async function getProjectInfo(projectService): Promise<ProjectInfo> {
             ? "" 
             : projectService.currentProjectPath;
 
-        const appDataPath = window['path'].getAppDataPath() || '';
+        const appDataPath = AilyHost.get().path.getAppDataPath() || '';
         
         // 基础结果
         const result: ProjectInfo = {
@@ -199,8 +200,8 @@ async function getProjectInfo(projectService): Promise<ProjectInfo> {
         // 尝试读取项目名称
         try {
             const packageJsonPath = window["path"].join(currentProjectPath, 'package.json');
-            if (window['fs'].existsSync(packageJsonPath)) {
-                const packageJson = JSON.parse(window['fs'].readFileSync(packageJsonPath, 'utf8'));
+            if (AilyHost.get().fs.existsSync(packageJsonPath)) {
+                const packageJson = JSON.parse(AilyHost.get().fs.readFileSync(packageJsonPath, 'utf8'));
                 result.name = packageJson.name;
             }
         } catch (e) {
@@ -210,9 +211,9 @@ async function getProjectInfo(projectService): Promise<ProjectInfo> {
         // 获取 node_modules/@aily-project 目录下的内容
         const ailyProjectPath = window["path"].join(currentProjectPath, 'node_modules', '@aily-project');
         
-        if (window['fs'].existsSync(ailyProjectPath)) {
+        if (AilyHost.get().fs.existsSync(ailyProjectPath)) {
             // 读取目录内容
-            const items = window['fs'].readdirSync(ailyProjectPath);
+            const items = AilyHost.get().fs.readdirSync(ailyProjectPath);
             const libraries: LibraryInfo[] = [];
             let board: BoardInfo | undefined;
 
@@ -221,7 +222,7 @@ async function getProjectInfo(projectService): Promise<ProjectInfo> {
                 
                 // 检查是否是目录
                 try {
-                    const isDir = window['fs'].isDirectory(itemPath);
+                    const isDir = AilyHost.get().fs.isDirectory(itemPath);
                     if (!isDir) continue;
                 } catch (e) {
                     continue;
@@ -244,7 +245,7 @@ async function getProjectInfo(projectService): Promise<ProjectInfo> {
                     
                     // 检查是否存在 readme_ai.md
                     const readmePath = window["path"].join(itemPath, 'readme_ai.md');
-                    if (window['fs'].existsSync(readmePath)) {
+                    if (AilyHost.get().fs.existsSync(readmePath)) {
                         libInfo.readmePath = `${simplifiedPath}/readme_ai.md`;
                     }
 

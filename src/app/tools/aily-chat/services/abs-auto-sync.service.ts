@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ABS 自动同步服务 (Aily Block Syntax)
  * 
  * 实现 Blockly 工作区与 ABS 文件的同步：
@@ -8,9 +8,7 @@
 
 import { Injectable, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
-import { ElectronService } from '../../../services/electron.service';
-import { ProjectService } from '../../../services/project.service';
-import { BlocklyService } from '../../../editors/blockly-editor/services/blockly.service';
+import { AilyHost } from '../core/host';
 import { convertAbsToAbi, convertAbiToAbsWithLineMap } from '../tools/abiAbsConverter';
 
 // =============================================================================
@@ -78,11 +76,10 @@ export class AbsAutoSyncService implements OnDestroy {
   /** 当前项目路径 */
   private currentProjectPath = '';
 
-  constructor(
-    private electronService: ElectronService,
-    private projectService: ProjectService,
-    private blocklyService: BlocklyService
-  ) {
+  /** 通过 AilyHost 透传访问 Blockly 服务 */
+  private get blocklyService(): any { return AilyHost.get().blockly; }
+
+  constructor() {
     // 简化：不再自动监听工作区变化，只在 AI 修改时保存版本
   }
 
@@ -170,7 +167,7 @@ export class AbsAutoSyncService implements OnDestroy {
       const absFilePath = this.getAbsFilePath();
       console.log('[AbsAutoSync] Writing ABS file to:', absFilePath);
       console.log('[AbsAutoSync] Content length:', absContent?.length || 0);
-      this.electronService.writeFile(absFilePath, absContent);
+      AilyHost.get().fs.writeFileSync(absFilePath, absContent);
       console.log('[AbsAutoSync] Write completed for:', absFilePath);
       
       // 保存版本历史
@@ -200,13 +197,13 @@ export class AbsAutoSyncService implements OnDestroy {
     try {
       const absFilePath = this.getAbsFilePath();
       
-      if (!this.electronService.exists(absFilePath)) {
+      if (!AilyHost.get().fs.existsSync(absFilePath)) {
         console.warn('[AbsAutoSync] ABS file does not exist');
         return false;
       }
       
       // 读取 ABS 文件
-      const absContent = this.electronService.readFile(absFilePath);
+      const absContent = AilyHost.get().fs.readFileSync(absFilePath);
       
       // 转换为 ABI JSON
       const result = convertAbsToAbi(absContent);
@@ -244,8 +241,8 @@ export class AbsAutoSyncService implements OnDestroy {
       const historyDir = this.getHistoryDir();
       
       // 确保历史目录存在
-      if (!this.electronService.exists(historyDir)) {
-        window['fs'].mkdirSync(historyDir, { recursive: true });
+      if (!AilyHost.get().fs.existsSync(historyDir)) {
+        AilyHost.get().fs.mkdirSync(historyDir, { recursive: true });
       }
       
       // 生成版本信息
@@ -267,7 +264,7 @@ export class AbsAutoSyncService implements OnDestroy {
       
       // 保存版本文件
       const versionFilePath = `${historyDir}/${filename}`;
-      this.electronService.writeFile(versionFilePath, absContent);
+      AilyHost.get().fs.writeFileSync(versionFilePath, absContent);
       
       // 更新 manifest
       await this.updateManifest(version);
@@ -302,7 +299,7 @@ export class AbsAutoSyncService implements OnDestroy {
       const historyDir = this.getHistoryDir();
       const versionFilePath = `${historyDir}/${versionId}.abs`;
       
-      if (!this.electronService.exists(versionFilePath)) {
+      if (!AilyHost.get().fs.existsSync(versionFilePath)) {
         console.error('[AbsAutoSync] Version file not found:', versionId);
         return false;
       }
@@ -314,11 +311,11 @@ export class AbsAutoSyncService implements OnDestroy {
       }
       
       // 读取目标版本
-      const absContent = this.electronService.readFile(versionFilePath);
+      const absContent = AilyHost.get().fs.readFileSync(versionFilePath);
       
       // 写入 ABS 文件
       const absFilePath = this.getAbsFilePath();
-      this.electronService.writeFile(absFilePath, absContent);
+      AilyHost.get().fs.writeFileSync(absFilePath, absContent);
       
       // 导入到工作区
       return await this.importFromAbs();
@@ -336,11 +333,11 @@ export class AbsAutoSyncService implements OnDestroy {
       const historyDir = this.getHistoryDir();
       const versionFilePath = `${historyDir}/${versionId}.abs`;
       
-      if (!this.electronService.exists(versionFilePath)) {
+      if (!AilyHost.get().fs.existsSync(versionFilePath)) {
         return null;
       }
       
-      return this.electronService.readFile(versionFilePath);
+      return AilyHost.get().fs.readFileSync(versionFilePath);
     } catch (error) {
       console.error('[AbsAutoSync] Failed to get version content:', error);
       return null;
@@ -466,11 +463,11 @@ export class AbsAutoSyncService implements OnDestroy {
   private loadManifest(): VersionManifest | null {
     try {
       const manifestPath = this.getManifestPath();
-      if (!this.electronService.exists(manifestPath)) {
+      if (!AilyHost.get().fs.existsSync(manifestPath)) {
         return null;
       }
       
-      const content = this.electronService.readFile(manifestPath);
+      const content = AilyHost.get().fs.readFileSync(manifestPath);
       return JSON.parse(content);
     } catch (error) {
       console.error('[AbsAutoSync] Failed to load manifest:', error);
@@ -500,8 +497,8 @@ export class AbsAutoSyncService implements OnDestroy {
       for (const version of toRemove) {
         try {
           const filePath = `${this.getHistoryDir()}/${version.filename}`;
-          if (this.electronService.exists(filePath)) {
-            this.electronService.deleteFile(filePath);
+          if (AilyHost.get().fs.existsSync(filePath)) {
+            AilyHost.get().fs.unlinkSync(filePath);
           }
         } catch (e) {
           // 忽略删除失败
@@ -511,7 +508,7 @@ export class AbsAutoSyncService implements OnDestroy {
     
     // 保存 manifest
     const manifestPath = this.getManifestPath();
-    this.electronService.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+    AilyHost.get().fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
   }
 
   /**

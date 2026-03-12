@@ -1,6 +1,7 @@
-import { ToolUseResult } from "./tools";
+﻿import { ToolUseResult } from "./tools";
 import { ProjectService } from "../../../services/project.service";
 import { ConfigService } from '../../../services/config.service';
+import { AilyHost } from '../core/host';
 
 interface LibraryInfo {
     name: string;
@@ -35,12 +36,12 @@ function collectProjectInfo(projectPath: string, projectName: string): CreatePro
     try {
         const ailyProjectPath = window["path"].join(projectPath, 'node_modules', '@aily-project');
 
-        if (!window['fs'].existsSync(ailyProjectPath)) {
+        if (!AilyHost.get().fs.existsSync(ailyProjectPath)) {
             result.message = `项目 "${projectName}" 创建成功！项目依赖目录尚未就绪。`;
             return result;
         }
 
-        const items = window['fs'].readdirSync(ailyProjectPath);
+        const items = AilyHost.get().fs.readdirSync(ailyProjectPath);
         const libraries: LibraryInfo[] = [];
         let board: BoardInfo | undefined;
 
@@ -48,7 +49,7 @@ function collectProjectInfo(projectPath: string, projectName: string): CreatePro
             const itemPath = window["path"].join(ailyProjectPath, item);
 
             try {
-                if (!window['fs'].isDirectory(itemPath)) continue;
+                if (!AilyHost.get().fs.isDirectory(itemPath)) continue;
             } catch {
                 continue;
             }
@@ -60,7 +61,7 @@ function collectProjectInfo(projectPath: string, projectName: string): CreatePro
             } else if (item.startsWith('lib-')) {
                 const libInfo: LibraryInfo = { name: item, path: simplifiedPath };
                 const readmePath = window["path"].join(itemPath, 'readme_ai.md');
-                if (window['fs'].existsSync(readmePath)) {
+                if (AilyHost.get().fs.existsSync(readmePath)) {
                     libInfo.readmeAiPath = `${simplifiedPath}/readme_ai.md`;
                 }
                 libraries.push(libInfo);

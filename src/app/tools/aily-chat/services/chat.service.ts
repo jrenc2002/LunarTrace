@@ -1,13 +1,10 @@
-import { Injectable } from '@angular/core';
+﻿import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, Subject } from 'rxjs';
 import { MCPTool } from './mcp.service';
-import { API } from "../../../configs/api.config";
-import { ConfigService } from '../../../services/config.service';
+import { ChatAPI } from '../core/api-endpoints';
 import { AilyChatConfigService, ModelConfigOption } from './aily-chat-config.service';
-import { AuthService } from '../../../services/auth.service';
-import { ProjectService } from '../../../services/project.service';
-import { PlatformService } from '../../../services/platform.service';
+import { AilyHost } from '../core/host';
 
 // 使用 ModelConfigOption 作为统一的模型配置类型，保留 ModelConfig 别名以兼容旧代码
 export type ModelConfig = ModelConfigOption;
@@ -114,11 +111,7 @@ export class ChatService {
 
   constructor(
     private http: HttpClient,
-    private configService: ConfigService,
     private ailyChatConfigService: AilyChatConfigService,
-    private authService: AuthService,
-    private projectService: ProjectService,
-    private platformService: PlatformService
   ) {
     ChatService.instance = this;
     // 从配置加载AI聊天模式
@@ -136,8 +129,9 @@ export class ChatService {
    * 从配置加载AI聊天模式
    */
   private loadChatMode(): void {
-    if (this.configService.data.aiChatMode) {
-      this.currentMode = this.configService.data.aiChatMode;
+    const config = AilyHost.get().config;
+    if (config.data?.aiChatMode) {
+      this.currentMode = config.data.aiChatMode;
     }
   }
 
@@ -146,15 +140,16 @@ export class ChatService {
    */
   saveChatMode(mode: 'agent' | 'ask'): void {
     this.currentMode = mode;
-    this.configService.data.aiChatMode = mode;
-    this.configService.save();
+    const config = AilyHost.get().config;
+    if (config.data) config.data.aiChatMode = mode;
+    config.save?.();
   }
 
   /**
    * 从配置加载AI模型
    */
   private loadChatModel(): void {
-    const savedModel = this.configService.data.aiChatModel;
+    const savedModel = AilyHost.get().config.data?.aiChatModel;
     const enabledModels = this.ailyChatConfigService.getEnabledModels();
 
     // 重置当前模型，确保每次都重新验证
@@ -181,8 +176,9 @@ export class ChatService {
    */
   saveChatModel(model: ModelConfig): void {
     this.currentModel = model;
-    this.configService.data.aiChatModel = model;
-    this.configService.save();
+    const config = AilyHost.get().config;
+    if (config.data) config.data.aiChatModel = model;
+    config.save?.();
   }
 
 
@@ -250,11 +246,34 @@ export class ChatService {
       payload.select_model = selectModel;
     }
 
-    return this.http.post(API.startSession, payload);
+    return this.http.post(ChatAPI.startSession, payload);
+  }
+
+  /**
+   * 获取服务端准确的系统提示词 / 工具定义 token 数和模型上下文窗口大小。
+   * 用于前端 ContextBudgetService 精确计算可用 token 预算。
+   */
+  async fetchContextInfo(sessionId: string): Promise<{
+    system_tokens: number;
+    tools_tokens: number;
+    model_context_limit: number;
+    model_name?: string;
+  } | null> {
+    try {
+      const token = await AilyHost.get().auth.getToken!();
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const resp = await fetch(`${ChatAPI.contextInfo}/${sessionId}`, { headers });
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch (e) {
+      console.warn('[ChatService] fetchContextInfo failed:', e);
+      return null;
+    }
   }
 
   closeSession(sessionId: string) {
-    return this.http.post(`${API.closeSession}/${sessionId}`, {});
+    return this.http.post(`${ChatAPI.closeSession}/${sessionId}`, {});
   }
 
   // 本地调试用：模拟服务端流式返回的字符串数据
@@ -414,8 +433,8 @@ export class ChatService {
       ].join('\n');
       
       try {
-        const logPath = this.projectService.projectRootPath + this.platformService.getPlatformSeparator() + 'stream_mock.txt';
-        const mockfile = window['fs'].readFileSync(logPath, 'utf-8');
+        const logPath = AilyHost.get().project.projectRootPath + AilyHost.get().platform.pathSeparator + 'stream_mock.txt';
+        const mockfile = AilyHost.get().fs.readFileSync(logPath, 'utf-8');
         mockText = mockfile;
       } catch (error) {
         console.warn('读取流式数据失败:', error);
@@ -481,7 +500,7 @@ export class ChatService {
       let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
       // 获取 token 并添加 Authorization 头部
-      this.authService.getToken2().then(token => {
+      AilyHost.get().auth.getToken!().then(token => {
         if (aborted) return;
 
         const headers: HeadersInit = {};
@@ -489,7 +508,7 @@ export class ChatService {
           headers['Authorization'] = `Bearer ${token}`;
         }
 
-        fetch(`${API.streamConnect}/${sessionId}`, { headers })
+        fetch(`${ChatAPI.streamConnect}/${sessionId}`, { headers })
           .then(async response => {
           if (aborted) return;
 
@@ -571,7 +590,7 @@ export class ChatService {
   }
 
   sendMessage(sessionId: string, content: string, source: string = 'user') {
-    return this.http.post(`${API.sendMessage}/${sessionId}`, { content, source });
+    return this.http.post(`${ChatAPI.sendMessage}/${sessionId}`, { content, source });
   }
 
   /**
@@ -617,7 +636,7 @@ export class ChatService {
         payload.select_model = selectModel;
       }
 
-      this.authService.getToken2().then(token => {
+      AilyHost.get().auth.getToken!().then(token => {
         if (aborted) return;
 
         // 调试异常注入：在控制台设置 localStorage.ailyChatDebugForceError 后自动附带请求头
@@ -638,7 +657,7 @@ export class ChatService {
           headers['X-Debug-Force-Error'] = debugForceErrorCode;
         }
 
-        fetch(`${API.chatRequest}/${sessionId}`, {
+        fetch(`${ChatAPI.chatRequest}/${sessionId}`, {
           method: 'POST',
           headers,
           body: JSON.stringify(payload)
@@ -656,7 +675,7 @@ export class ChatService {
                     // 会话不存在（服务器重启导致），透明地重建会话并重试请求
                     await this.startSession(mode, tools as any, maxCount, llmConfig, selectModel).toPromise();
                     if (aborted) return;
-                    const retryResp = await fetch(`${API.chatRequest}/${sessionId}`, {
+                    const retryResp = await fetch(`${ChatAPI.chatRequest}/${sessionId}`, {
                       method: 'POST',
                       headers,
                       body: JSON.stringify(payload)
@@ -757,15 +776,15 @@ export class ChatService {
   }
 
   getHistory(sessionId: string) {
-    return this.http.get(`${API.getHistory}/${sessionId}`);
+    return this.http.get(`${ChatAPI.getHistory}/${sessionId}`);
   }
 
   stopSession(sessionId: string) {
-    return this.http.post(`${API.stopSession}/${sessionId}`, {});
+    return this.http.post(`${ChatAPI.stopSession}/${sessionId}`, {});
   }
 
   cancelTask(sessionId: string) {
-    return this.http.post(`${API.cancelTask}/${sessionId}`,{});
+    return this.http.post(`${ChatAPI.cancelTask}/${sessionId}`,{});
   }
 
   /**
@@ -780,7 +799,7 @@ export class ChatService {
       return;
     }
     this.titleIsGenerating = true;
-    this.http.post(`${API.generateTitle}`, { content }).subscribe(
+    this.http.post(`${ChatAPI.generateTitle}`, { content }).subscribe(
       (res) => {
         if ((res as any).status === 'success' && sessionId === this.currentSessionId) {
           let title: string;
