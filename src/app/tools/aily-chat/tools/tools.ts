@@ -43,8 +43,8 @@ export const DEFERRED_TOOL_GROUPS: DeferredToolGroup[] = [
     name: 'ABS 工具',
     // brief: 'ABS 文件同步、版本控制、ABS 语法参考、库块定义分析',
     // tools: ['sync_abs_file', 'abs_version_control', 'get_abs_syntax', 'analyze_library_blocks']
-    brief: 'ABS 文件同步、版本控制',
-    tools: ['sync_abs_file', 'abs_version_control']
+    brief: '版本控制',
+    tools: ['abs_version_control']
   },
   {
     name: '接线图工具',
