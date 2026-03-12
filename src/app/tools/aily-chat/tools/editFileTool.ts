@@ -1,6 +1,7 @@
-import { ToolUseResult } from "./tools";
+﻿import { ToolUseResult } from "./tools";
 import { normalizePath } from "../services/security.service";
 import { lintAndFormat, shouldLint } from "../services/lintService";
+import { AilyHost } from '../core/host';
 
 /**
  * 辅助函数：检查编辑后的文件是否有 lint 错误
@@ -89,13 +90,13 @@ function createEditResultWithLint(
  */
 function detectFileEncoding(filePath: string): BufferEncoding {
     try {
-        const fs = window['fs'];
+        const fs = AilyHost.get().fs;
         fs.readFileSync(filePath, 'utf-8');
         return 'utf-8';
     } catch (error) {
         // 尝试 utf16le
         try {
-            const fs = window['fs'];
+            const fs = AilyHost.get().fs;
             fs.readFileSync(filePath, 'utf16le');
             return 'utf16le';
         } catch {
@@ -141,8 +142,8 @@ export async function editFileTool(
             replaceMode = "string"
         } = params;
         
-        const fs = window['fs'];
-        const path = window['path'];
+        const fs = AilyHost.get().fs;
+        const path = AilyHost.get().path;
         
         // 路径规范化
         const normalizedFilePath = normalizePath(filePath);

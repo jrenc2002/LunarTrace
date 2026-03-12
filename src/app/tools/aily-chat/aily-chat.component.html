@@ -12,7 +12,7 @@
       [nzTooltipTitle]="'AILY_CHAT.SETTINGS' | translate">
       <i class="fa-light fa-gear"></i>
     </div>
-    <div class="btn ccenter" (click)="openHistoryChat($event)" nz-tooltip nzTooltipPlacement="bottom"
+    <div class="btn ccenter" (click)="openHistoryChat()" nz-tooltip nzTooltipPlacement="bottom"
       [nzTooltipTitle]="'AILY_CHAT.HISTORY' | translate">
       <i class="fa-light fa-clock-rotate-left"></i>
     </div>
@@ -36,7 +36,7 @@
 <ng-template #windowBoxTemplate>
   <div class="window-box">
     <!-- 对话内容 -->
-    <div class="dialog-list sscroll" #chatContainer (scroll)="checkUserScroll()">
+    <div class="dialog-list sscroll" #chatContainer (scroll)="scrollManager.checkUserScroll()">
       @if(list.length > 0){
       <!-- <ngx-simplebar #simplebarRef [options]="options"> -->
       <div class="dialogs">
@@ -83,9 +83,9 @@
           </div>
         </div> -->
         <div class="input-box">
-          @if( selectContent.length > 0 ) {
+          @if( resourceManager.items.length > 0 ) {
           <div class="resource-list">
-            @for( item of selectContent; track $index) {
+            @for( item of resourceManager.items; track $index) {
             <div class="resource-item" [class.block-item]="item.type === 'block'">
               @if(item.type == 'file') {
               <i class="fa-light fa-file"></i>
@@ -97,7 +97,7 @@
               <i class="fa-light fa-cube"></i>
               }
               <span class="resource-name">{{ item.name }}</span>
-              <div class="btn ccenter" (click)="removeResource($index)">
+              <div class="btn ccenter" (click)="resourceManager.removeResource($index)">
                 <i class="fa-light fa-xmark"></i>
               </div>
             </div>
@@ -109,21 +109,21 @@
           </textarea>
           <div class="btns">
             <div class="btn ccenter" nz-tooltip nzTooltipPlacement="bottom"
-              [nzTooltipTitle]="'AILY_CHAT.ADD_CONTEXT' | translate" (click)="openAddList()">
+              [nzTooltipTitle]="'AILY_CHAT.ADD_CONTEXT' | translate" (click)="resourceManager.toggleAddList()">
               <i class="fa-light fa-paperclip"></i>
             </div>
-            @if(showAddList){
+            @if(resourceManager.showAddList){
             <div class="list-box">
-              <div class="btn2 ccenter" (click)="openAddList()" style="margin-top: -1px;">
+              <div class="btn2 ccenter" (click)="resourceManager.toggleAddList()" style="margin-top: -1px;">
                 <i class="fa-light fa-angle-left"></i>
               </div>
             </div>
             <div class="btn2 ccenter " nz-tooltip [nzTooltipTitle]="'AILY_CHAT.ADD_FILE' | translate"
-              (click)="addFile()">
+              (click)="resourceManager.addFile()">
               <i class="fa-light fa-file-plus"></i>
             </div>
             <div class="btn2 ccenter " nz-tooltip [nzTooltipTitle]="'AILY_CHAT.ADD_FOLDER' | translate"
-              (click)="addFolder()">
+              (click)="resourceManager.addFolder()">
               <i class="fa-light fa-folder-plus"></i>
             </div>
             <!-- <div class="btn2 ccenter " nz-tooltip [nzTooltipTitle]="'AILY_CHAT.ADD_WEBSITE' | translate"
@@ -132,7 +132,7 @@
             </div> -->
             }
             <!-- 模式选择 -->
-            <div class="btn mode ccenter" (click)="switchMode($event)">
+            <div class="btn mode ccenter" (click)="menuManager.toggleModeMenu($event)">
               @if(currentMode === 'agent') {
               <i class="fa-light fa-user-astronaut"></i><span>{{ 'AILY_CHAT.MODE_AGENT' | translate }}</span>
               } @else {
@@ -141,7 +141,7 @@
             </div>
             <!-- 模型选择 -->
             @if(ModelList.length > 0) {
-            <div class="btn mode ccenter" (click)="switchModel($event)">
+            <div class="btn mode ccenter" (click)="menuManager.toggleModelMenu($event, ModelList.length)">
               <i class="fa-light fa-star-christmas"></i><span>{{ currentModelName }}</span>
             </div>
             }
@@ -210,18 +210,18 @@
   <app-login></app-login>
 </ng-template>
 
-@if (showHistoryList) {
-<app-menu [menuList]="HistoryList" [position]="historyListPosition" [width]="300" [maxHeight]="360" (closeEvent)="closeMenu()"
+@if (menuManager.showHistoryList) {
+<app-menu [menuList]="menuManager.historyList" [position]="menuManager.historyListPosition" [width]="300" [maxHeight]="360" (closeEvent)="menuManager.closeAll()"
   (itemClickEvent)="menuClick($event)" (actionClickEvent)="historyActionClick($event)"></app-menu>
 }
 
-@if(showMode){
-<app-menu class="mode-menu" [menuList]="ModeList" [position]="modeListPosition" (closeEvent)="closeMenu()"
+@if(menuManager.showMode){
+<app-menu class="mode-menu" [menuList]="ModeList" [position]="menuManager.modeListPosition" (closeEvent)="menuManager.closeAll()"
   (itemClickEvent)="modeMenuClick($event)"></app-menu>
 }
 
-@if(showModelMenu){
-<app-menu class="model-menu" [menuList]="ModelList" [position]="modelListPosition" (closeEvent)="closeMenu()"
+@if(menuManager.showModelMenu){
+<app-menu class="model-menu" [menuList]="ModelList" [position]="menuManager.modelListPosition" (closeEvent)="menuManager.closeAll()"
   (itemClickEvent)="modelMenuClick($event)"></app-menu>
 }
 

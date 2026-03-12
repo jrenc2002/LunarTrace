@@ -215,15 +215,15 @@ export class XDialogComponent implements OnChanges {
    * 由 AilyChatCodeComponent 负责渲染，替代旧式 HTML <details> 方案
    */
   private filterContextTags(content: string): string {
-    content = content.replace(/<context>\n?([\s\S]*?)\n?<\/context>/g, (_m, inner: string) => {
+    // 处理 <attachments> / <context>（兼容旧标签）→ aily-context 代码块
+    content = content.replace(/<(?:attachments|context)>\n?([\s\S]*?)\n?<\/(?:attachments|context)>/g, (_m, inner: string) => {
       const trimmed = inner.trim();
       if (!trimmed) return '';
       const label = this.extractContextLabel(trimmed);
       const encoded = btoa(encodeURIComponent(trimmed));
       return '\n```aily-context\n' + JSON.stringify({ label, content: encoded, encoded: true }) + '\n```\n';
     });
-    // 剥离 <user-query> 包裹，保留内部文本
-    return content.replace(/<user-query>([\s\S]*?)<\/user-query>/g, '$1');
+    return content;
   }
 
   private extractContextLabel(text: string): string {

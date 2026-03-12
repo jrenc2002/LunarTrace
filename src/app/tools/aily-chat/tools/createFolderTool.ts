@@ -1,5 +1,6 @@
-import { ToolUseResult } from "./tools";
+﻿import { ToolUseResult } from "./tools";
 import { normalizePath } from "../services/security.service";
+import { AilyHost } from '../core/host';
 
 /**
  * 创建文件夹工具
@@ -30,8 +31,8 @@ export async function createFolderTool(
         }
 
         // 检查路径是否已存在
-        if (window['fs'].existsSync(folderPath)) {
-            const isDirectory = await window['fs'].isDirectory(folderPath);
+        if (AilyHost.get().fs.existsSync(folderPath)) {
+            const isDirectory = await AilyHost.get().fs.isDirectory(folderPath);
             if (isDirectory) {
                 const toolResult = {
                     is_error: false,
@@ -47,7 +48,7 @@ export async function createFolderTool(
             }
         }
 
-        await window['fs'].mkdirSync(folderPath, { recursive });
+        await AilyHost.get().fs.mkdirSync(folderPath, { recursive });
         
         const toolResult = { 
             is_error: false, 

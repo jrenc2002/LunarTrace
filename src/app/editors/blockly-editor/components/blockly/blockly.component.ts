@@ -43,7 +43,7 @@ import './plugins/block-plus-minus/src/index.js';
 import { arduinoGenerator } from './generators/arduino/arduino';
 import { micropythonGenerator } from './generators/micropython/micropython';
 import { BlocklyService } from '../../services/blockly.service';
-import { convertAbiToAbsWithLineMap } from '../../../../tools/aily-chat/tools/abiAbsConverter';
+import { convertAbiToAbsWithLineMap } from '../../../../tools/aily-chat/public-api';
 import { BitmapUploadResponse, GlobalServiceManager } from '../../services/bitmap-upload.service';
 
 import './renderer/aily-icon';

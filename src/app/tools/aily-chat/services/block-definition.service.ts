@@ -9,8 +9,7 @@
  */
 
 import { Injectable } from '@angular/core';
-import { ElectronService } from '../../../services/electron.service';
-import { ProjectService } from '../../../services/project.service';
+import { AilyHost } from '../core/host';
 
 // =============================================================================
 // 类型定义
@@ -73,10 +72,7 @@ export class BlockDefinitionService {
   /** 缓存有效期（毫秒） */
   private readonly CACHE_TTL = 5 * 60 * 1000;  // 5 分钟
   
-  constructor(
-    private electronService: ElectronService,
-    private projectService: ProjectService
-  ) {}
+  constructor() {}
   
   // ===========================================================================
   // 公共 API
@@ -164,7 +160,7 @@ export class BlockDefinitionService {
    * 确保块定义已加载
    */
   private async ensureLoaded(): Promise<void> {
-    const projectPath = this.projectService.currentProjectPath;
+    const projectPath = AilyHost.get().project.currentProjectPath;
     
     if (!projectPath) {
       console.warn('[BlockDefinitionService] 无项目路径，无法加载块定义');
@@ -189,27 +185,27 @@ export class BlockDefinitionService {
     const blocks = new Map<string, BlockMeta>();
     
     try {
-      const libsPath = this.electronService.pathJoin(projectPath, 'node_modules', '@aily-project');
+      const libsPath = AilyHost.get().path.join(projectPath, 'node_modules', '@aily-project');
       
-      if (!this.electronService.exists(libsPath)) {
+      if (!AilyHost.get().fs.existsSync(libsPath)) {
         console.warn('[BlockDefinitionService] 库目录不存在:', libsPath);
         this.cache = { projectPath, blocks, loadedAt: Date.now() };
         return;
       }
       
       // 读取所有 lib-* 目录
-      const entries = this.electronService.readDir(libsPath);
+      const entries = AilyHost.get().fs.readdirSync(libsPath);
       const libDirs = entries.filter((name: string) => name.startsWith('lib-'));
       
       console.log(`[BlockDefinitionService] 发现 ${libDirs.length} 个库`);
       
       for (const libDir of libDirs) {
-        const libPath = this.electronService.pathJoin(libsPath, libDir);
-        const blockJsonPath = this.electronService.pathJoin(libPath, 'block.json');
+        const libPath = AilyHost.get().path.join(libsPath, libDir);
+        const blockJsonPath = AilyHost.get().path.join(libPath, 'block.json');
         
-        if (this.electronService.exists(blockJsonPath)) {
+        if (AilyHost.get().fs.existsSync(blockJsonPath)) {
           try {
-            const content = this.electronService.readFile(blockJsonPath);
+            const content = AilyHost.get().fs.readFileSync(blockJsonPath);
             const blockDefs = JSON.parse(content);
             
             if (Array.isArray(blockDefs)) {

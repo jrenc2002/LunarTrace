@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+﻿import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ChatService } from '../../../services/chat.service';
 import { NzButtonModule } from 'ng-zorro-antd/button';
@@ -6,6 +6,7 @@ import { CmdService } from '../../../../../services/cmd.service';
 import { ElectronService } from '../../../../../services/electron.service';
 import { ProjectService } from '../../../../../services/project.service';
 import { executeCommandTool } from '../../../tools/executeCommandTool';
+import { AilyHost } from '../../../core/host';
 
 /**
  * actionType 标识按钮点击后的行为：
@@ -201,8 +202,8 @@ export class XAilyButtonViewerComponent implements OnChanges {
   private handlePath(btn: ButtonData): void {
     const path = btn.actionPayload;
     if (!path) return;
-    if (window['other']?.openByExplorer) {
-      window['other'].openByExplorer(path);
+    if (AilyHost.get().shell?.openByExplorer) {
+      AilyHost.get().shell.openByExplorer(path);
     }
   }
 }

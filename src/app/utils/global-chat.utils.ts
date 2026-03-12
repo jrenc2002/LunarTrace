@@ -1,4 +1,4 @@
-import { ChatService, ChatTextOptions } from '../tools/aily-chat/services/chat.service';
+import { ChatService, ChatTextOptions } from '../tools/aily-chat/public-api';
 
 /**
  * 全局方法：发送文本到聊天组件

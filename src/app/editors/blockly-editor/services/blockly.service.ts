@@ -5,7 +5,7 @@ import { processI18n, processJsonVar, processStaticFilePath, processToolboxI18n 
 import { TranslateService } from '@ngx-translate/core';
 import { ElectronService } from '../../../services/electron.service';
 import { BlockCodeMapping, CodeLineRange } from '../components/blockly/generators/arduino/arduino';
-import { convertBlockTreeToAbs, convertAbiToAbsWithLineMap } from '../../../tools/aily-chat/tools/abiAbsConverter';
+import { convertBlockTreeToAbs, convertAbiToAbsWithLineMap } from '../../../tools/aily-chat/public-api';
 
 @Injectable({
   providedIn: 'root'
