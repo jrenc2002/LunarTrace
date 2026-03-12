@@ -204,6 +204,7 @@
         "INSTALLED_TEXT": "مثبت",
         "REMOVE": "إزالة",
         "INSTALLING": "جاري التثبيت",
+        "INSTALL_FAILED": "فشل التثبيت",
         "UNINSTALLING": "جاري إلغاء التثبيت",
         "UNINSTALLED": "تم إلغاء التثبيت",
         "IMPORTING": "جاري الاستيراد",

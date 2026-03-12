@@ -253,6 +253,7 @@
         "INSTALLED_TEXT": "已安装",
         "REMOVE": "移除",
         "INSTALLING": "正在安装",
+        "INSTALL_FAILED": "安装失败",
         "UNINSTALLING": "正在卸载",
         "UNINSTALLED": "已卸载",
         "IMPORTING": "正在导入",

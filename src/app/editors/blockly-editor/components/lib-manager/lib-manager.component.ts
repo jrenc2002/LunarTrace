@@ -198,7 +198,12 @@ export class LibManagerComponent {
     this.message.loading(`${lib.nickname} ${this.translate.instant('LIB_MANAGER.INSTALLING')}...`);
     this.output = '';
     try {
-      await this.cmdService.runAsync(`npm install ${lib.name}@${lib.version}`, this.projectService.currentProjectPath)
+      const { code } = await this.cmdService.runAsync(`npm install ${lib.name}@${lib.version}`, this.projectService.currentProjectPath);
+
+      if (code !== 0) {
+        throw new Error();
+      }
+
       this.libraryList = await this.checkInstalled(this.libraryList);
       // lib.state = 'default';
       this.message.success(`${lib.nickname} ${this.translate.instant('LIB_MANAGER.INSTALLED')}`);

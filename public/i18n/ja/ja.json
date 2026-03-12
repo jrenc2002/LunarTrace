@@ -204,6 +204,7 @@
         "INSTALLED_TEXT": "インストール済み",
         "REMOVE": "削除",
         "INSTALLING": "インストール中",
+        "INSTALL_FAILED": "インストール失敗",
         "UNINSTALLING": "アンインストール中",
         "UNINSTALLED": "アンインストール済み",
         "IMPORTING": "インポート中",

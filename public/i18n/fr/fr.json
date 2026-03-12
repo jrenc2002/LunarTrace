@@ -204,6 +204,7 @@
         "INSTALLED_TEXT": "Installé",
         "REMOVE": "Supprimer",
         "INSTALLING": "Installation en cours",
+        "INSTALL_FAILED": "Échec de l'installation",
         "UNINSTALLING": "Désinstallation en cours",
         "UNINSTALLED": "Désinstallé",
         "IMPORTING": "Importation en cours",

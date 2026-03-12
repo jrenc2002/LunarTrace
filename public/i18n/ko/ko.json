@@ -198,6 +198,7 @@
         "INSTALLED_TEXT": "설치됨",
         "REMOVE": "제거",
         "INSTALLING": "설치 중",
+        "INSTALL_FAILED": "설치 실패",
         "UNINSTALLING": "제거 중",
         "UNINSTALLED": "제거됨",
         "IMPORTING": "가져오는 중",
