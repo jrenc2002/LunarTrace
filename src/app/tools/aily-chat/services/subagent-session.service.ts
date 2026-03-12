@@ -690,9 +690,17 @@ export class SubagentSessionService implements OnDestroy {
   // =========================================================================
 
   private getToolsForAgent(agentName: string): any[] {
-    return (TOOLS as any[]).filter(tool => {
+    // 1. 按 agents 字段过滤
+    let tools = (TOOLS as any[]).filter(tool => {
       if (!tool.agents) return false;
       return tool.agents.includes(agentName);
     });
+    // 2. 按 aily config 配置过滤（尊重用户的 enabledTools/disabledTools 设置）
+    const agentConfig = this.ailyChatConfigService.getAgentToolsConfig(agentName);
+    const disabledTools = new Set(agentConfig.disabledTools || []);
+    if (disabledTools.size > 0) {
+      tools = tools.filter(tool => !disabledTools.has(tool.name));
+    }
+    return tools;
   }
 }

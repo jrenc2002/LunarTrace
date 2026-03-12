@@ -83,6 +83,7 @@ export class SessionLifecycleHelper {
     this.engine.repetitionDetectionService.resetAll();
     this.engine.insideThink = false;
     this.engine.rulesInjectedThisSession = false;
+    this.engine.activatedDeferredTools.clear();
 
     if (!this.engine.mcpInitialized) {
       this.engine.mcpInitialized = true;

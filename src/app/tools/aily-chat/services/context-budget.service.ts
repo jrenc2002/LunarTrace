@@ -214,7 +214,7 @@ export class ContextBudgetService {
   };
 
   /** 默认上下文窗口大小 */
-  private static readonly DEFAULT_CONTEXT_SIZE = 128000;
+  private static readonly DEFAULT_CONTEXT_SIZE = 200000;
 
   /** 工具结果压缩阈值比例（占 maxContextTokens 的百分比） */
   private static readonly COMPRESSION_THRESHOLD_RATIO = 0.50;
@@ -259,7 +259,7 @@ export class ContextBudgetService {
    * 通过人工预估给出合理值。后续可由服务端 API 返回精确值。
    * 当前 系统提示词约 10000+ 中文字符 → ~4500 tokens
    */
-  private static readonly ESTIMATED_SYSTEM_PROMPT_TOKENS = 6000;
+  private static readonly ESTIMATED_SYSTEM_PROMPT_TOKENS = 5000;
 
   // ==================== 状态 ====================
 

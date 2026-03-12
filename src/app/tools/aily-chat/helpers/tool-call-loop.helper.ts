@@ -8,6 +8,7 @@
 import type { ChatEngineService } from '../services/chat-engine.service';
 import { ToolCallState } from '../core/chat-types';
 import { AilyHost } from '../core/host';
+import { isDeferredTool } from '../tools/tools';
 
 export class ToolCallLoopHelper {
   constructor(private engine: ChatEngineService) {}
@@ -23,6 +24,12 @@ export class ToolCallLoopHelper {
     let tools = hasEnabledToolsConfig
       ? this.engine.tools.filter(tool => enabledToolNames.includes(tool.name) || (!disabledToolNames.includes(tool.name) && !enabledToolNames.includes(tool.name)))
       : [...this.engine.tools];
+
+    // Deferred tool filtering: 只发送 core 工具 + 已激活的 deferred 工具
+    // 参考 Copilot 的 deferred tool loading 策略
+    const activated = this.engine.activatedDeferredTools;
+    tools = tools.filter(tool => !isDeferredTool(tool.name) || activated.has(tool.name));
+
     let mcpTools = this.engine.mcpService.tools.map(tool => {
       if (!tool.name.startsWith('mcp_')) { tool.name = 'mcp_' + tool.name; }
       return tool;

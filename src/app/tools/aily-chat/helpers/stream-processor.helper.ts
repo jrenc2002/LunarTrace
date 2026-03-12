@@ -18,9 +18,16 @@ import {
   BLOCK_TOOLS, BLOCKLY_TOOL_NAMES,
   BLOCKLY_RULES_TEXT, ASK_MODE_ROLE_TEXT,
 } from '../services/stream-constants';
+import { searchDeferredTools, getDeferredToolsListing } from '../tools/tools';
 
 export class StreamProcessorHelper {
   constructor(private engine: ChatEngineService) {}
+
+  /** 获取指定 agent 在 aily config 中被禁用的工具名称集合 */
+  private _getAgentExcludedTools(agentName: string): Set<string> {
+    const config = this.engine.ailyChatConfigService.getAgentToolsConfig(agentName);
+    return new Set(config.disabledTools || []);
+  }
 
   finalizeUserInput(): void {
     this.engine.pendingUserInput = false;
@@ -234,6 +241,21 @@ export class StreamProcessorHelper {
               if (data.tool_name.startsWith('mcp_')) {
                 data.tool_name = data.tool_name.substring(4);
                 toolResult = await this.engine.mcpService.use_tool(data.tool_name, toolArgs);
+              } else if (data.tool_name === 'search_available_tools') {
+                // 元工具：搜索并激活 deferred 工具（参考 Copilot tool_search_tool_regex）
+                // 按当前 agent 权限 + aily config 配置过滤
+                const query = toolArgs?.query || '';
+                const agentExcluded = this._getAgentExcludedTools(messageSource);
+                const matched = searchDeferredTools(query, this.engine.tools, messageSource, agentExcluded);
+                if (matched.length > 0) {
+                  matched.forEach(t => this.engine.activatedDeferredTools.add(t.name));
+                  const listing = matched.map(t => `- **${t.name}**: ${(t.description || '').split('\n')[0].slice(0, 80)}`).join('\n');
+                  toolResult = { is_error: false, content: `已加载 ${matched.length} 个工具，可在后续对话中直接调用：\n${listing}` };
+                  resultText = `加载了 ${matched.length} 个工具`;
+                } else {
+                  toolResult = { is_error: false, content: `未找到匹配 "${query}" 的工具。\n${getDeferredToolsListing(messageSource, agentExcluded)}` };
+                  resultText = `未找到匹配的工具`;
+                }
               } else {
                 if (ToolRegistry.has(data.tool_name)) {
                   console.log(`[ToolDispatch] 调用工具: ${data.tool_name}，参数:`, toolArgs);
@@ -279,14 +301,16 @@ export class StreamProcessorHelper {
 
               if (!isSubagent && (needsRules || shouldInjectRules || toolResult?.metadata?.newProject)) {
                 this.engine.rulesInjectedThisSession = true;
-                toolContent += `\n${BLOCKLY_RULES_TEXT}\n<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
+                const deferredListing = getDeferredToolsListing(messageSource, this._getAgentExcludedTools(messageSource));
+                toolContent += `\n${BLOCKLY_RULES_TEXT}\n${deferredListing}\n<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
               } else {
                 toolContent += `<toolResult>${toolResult?.content}</toolResult>${reminder}`;
               }
             } else {
               if (shouldInjectRules) {
                 this.engine.rulesInjectedThisSession = true;
-                toolContent = `\n<rules>${ASK_MODE_ROLE_TEXT}</rules>\n<toolResult>${toolResult?.content || '工具执行完成，无返回内容'}</toolResult>\n${agentInfoTip}`;
+                const deferredListing = getDeferredToolsListing(messageSource, this._getAgentExcludedTools(messageSource));
+                toolContent = `\n<rules>${ASK_MODE_ROLE_TEXT}</rules>\n${deferredListing}\n<toolResult>${toolResult?.content || '工具执行完成，无返回内容'}</toolResult>\n${agentInfoTip}`;
               } else {
                 toolContent = `<toolResult>${toolResult?.content || '工具执行完成，无返回内容'}</toolResult>`;
               }
