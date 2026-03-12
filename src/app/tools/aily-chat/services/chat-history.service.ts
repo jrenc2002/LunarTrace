@@ -128,12 +128,13 @@ export class ChatHistoryService implements OnDestroy {
 
     if (filter === 'current-project' && projectPath) {
       result = result.filter(e =>
-        // 1. 无项目时创建的会话（projectPath === null）
-        e.projectPath === null
-        // 2. 属于当前项目的会话
-        || this.isSamePath(e.projectPath, projectPath)
-        // 3. 保存在根目录下的孤儿会话（无项目时 currentProjectPath === projectRootPath）
-        || (projectRootPath && this.isSamePath(e.projectPath, projectRootPath))
+        // // 1. 无项目时创建的会话（projectPath === null）
+        // e.projectPath === null
+        // // 2. 属于当前项目的会话
+        // || this.isSamePath(e.projectPath, projectPath)
+        // // 3. 保存在根目录下的孤儿会话（无项目时 currentProjectPath === projectRootPath）
+        // || (projectRootPath && this.isSamePath(e.projectPath, projectRootPath))
+        this.isSamePath(e.projectPath, projectPath)
       );
     }
 
@@ -196,7 +197,10 @@ export class ChatHistoryService implements OnDestroy {
     this.sessionCache.set(sessionId, sessionData);
 
     // 更新或创建索引条目
-    this.upsertIndexEntry(sessionId, fullMetadata, chatList.length);
+    // 仅在消息数量发生变化时才更新 updatedAt（避免切换会话时纯保存导致时间戳变更）
+    const existingEntry = this.index.find(e => e.sessionId === sessionId);
+    const messageCountChanged = !existingEntry || existingEntry.messageCount !== chatList.length;
+    this.upsertIndexEntry(sessionId, fullMetadata, chatList.length, messageCountChanged);
 
     // 写入磁盘
     this.writeSessionData(sessionId, sessionData);
@@ -520,11 +524,13 @@ export class ChatHistoryService implements OnDestroy {
 
   /**
    * 更新或创建索引条目
+   * @param updateTimestamp 是否更新 updatedAt（默认 true），纯保存/切换时传 false 避免时间戳污染
    */
   private upsertIndexEntry(
     sessionId: string,
     metadata: SessionMetadata,
-    messageCount: number
+    messageCount: number,
+    updateTimestamp: boolean = true
   ): void {
     // 检查是否有暂存标题（updateTitle 在条目尚未创建时调用的功法）
     const pendingTitle = this.pendingTitles.get(sessionId);
@@ -536,7 +542,9 @@ export class ChatHistoryService implements OnDestroy {
     const existing = this.index.find(e => e.sessionId === sessionId);
     if (existing) {
       existing.title = metadata.title || existing.title;
-      existing.updatedAt = metadata.updatedAt || Date.now();
+      if (updateTimestamp) {
+        existing.updatedAt = metadata.updatedAt || Date.now();
+      }
       existing.messageCount = messageCount;
       existing.mode = metadata.mode || existing.mode;
       existing.model = metadata.model ?? existing.model;

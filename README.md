@@ -35,6 +35,12 @@ Based on large model configuration generation, when adding development boards, y
 8. **Lightning Compilation Tool** (Phase 1 online, Phase 2 coming soon!)
 Edge-cloud collaboration, lightning compilation. Reduces the original 1-hour compilation work to 1 minute!
 
+9. **Pin Diagram**
+Provides a beautiful development board pin diagram viewing solution.
+
+10. **Wiring Diagram (Simulator Phase 1)**
+AI can generate module wiring diagrams based on user programs and requirements for user reference.
+
 ## Unofficial Version Notes  
 This alpha version for testing only guarantees the minimum usability, and many planned highlight features have not yet been designed and developed.
 The current version is not recommended for actual work use, as many adjustments we make later may cause incompatibility between versions.
@@ -105,4 +111,4 @@ Other content can be found in [package.json](./package.json)
 1. This software is free software under the GPL license. Without authorization, the sale of this software or derivative software based on this software is prohibited.
 2. Hardware works developed using this software are not restricted by the GPL, and users may decide on their own release and usage methods.
 3. For derivatives based on this software, information about relevant rights holders and sponsors of this project must not be removed, and such information must appear on the software startup page.
-4. The online service content attached to this project must not be removed.
+4. Without authorization, the online service content and user agreement attached to this project must not be removed.
