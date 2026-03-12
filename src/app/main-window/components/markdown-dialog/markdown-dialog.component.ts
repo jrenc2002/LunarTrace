@@ -56,7 +56,9 @@ export class MarkdownDialogComponent implements OnInit {
     }
     this.http.get(this.docUrl, { responseType: 'text' }).subscribe({
       next: async (md) => {
-        const html = await marked(md);
+        const renderer = new marked.Renderer();
+        renderer.link = ({ href, text }) => text || href || '';
+        const html = await marked.parse(md, { renderer });
         if (this.markdownEl?.nativeElement) {
           this.markdownEl.nativeElement.innerHTML = html as string;
         }
