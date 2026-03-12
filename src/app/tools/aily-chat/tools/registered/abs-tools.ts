@@ -25,13 +25,14 @@ class SyncAbsFileTool implements IAilyTool {
   readonly environment = 'gui' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
     // electronService compat wrapper: handler expects .exists/.readFile/.writeFile
     const fsCompat = {
       exists: (p: string) => ctx.host!.fs.existsSync(p),
       readFile: (p: string) => ctx.host!.fs.readFileSync(p, 'utf-8'),
       writeFile: (p: string, data: string) => ctx.host!.fs.writeFileSync(p, data),
     };
-    return syncAbsFileHandler(args, ctx.host!.project, fsCompat, ctx.host!.absSync);
+    return syncAbsFileHandler(args, ctx.host.project, fsCompat, ctx.host.absSync);
   }
 
   getStartText(args: any): string {
@@ -57,7 +58,8 @@ class AbsVersionControlTool implements IAilyTool {
   readonly environment = 'gui' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return absVersionControlHandler(args, ctx.host!.absSync);
+    if (!ctx.host?.absSync) return { is_error: true, content: 'ABS 同步服务不可用' };
+    return absVersionControlHandler(args, ctx.host.absSync);
   }
 
   getStartText(args: any): string {
@@ -116,8 +118,8 @@ class EditAbiFileTool implements IAilyTool {
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
     // Resolve current project path
-    const currentProjectPath = ctx.host!.project?.currentProjectPath !== ctx.host!.project?.projectRootPath
-      ? ctx.host!.project?.currentProjectPath
+    const currentProjectPath = ctx.host?.project?.currentProjectPath !== ctx.host?.project?.projectRootPath
+      ? ctx.host?.project?.currentProjectPath
       : '';
     if (!currentProjectPath) {
       return { content: '当前未打开项目', is_error: true };
@@ -138,7 +140,10 @@ class EditAbiFileTool implements IAilyTool {
     }
 
     // Auto-reload after successful edit
-    const reloadService = new ReloadAbiJsonToolService(ctx.host!.blockly as any, ctx.host!.project as any);
+    if (!ctx.host?.blockly || !ctx.host?.project) {
+      return { content: editResult.content + '\nℹ️ Blockly 服务不可用，跳过自动重载', is_error: false };
+    }
+    const reloadService = new ReloadAbiJsonToolService(ctx.host.blockly as any, ctx.host.project as any);
     const reloadResult = await reloadService.executeReloadAbiJson(args);
     return { content: reloadResult.content, is_error: reloadResult.is_error };
   }
@@ -188,7 +193,10 @@ class ReloadAbiJsonTool implements IAilyTool {
   readonly environment = 'gui' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    const service = new ReloadAbiJsonToolService(ctx.host!.blockly as any, ctx.host!.project as any);
+    if (!ctx.host?.blockly || !ctx.host?.project) {
+      return { is_error: true, content: 'Blockly 服务不可用，无法重新加载 ABI 数据' };
+    }
+    const service = new ReloadAbiJsonToolService(ctx.host.blockly as any, ctx.host.project as any);
     const result = await service.executeReloadAbiJson(args);
     return {
       content: result.content,

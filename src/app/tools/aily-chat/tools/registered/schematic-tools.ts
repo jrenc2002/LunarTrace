@@ -30,7 +30,9 @@ class GenerateSchematicTool implements IAilyTool {
   readonly displayMode = 'appendMessage' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return generateSchematicHandler(ctx.host!.connectionGraph as any, ctx.host!.project as any, args);
+    if (!ctx.host?.connectionGraph) return { is_error: true, content: '连线图服务不可用' };
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    return generateSchematicHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args);
   }
 
   getStartText(): string {
@@ -53,7 +55,9 @@ class GetPinmapSummaryTool implements IAilyTool {
   readonly displayMode = 'appendMessage' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return getPinmapSummaryHandler(ctx.host!.connectionGraph as any, ctx.host!.project as any, args);
+    if (!ctx.host?.connectionGraph) return { is_error: true, content: '连线图服务不可用' };
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    return getPinmapSummaryHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args);
   }
 
   getStartText(): string {
@@ -76,7 +80,9 @@ class GetComponentCatalogTool implements IAilyTool {
   readonly displayMode = 'appendMessage' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return getComponentCatalogHandler(ctx.host!.connectionGraph as any, ctx.host!.project as any, args);
+    if (!ctx.host?.connectionGraph) return { is_error: true, content: '连线图服务不可用' };
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    return getComponentCatalogHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args);
   }
 
   getStartText(): string {
@@ -99,7 +105,9 @@ class ValidateSchematicTool implements IAilyTool {
   readonly displayMode = 'appendMessage' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return validateSchematicHandler(ctx.host!.connectionGraph as any, ctx.host!.project as any, args);
+    if (!ctx.host?.connectionGraph) return { is_error: true, content: '连线图服务不可用' };
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    return validateSchematicHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args);
   }
 
   getStartText(): string {
@@ -122,7 +130,9 @@ class GeneratePinmapTool implements IAilyTool {
   readonly displayMode = 'appendMessage' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return generatePinmapHandler(ctx.host!.connectionGraph as any, ctx.host!.project as any, args);
+    if (!ctx.host?.connectionGraph) return { is_error: true, content: '连线图服务不可用' };
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    return generatePinmapHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args);
   }
 
   getStartText(): string {
@@ -145,7 +155,9 @@ class SavePinmapTool implements IAilyTool {
   readonly displayMode = 'appendMessage' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return savePinmapHandler(ctx.host!.connectionGraph as any, ctx.host!.project as any, args);
+    if (!ctx.host?.connectionGraph) return { is_error: true, content: '连线图服务不可用' };
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    return savePinmapHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args);
   }
 
   getStartText(): string {
@@ -168,7 +180,9 @@ class GetCurrentSchematicTool implements IAilyTool {
   readonly displayMode = 'appendMessage' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return getCurrentSchematicHandler(ctx.host!.connectionGraph as any, ctx.host!.project as any, args || {});
+    if (!ctx.host?.connectionGraph) return { is_error: true, content: '连线图服务不可用' };
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    return getCurrentSchematicHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args || {});
   }
 
   getStartText(): string {
@@ -191,7 +205,9 @@ class ApplySchematicTool implements IAilyTool {
   readonly displayMode = 'appendMessage' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return applySchematicHandler(ctx.host!.connectionGraph as any, ctx.host!.project as any, args);
+    if (!ctx.host?.connectionGraph) return { is_error: true, content: '连线图服务不可用' };
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    return applySchematicHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args);
   }
 
   getStartText(): string {
