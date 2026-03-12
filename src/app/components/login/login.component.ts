@@ -66,7 +66,7 @@ export class LoginComponent implements OnDestroy {
     const lang = this.translate.currentLang || this.translate.defaultLang || 'en';
     const isZh = lang === 'zh_cn' || lang === 'zh_hk' || lang === 'zh-CN' || lang === 'zh-HK';
     const file = isZh ? 'agreement/TERMS-zh.md' : 'agreement/TERMS.md';
-    return `${base}/${file}`;
+    return `${base}/${file}`+ '?v=' + Date.now();
   }
   private getPrivacyPolicyUrl(): string {
     const base = this.configService.getWebUrl();
