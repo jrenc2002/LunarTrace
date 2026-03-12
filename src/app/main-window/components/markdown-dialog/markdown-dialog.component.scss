@@ -1,0 +1,15 @@
+.markdown-container {
+  height: 400px;
+  overflow-y: auto;
+  margin: -10px -10px 10px -10px;
+  padding: 15px;
+  background: #2a2a2a;
+}
+
+.loading-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 400px;
+  font-size: 24px;
+}
