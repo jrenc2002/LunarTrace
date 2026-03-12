@@ -508,7 +508,10 @@
         "USER_AGREEMENT": "利用規約",
         "AGREEMENT_AND": "および",
         "PRIVACY_POLICY": "プライバシーポリシー",
-        "AGREEMENT_REQUIRED": "利用規約とプライバシーポリシーに同意してください"
+        "AGREEMENT_REQUIRED": "利用規約とプライバシーポリシーに同意してください",
+        "MODAL_CLOSE": "閉じる",
+        "AGREEMENT_LOAD_FAILED": "利用規約の読み込みに失敗しました",
+        "PRIVACY_LOAD_FAILED": "プライバシーポリシーの読み込みに失敗しました"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "機能は近日公開予定"

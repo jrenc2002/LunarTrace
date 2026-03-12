@@ -504,7 +504,10 @@
         "USER_AGREEMENT": "이용약관",
         "AGREEMENT_AND": "및",
         "PRIVACY_POLICY": "개인정보 처리방침",
-        "AGREEMENT_REQUIRED": "이용약관 및 개인정보 처리방침에 먼저 동의해 주세요"
+        "AGREEMENT_REQUIRED": "이용약관 및 개인정보 처리방침에 먼저 동의해 주세요",
+        "MODAL_CLOSE": "닫기",
+        "AGREEMENT_LOAD_FAILED": "이용약관 로드 실패",
+        "PRIVACY_LOAD_FAILED": "개인정보 처리방침 로드 실패"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "기능 출시 예정"

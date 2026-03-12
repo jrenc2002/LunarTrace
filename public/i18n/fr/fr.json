@@ -508,7 +508,10 @@
         "USER_AGREEMENT": "Conditions d'utilisation",
         "AGREEMENT_AND": "et la",
         "PRIVACY_POLICY": "Politique de confidentialité",
-        "AGREEMENT_REQUIRED": "Veuillez accepter les conditions d'utilisation et la politique de confidentialité"
+        "AGREEMENT_REQUIRED": "Veuillez accepter les conditions d'utilisation et la politique de confidentialité",
+        "MODAL_CLOSE": "Fermer",
+        "AGREEMENT_LOAD_FAILED": "Échec du chargement des conditions d'utilisation",
+        "PRIVACY_LOAD_FAILED": "Échec du chargement de la politique de confidentialité"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "Fonctionnalité bientôt disponible"

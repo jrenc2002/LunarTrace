@@ -508,7 +508,10 @@
         "USER_AGREEMENT": "用戶協議",
         "AGREEMENT_AND": "和",
         "PRIVACY_POLICY": "隱私政策",
-        "AGREEMENT_REQUIRED": "請先勾選同意用戶協議和隱私政策"
+        "AGREEMENT_REQUIRED": "請先勾選同意用戶協議和隱私政策",
+        "MODAL_CLOSE": "關閉",
+        "AGREEMENT_LOAD_FAILED": "加載用戶協議失敗",
+        "PRIVACY_LOAD_FAILED": "加載隱私政策失敗"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "功能即將上線"

@@ -174,6 +174,51 @@
     padding: 20px;
 }
 
+// 协议预览弹窗样式
+::ng-deep .agreement-preview-modal {
+    .ant-modal-content {
+        background: #1f1f1f !important;
+    }
+
+    .ant-modal-header {
+        background: transparent;
+        border-bottom: 1px solid #333;
+    }
+
+    .ant-modal-title {
+        color: #fff;
+    }
+
+    .agreement-modal-content {
+        max-height: 60vh;
+        overflow-y: auto;
+        color: rgba(255, 255, 255, 0.85);
+        line-height: 1.6;
+
+        h1, h2, h3 {
+            color: #fff;
+            margin: 16px 0 8px;
+        }
+
+        h1 { font-size: 20px; }
+        h2 { font-size: 16px; }
+        h3 { font-size: 14px; }
+
+        p, li {
+            margin: 8px 0;
+        }
+
+        ul {
+            padding-left: 24px;
+        }
+
+        hr {
+            border-color: #444;
+            margin: 16px 0;
+        }
+    }
+}
+
 .phone-login-box {
     margin-top: 23px;
 

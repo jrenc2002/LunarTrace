@@ -508,7 +508,10 @@
         "USER_AGREEMENT": "اتفاقية المستخدم",
         "AGREEMENT_AND": "و",
         "PRIVACY_POLICY": "سياسة الخصوصية",
-        "AGREEMENT_REQUIRED": "يرجى الموافقة على اتفاقية المستخدم وسياسة الخصوصية أولاً"
+        "AGREEMENT_REQUIRED": "يرجى الموافقة على اتفاقية المستخدم وسياسة الخصوصية أولاً",
+        "MODAL_CLOSE": "إغلاق",
+        "AGREEMENT_LOAD_FAILED": "فشل تحميل اتفاقية المستخدم",
+        "PRIVACY_LOAD_FAILED": "فشل تحميل سياسة الخصوصية"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "الميزة قادمة قريباً"

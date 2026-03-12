@@ -508,7 +508,10 @@
         "USER_AGREEMENT": "Nutzungsbedingungen",
         "AGREEMENT_AND": "und",
         "PRIVACY_POLICY": "Datenschutzrichtlinie",
-        "AGREEMENT_REQUIRED": "Bitte stimmen Sie den Nutzungsbedingungen und der Datenschutzrichtlinie zu"
+        "AGREEMENT_REQUIRED": "Bitte stimmen Sie den Nutzungsbedingungen und der Datenschutzrichtlinie zu",
+        "MODAL_CLOSE": "Schließen",
+        "AGREEMENT_LOAD_FAILED": "Nutzungsbedingungen konnten nicht geladen werden",
+        "PRIVACY_LOAD_FAILED": "Datenschutzrichtlinie konnte nicht geladen werden"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "Funktion demnächst verfügbar"

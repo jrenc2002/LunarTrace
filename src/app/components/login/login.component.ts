@@ -1,10 +1,13 @@
 import { CommonModule } from '@angular/common';
-import { Component, ViewChild, OnDestroy } from '@angular/core';
+import { Component, ViewChild, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCheckboxModule } from 'ng-zorro-antd/checkbox';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputModule } from 'ng-zorro-antd/input';
+import { NzModalModule } from 'ng-zorro-antd/modal';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { Subject, takeUntil, interval, Subscription } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
@@ -22,6 +25,7 @@ import { AltchaComponent } from './altcha/altcha.component';
     FormsModule,
     NzIconModule,
     NzInputModule,
+    NzModalModule,
     TranslateModule,
     AltchaComponent,
   ],
@@ -54,8 +58,13 @@ export class LoginComponent implements OnDestroy {
 
   // 用户协议与隐私协议
   agreedToTerms = false;
-  userAgreementUrl = 'https://aily.pro/user-agreement';
-  privacyPolicyUrl = 'https://aily.pro/privacy-policy';
+  isAgreementModalVisible = false;
+  agreementModalTitle = '';
+  agreementModalContent: SafeHtml = '';
+
+  // 协议 markdown 文件路径
+  private readonly userAgreementPath = 'doc/user-agreement.md';
+  private readonly privacyPolicyPath = 'doc/privacy-policy.md';
 
   // 邮箱登录相关
   inputEmail = '';
@@ -69,6 +78,9 @@ export class LoginComponent implements OnDestroy {
     private message: NzMessageService,
     private electronService: ElectronService,
     private translate: TranslateService,
+    private http: HttpClient,
+    private sanitizer: DomSanitizer,
+    private cdr: ChangeDetectorRef,
   ) {
     // 监听登录状态，控制组件显隐
     this.authService.isLoggedIn$
@@ -339,14 +351,70 @@ export class LoginComponent implements OnDestroy {
   }
 
   /**
-   * 打开协议静态页面
+   * 弹窗预览用户协议
    */
-  openAgreementUrl(url: string): void {
-    if (this.electronService.isElectron) {
-      this.electronService.openUrl(url);
-    } else {
-      window.open(url, '_blank');
-    }
+  showUserAgreement(): void {
+    this.agreementModalTitle = this.translate.instant('LOGIN.USER_AGREEMENT');
+    this.http.get(this.userAgreementPath, { responseType: 'text' }).subscribe({
+      next: (content) => {
+        this.agreementModalContent = this.sanitizer.bypassSecurityTrustHtml(this.parseMarkdown(content));
+        this.isAgreementModalVisible = true;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.message.error(this.translate.instant('LOGIN.AGREEMENT_LOAD_FAILED') || '加载用户协议失败');
+      },
+    });
+  }
+
+  /**
+   * 弹窗预览隐私政策
+   */
+  showPrivacyPolicy(): void {
+    this.agreementModalTitle = this.translate.instant('LOGIN.PRIVACY_POLICY');
+    this.http.get(this.privacyPolicyPath, { responseType: 'text' }).subscribe({
+      next: (content) => {
+        this.agreementModalContent = this.sanitizer.bypassSecurityTrustHtml(this.parseMarkdown(content));
+        this.isAgreementModalVisible = true;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.message.error(this.translate.instant('LOGIN.PRIVACY_LOAD_FAILED') || '加载隐私政策失败');
+      },
+    });
+  }
+
+  /**
+   * 关闭协议弹窗
+   */
+  handleAgreementModalClose(): void {
+    this.isAgreementModalVisible = false;
+    this.agreementModalContent = '';
+  }
+
+  /**
+   * 将 Markdown 解析为 HTML
+   */
+  private parseMarkdown(markdown: string): string {
+    return (
+      markdown
+        // 处理标题
+        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+        .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+        // 处理粗体
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        // 处理分割线
+        .replace(/^---$/gm, '<hr>')
+        // 处理无序列表
+        .replace(/^- (.+)$/gm, '<li>$1</li>')
+        .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+        // 处理段落
+        .replace(/^(?!<[hul]|<li|<hr)(.+)$/gm, '<p>$1</p>')
+        // 清理多余空行
+        .replace(/<p><\/p>/g, '')
+        .replace(/\n\n+/g, '\n')
+    );
   }
 
   /**

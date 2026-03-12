@@ -567,7 +567,10 @@
         "USER_AGREEMENT": "用户协议",
         "AGREEMENT_AND": "和",
         "PRIVACY_POLICY": "隐私政策",
-        "AGREEMENT_REQUIRED": "请先勾选同意用户协议和隐私政策"
+        "AGREEMENT_REQUIRED": "请先勾选同意用户协议和隐私政策",
+        "MODAL_CLOSE": "关闭",
+        "AGREEMENT_LOAD_FAILED": "加载用户协议失败",
+        "PRIVACY_LOAD_FAILED": "加载隐私政策失败"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "功能即将上线",

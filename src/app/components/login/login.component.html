@@ -141,11 +141,18 @@
         <div class="agreement-section">
             <label nz-checkbox [(ngModel)]="agreedToTerms" (ngModelChange)="onAgreementChange()">
                 <span>{{ 'LOGIN.AGREEMENT_PREFIX' | translate }}</span>
-                <a class="agreement-link" (click)="openAgreementUrl(userAgreementUrl); $event.preventDefault()">{{ 'LOGIN.USER_AGREEMENT' | translate }}</a>
+                <a class="agreement-link" (click)="showUserAgreement(); $event.preventDefault()">{{ 'LOGIN.USER_AGREEMENT' | translate }}</a>
                 <span>{{ 'LOGIN.AGREEMENT_AND' | translate }}</span>
-                <a class="agreement-link" (click)="openAgreementUrl(privacyPolicyUrl); $event.preventDefault()">{{ 'LOGIN.PRIVACY_POLICY' | translate }}</a>
+                <a class="agreement-link" (click)="showPrivacyPolicy(); $event.preventDefault()">{{ 'LOGIN.PRIVACY_POLICY' | translate }}</a>
             </label>
         </div>
     </div>
 </div>
+<nz-modal [(nzVisible)]="isAgreementModalVisible" [nzTitle]="agreementModalTitle" [nzFooter]="agreementModalFooter"
+    [nzWidth]="560" (nzOnCancel)="handleAgreementModalClose()" nzClassName="agreement-preview-modal sscroll">
+    <ng-template #agreementModalFooter>
+        <button nz-button nzType="primary" (click)="handleAgreementModalClose()">{{ 'LOGIN.MODAL_CLOSE' | translate }}</button>
+    </ng-template>
+    <div *nzModalContent class="agreement-modal-content" [innerHTML]="agreementModalContent"></div>
+</nz-modal>
 }

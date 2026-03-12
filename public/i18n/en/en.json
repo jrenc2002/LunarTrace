@@ -567,7 +567,10 @@
         "USER_AGREEMENT": "User Agreement",
         "AGREEMENT_AND": "and",
         "PRIVACY_POLICY": "Privacy Policy",
-        "AGREEMENT_REQUIRED": "Please agree to the User Agreement and Privacy Policy first"
+        "AGREEMENT_REQUIRED": "Please agree to the User Agreement and Privacy Policy first",
+        "MODAL_CLOSE": "Close",
+        "AGREEMENT_LOAD_FAILED": "Failed to load User Agreement",
+        "PRIVACY_LOAD_FAILED": "Failed to load Privacy Policy"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "Feature coming soon",

@@ -508,7 +508,10 @@
         "USER_AGREEMENT": "Acuerdo de Usuario",
         "AGREEMENT_AND": "y la",
         "PRIVACY_POLICY": "Política de Privacidad",
-        "AGREEMENT_REQUIRED": "Por favor, acepte el Acuerdo de Usuario y la Política de Privacidad primero"
+        "AGREEMENT_REQUIRED": "Por favor, acepte el Acuerdo de Usuario y la Política de Privacidad primero",
+        "MODAL_CLOSE": "Cerrar",
+        "AGREEMENT_LOAD_FAILED": "Error al cargar el Acuerdo de Usuario",
+        "PRIVACY_LOAD_FAILED": "Error al cargar la Política de Privacidad"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "Función próximamente"
