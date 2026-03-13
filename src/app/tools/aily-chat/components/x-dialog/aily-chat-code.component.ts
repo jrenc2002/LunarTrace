@@ -80,8 +80,8 @@ const AILY_TYPES = [
     @if (isType('aily-state') && parsedData) {
       <x-aily-state-viewer [data]="parsedData" />
     }
-    @if (isType('aily-button') && parsedArray) {
-      <x-aily-button-viewer [data]="parsedArray" />
+    @if (isType('aily-button') && (parsedArray || streamStatus === 'loading')) {
+      <x-aily-button-viewer [data]="parsedArray" [streamStatus]="streamStatus" />
     }
     @if (isType('aily-board')) {
       <x-aily-board-viewer [data]="parsedData" />
@@ -313,6 +313,7 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
 
   // ===== Parsing =====
   private parseContent(): void {
+    const prevParsedArray = this.lang === 'aily-button' ? this.parsedArray : null;
     this.parsedData = null;
     this.parsedArray = null;
 
@@ -329,7 +330,10 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
         this.parsedData = parsed;
       }
     } catch {
-      // JSON 解析失败静默忽略
+      // 流式过程中 parse 可能因中间 chunk 失败，保留上次成功结果避免按钮闪烁
+      if (this.streamStatus === 'loading' && prevParsedArray?.length) {
+        this.parsedArray = prevParsedArray;
+      }
     }
   }
 
