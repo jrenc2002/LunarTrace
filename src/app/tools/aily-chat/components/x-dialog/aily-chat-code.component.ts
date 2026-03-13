@@ -28,6 +28,7 @@ import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { MermaidComponent } from '../aily-mermaid-viewer/mermaid/mermaid.component';
 import mermaid from 'mermaid';
 import { AilyHost } from '../../core/host';
+import { ChatService } from '../../services/chat.service';
 
 /** 所有 aily-* 自定义代码块类型 */
 const AILY_TYPES = [
@@ -103,7 +104,7 @@ const AILY_TYPES = [
               <i class="fa-regular fa-copy"></i>
             }
           </button>
-          @if (archExistsInProject) {
+          @if (archNeedsOverwriteConfirm) {
             <button type="button" class="aily-mermaid-toolbar-btn" [class.success]="mermaidDownloadSuccess"
               nz-popconfirm
               [nzPopconfirmTitle]="'AILY_CHAT.MERMAID_ARCH_OVERWRITE_CONTENT' | translate"
@@ -236,6 +237,7 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
     private modal: NzModalService,
     private message: NzMessageService,
     private translate: TranslateService,
+    private chatService: ChatService,
   ) {}
 
   // ===== Getters =====
@@ -279,6 +281,24 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
     if (!projectPath || !host?.fs || !host?.path) return false;
     const archPath = host.path.join(projectPath, 'arch.md');
     return host.fs.existsSync(archPath);
+  }
+
+  /** 孤儿模式下 .chat_history 下是否已存在 {sessionId}_arch.md（用于决定是否显示覆盖确认） */
+  get archExistsInOrphanChatHistory(): boolean {
+    const host = AilyHost.get();
+    const rootPath = host?.project?.projectRootPath;
+    const projectPath = host?.project?.currentProjectPath || rootPath;
+    const isOrphan = !projectPath || (rootPath && projectPath === rootPath);
+    if (!isOrphan || !rootPath || !host?.fs || !host?.path) return false;
+    const sessionId = this.chatService.currentSessionId;
+    if (!sessionId) return false;
+    const archPath = host.path.join(rootPath, '.chat_history', `${sessionId}_arch.md`);
+    return host.fs.existsSync(archPath);
+  }
+
+  /** 是否需要覆盖确认（项目 arch 或孤儿 arch 已存在） */
+  get archNeedsOverwriteConfirm(): boolean {
+    return this.archExistsInProject || this.archExistsInOrphanChatHistory;
   }
 
   // ===== Lifecycle =====
@@ -396,10 +416,21 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
 
     const host = AilyHost.get();
     const projectPath = host?.project?.currentProjectPath || host?.project?.projectRootPath;
+    const rootPath = host?.project?.projectRootPath;
+    const isOrphan = !projectPath || (rootPath && projectPath === rootPath);
 
-    if (projectPath && host?.fs && host?.path) {
+    if (projectPath && host?.fs && host?.path && !isOrphan) {
       const archPath = host.path.join(projectPath, 'arch.md');
       this.writeArchFile(host, archPath, content);
+    } else if (isOrphan && rootPath && host?.fs && host?.path) {
+      const sessionId = this.chatService.currentSessionId;
+      if (sessionId) {
+        const chatHistoryDir = host.path.join(rootPath, '.chat_history');
+        const archPath = host.path.join(chatHistoryDir, `${sessionId}_arch.md`);
+        this.writeArchFile(host, archPath, content);
+      } else {
+        this.downloadArchAsBlob(content);
+      }
     } else {
       this.downloadArchAsBlob(content);
     }

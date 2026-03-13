@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ChatHistoryService - Copilot 风格的聊天历史管理服务
  *
  * 采用「全局索引 + 分项目/全局兜底数据」双轨架构：
@@ -459,9 +459,27 @@ export class ChatHistoryService implements OnDestroy {
           this.deleteSessionFile(entry.sessionId, null);
         }
       }
+
+      // 6. 迁移孤儿 arch 文件：rootPath/.chat_history/{sessionId}_arch.md → projectPath/arch.md
+      // TODO 如果是多个会话，可能均会迁移，但是会以最后一个会话的 arch 为准，并且其他会话的 arch 文件会被最后一个覆盖掉，产品逻辑可能需要优化
+      if (rootPath && this.hasFs()) {
+        const orphanArchPath = this.joinPath(rootPath, this.PROJECT_CHAT_DIR, `${entry.sessionId}_arch.md`);
+        if (this.fileExists(orphanArchPath)) {
+          try {
+            const content = this.readFileSync(orphanArchPath);
+            const targetArchPath = this.joinPath(projectPath, 'arch.md');
+            this.ensureDir(projectPath);
+            this.writeFileSync(targetArchPath, content);
+            AilyHost.get().fs.unlinkSync(orphanArchPath);
+            console.log(`[ChatHistory] 已迁移孤儿 arch: ${entry.sessionId}_arch.md → ${projectPath}/arch.md`);
+          } catch (err) {
+            console.warn(`[ChatHistory] 迁移孤儿 arch 失败 (${entry.sessionId}):`, err);
+          }
+        }
+      }
     }
 
-    // 6. 持久化索引
+    // 7. 持久化索引
     this.writeIndex();
     console.log(`[ChatHistory] 已将 ${orphans.length} 个孤儿会话迁移到项目: ${projectPath}`);
     return orphans.length;
