@@ -204,6 +204,7 @@
         "INSTALLED_TEXT": "Instalado",
         "REMOVE": "Eliminar",
         "INSTALLING": "Instalando",
+        "INSTALL_FAILED": "Instalación fallida",
         "UNINSTALLING": "Desinstalando",
         "UNINSTALLED": "Desinstalado",
         "IMPORTING": "Importando",
@@ -317,6 +318,13 @@
         "MODE_QA_FULL": "Modo P&R",
         "STOP_CURRENT_SESSION_FIRST": "Por favor, detenga la sesión actual antes de crear una nueva",
         "NO_HISTORY_SESSION": "No hay registros de sesiones históricas",
+        "MERMAID_SAVE_ARCH": "Guardar como diagrama de arquitectura",
+        "MERMAID_ARCH_OVERWRITE_TITLE": "Confirmar sobrescritura",
+        "MERMAID_ARCH_OVERWRITE_CONTENT": "El archivo del diagrama de arquitectura ya existe en el directorio del proyecto. ¿Sobrescribir?",
+        "MERMAID_ARCH_CONFIRM": "Confirmar",
+        "MERMAID_ARCH_CANCEL": "Cancelar",
+        "MERMAID_COPY_FAILED": "Error al copiar",
+        "MERMAID_SAVE_FAILED": "Error al guardar",
         "ONBOARDING": {
             "STEP1_TITLE": "Cuadro de entrada",
             "STEP1_DESC": "Escriba aquí sus preguntas o tareas para la asistencia de IA. Presione Enter para enviar, Ctrl+Enter para nueva línea",
@@ -364,13 +372,19 @@
     },
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "Configuración del Proyecto",
+        "ARCH": "Diagrama de Arquitectura",
         "PINMAP": "Mapa de Pines",
         "CIRCUIT": "Diagrama de Circuito",
         "DOCUMENTATION": "Documentación",
         "FEEDBACK": "Comentarios",
         "NO_PINMAP": "Mapa de pines no disponible para esta placa",
         "PINMAP_PARSE_ERROR": "Error al analizar el mapa de pines",
-        "NO_DOCUMENTATION": "Documentación no disponible para esta placa"
+        "NO_DOCUMENTATION": "Documentación no disponible para esta placa",
+        "ARCH_ELECTRON_ONLY": "El diagrama de arquitectura solo está disponible en la aplicación de escritorio",
+        "NO_PROJECT": "No hay proyecto abierto",
+        "NO_ARCH": "No se encontró arch.md en el directorio del proyecto",
+        "ARCH_EMPTY": "No se encontró diagrama mermaid en arch.md",
+        "ARCH_RENDER_FAILED": "Error al renderizar el diagrama de arquitectura"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "Por favor seleccione un puerto serial primero",
@@ -502,7 +516,15 @@
         "ENTER_CREDENTIALS": "Por favor ingrese nombre de usuario y contraseña",
         "LOGIN_SUCCESS": "Inicio de sesión exitoso",
         "LOGIN_FAILED": "Error en el inicio de sesión",
-        "LOGIN_NETWORK_ERROR": "Error en el inicio de sesión, verifique la conexión de red"
+        "LOGIN_NETWORK_ERROR": "Error en el inicio de sesión, verifique la conexión de red",
+        "AGREEMENT_PREFIX": "He leído y acepto el",
+        "USER_AGREEMENT": "Acuerdo de Usuario",
+        "AGREEMENT_AND": "y la",
+        "PRIVACY_POLICY": "Política de Privacidad",
+        "AGREEMENT_REQUIRED": "Por favor, acepte el Acuerdo de Usuario y la Política de Privacidad primero",
+        "MODAL_CLOSE": "Cerrar",
+        "AGREEMENT_LOAD_FAILED": "Error al cargar el Acuerdo de Usuario",
+        "PRIVACY_LOAD_FAILED": "Error al cargar la Política de Privacidad"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "Función próximamente"

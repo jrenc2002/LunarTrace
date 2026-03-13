@@ -233,6 +233,14 @@ export class ConfigService {
   }
 
   /**
+   * 获取 Web 站点 URL（用于协议文档等）
+   */
+  getWebUrl(): string {
+    const url = this.getCurrentRegionConfig()?.web || this.data?.web || 'https://aily.pro';
+    return url.endsWith('/') ? url.slice(0, -1) : url;
+  }
+
+  /**
    * 获取所有可用区域列表
    */
   getRegionList(): Array<{key: string, name: string, enabled: boolean}> {

@@ -120,13 +120,22 @@ export class ChatHistoryService implements OnDestroy {
    * 获取历史列表（按 updatedAt 降序）
    * @param filter 筛选模式
    * @param projectPath 当前项目路径（filter='current-project' 时使用）
+   * @param projectRootPath 项目根目录路径（可选），用于同时包含根目录下创建的孤儿会话
    */
-  getHistoryList(filter: HistoryFilterMode = 'all', projectPath?: string | null): SessionIndexEntry[] {
+  getHistoryList(filter: HistoryFilterMode = 'all', projectPath?: string | null, projectRootPath?: string | null): SessionIndexEntry[] {
     this.ensureIndexLoaded();
     let result = [...this.index];
 
     if (filter === 'current-project' && projectPath) {
-      result = result.filter(e => this.isSamePath(e.projectPath, projectPath));
+      result = result.filter(e =>
+        // // 1. 无项目时创建的会话（projectPath === null）
+        // e.projectPath === null
+        // // 2. 属于当前项目的会话
+        // || this.isSamePath(e.projectPath, projectPath)
+        // // 3. 保存在根目录下的孤儿会话（无项目时 currentProjectPath === projectRootPath）
+        // || (projectRootPath && this.isSamePath(e.projectPath, projectRootPath))
+        this.isSamePath(e.projectPath, projectPath)
+      );
     }
 
     // 按 updatedAt 降序
@@ -188,7 +197,10 @@ export class ChatHistoryService implements OnDestroy {
     this.sessionCache.set(sessionId, sessionData);
 
     // 更新或创建索引条目
-    this.upsertIndexEntry(sessionId, fullMetadata, chatList.length);
+    // 仅在消息数量发生变化时才更新 updatedAt（避免切换会话时纯保存导致时间戳变更）
+    const existingEntry = this.index.find(e => e.sessionId === sessionId);
+    const messageCountChanged = !existingEntry || existingEntry.messageCount !== chatList.length;
+    this.upsertIndexEntry(sessionId, fullMetadata, chatList.length, messageCountChanged);
 
     // 写入磁盘
     this.writeSessionData(sessionId, sessionData);
@@ -390,6 +402,72 @@ export class ChatHistoryService implements OnDestroy {
   }
 
   // =========================================================================
+  // 公共 API - 孤儿会话领养（根目录 → 项目）
+  // =========================================================================
+
+  /**
+   * 将所有根目录孤儿会话（projectPath === null 或 projectPath === rootPath）迁移归属到指定项目。
+   * 适用于：用户最初无项目时创建了聊天记录，之后新建了项目，
+   * 希望将之前的历史记录归入新项目。
+   *
+   * 操作内容：
+   * 1. 更新索引条目的 projectPath / projectName
+   * 2. 将数据文件从全局目录移动到项目 .chat_history/ 目录
+   * 3. 更新内存缓存中的 metadata
+   *
+   * @param projectPath 目标项目的绝对路径
+   * @param rootPath 可选，项目根目录路径（用于识别保存在根目录下的孤儿会话）
+   * @returns 被迁移的会话数量
+   */
+  adoptOrphanSessions(projectPath: string, rootPath?: string | null): number {
+    if (!projectPath) return 0;
+    this.ensureIndexLoaded();
+
+    const orphans = this.index.filter(e =>
+      e.projectPath === null
+      || (rootPath && this.isSamePath(e.projectPath, rootPath) && !this.isSamePath(rootPath, projectPath))
+    );
+    if (orphans.length === 0) return 0;
+
+    const projectName = this.extractProjectName(projectPath);
+
+    for (const entry of orphans) {
+      const oldProjectPath = entry.projectPath;
+
+      // 1. 读取原始数据（内存缓存或磁盘）
+      const data = this.sessionCache.get(entry.sessionId)
+        || this.readSessionData(entry.sessionId, oldProjectPath);
+
+      // 2. 更新索引条目
+      entry.projectPath = projectPath;
+      entry.projectName = projectName;
+      entry.updatedAt = Date.now();
+
+      // 3. 更新缓存中的 metadata
+      if (data) {
+        data.metadata.projectPath = projectPath;
+        data.metadata.updatedAt = Date.now();
+        this.sessionCache.set(entry.sessionId, data);
+
+        // 4. 写入项目目录
+        this.writeSessionData(entry.sessionId, data);
+
+        // 5. 删除旧路径的数据文件
+        this.deleteSessionFile(entry.sessionId, oldProjectPath);
+        if (oldProjectPath !== null) {
+          // 同时清理全局兜底路径（以防双写）
+          this.deleteSessionFile(entry.sessionId, null);
+        }
+      }
+    }
+
+    // 6. 持久化索引
+    this.writeIndex();
+    console.log(`[ChatHistory] 已将 ${orphans.length} 个孤儿会话迁移到项目: ${projectPath}`);
+    return orphans.length;
+  }
+
+  // =========================================================================
   // 公共 API - 删除
   // =========================================================================
 
@@ -446,11 +524,13 @@ export class ChatHistoryService implements OnDestroy {
 
   /**
    * 更新或创建索引条目
+   * @param updateTimestamp 是否更新 updatedAt（默认 true），纯保存/切换时传 false 避免时间戳污染
    */
   private upsertIndexEntry(
     sessionId: string,
     metadata: SessionMetadata,
-    messageCount: number
+    messageCount: number,
+    updateTimestamp: boolean = true
   ): void {
     // 检查是否有暂存标题（updateTitle 在条目尚未创建时调用的功法）
     const pendingTitle = this.pendingTitles.get(sessionId);
@@ -462,7 +542,9 @@ export class ChatHistoryService implements OnDestroy {
     const existing = this.index.find(e => e.sessionId === sessionId);
     if (existing) {
       existing.title = metadata.title || existing.title;
-      existing.updatedAt = metadata.updatedAt || Date.now();
+      if (updateTimestamp) {
+        existing.updatedAt = metadata.updatedAt || Date.now();
+      }
       existing.messageCount = messageCount;
       existing.mode = metadata.mode || existing.mode;
       existing.model = metadata.model ?? existing.model;

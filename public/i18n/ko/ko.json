@@ -198,6 +198,7 @@
         "INSTALLED_TEXT": "설치됨",
         "REMOVE": "제거",
         "INSTALLING": "설치 중",
+        "INSTALL_FAILED": "설치 실패",
         "UNINSTALLING": "제거 중",
         "UNINSTALLED": "제거됨",
         "IMPORTING": "가져오는 중",
@@ -313,6 +314,13 @@
         "MODE_QA_FULL": "Q&A 모드",
         "STOP_CURRENT_SESSION_FIRST": "새 세션을 생성하기 전에 먼저 현재 세션을 중지하세요",
         "NO_HISTORY_SESSION": "기록된 대화 기록이 없습니다",
+        "MERMAID_SAVE_ARCH": "아키텍처 다이어그램으로 저장",
+        "MERMAID_ARCH_OVERWRITE_TITLE": "덮어쓰기 확인",
+        "MERMAID_ARCH_OVERWRITE_CONTENT": "프로젝트 디렉토리에 아키텍처 다이어그램 파일이 이미 있습니다. 덮어쓰시겠습니까?",
+        "MERMAID_ARCH_CONFIRM": "확인",
+        "MERMAID_ARCH_CANCEL": "취소",
+        "MERMAID_COPY_FAILED": "복사 실패",
+        "MERMAID_SAVE_FAILED": "저장 실패",
         "ONBOARDING": {
             "STEP1_TITLE": "입력 상자",
             "STEP1_DESC": "여기에 질문이나 AI가 도와줄 작업을 입력하세요. Enter로 전송, Ctrl+Enter로 줄바꿈",
@@ -360,13 +368,19 @@
     },
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "프로젝트 설정",
+        "ARCH": "아키텍처 다이어그램",
         "PINMAP": "핀 맵",
         "CIRCUIT": "회로 연결도",
         "DOCUMENTATION": "문서",
         "FEEDBACK": "피드백",
         "NO_PINMAP": "이 보드에 대한 핀 맵을 사용할 수 없습니다",
         "PINMAP_PARSE_ERROR": "핀 맵 파싱 실패",
-        "NO_DOCUMENTATION": "이 보드에 대한 문서를 사용할 수 없습니다"
+        "NO_DOCUMENTATION": "이 보드에 대한 문서를 사용할 수 없습니다",
+        "ARCH_ELECTRON_ONLY": "아키텍처 다이어그램은 데스크톱 앱에서만 사용 가능합니다",
+        "NO_PROJECT": "열린 프로젝트가 없습니다",
+        "NO_ARCH": "프로젝트 디렉토리에서 arch.md를 찾을 수 없습니다",
+        "ARCH_EMPTY": "arch.md에서 mermaid 다이어그램을 찾을 수 없습니다",
+        "ARCH_RENDER_FAILED": "아키텍처 다이어그램 렌더링 실패"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "먼저 시리얼 포트를 선택하세요",
@@ -498,7 +512,15 @@
         "ENTER_CREDENTIALS": "사용자 이름과 비밀번호를 입력하세요",
         "LOGIN_SUCCESS": "로그인 성공",
         "LOGIN_FAILED": "로그인 실패",
-        "LOGIN_NETWORK_ERROR": "로그인 실패, 네트워크 연결을 확인하세요"
+        "LOGIN_NETWORK_ERROR": "로그인 실패, 네트워크 연결을 확인하세요",
+        "AGREEMENT_PREFIX": "다음을 읽고 동의합니다:",
+        "USER_AGREEMENT": "이용약관",
+        "AGREEMENT_AND": "및",
+        "PRIVACY_POLICY": "개인정보 처리방침",
+        "AGREEMENT_REQUIRED": "이용약관 및 개인정보 처리방침에 먼저 동의해 주세요",
+        "MODAL_CLOSE": "닫기",
+        "AGREEMENT_LOAD_FAILED": "이용약관 로드 실패",
+        "PRIVACY_LOAD_FAILED": "개인정보 처리방침 로드 실패"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "기능 출시 예정"

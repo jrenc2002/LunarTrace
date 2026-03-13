@@ -204,6 +204,7 @@
         "INSTALLED_TEXT": "Installiert",
         "REMOVE": "Entfernen",
         "INSTALLING": "Installiere",
+        "INSTALL_FAILED": "Installation fehlgeschlagen",
         "UNINSTALLING": "Deinstalliere",
         "UNINSTALLED": "Deinstalliert",
         "IMPORTING": "Importiere",
@@ -317,6 +318,13 @@
         "MODE_QA_FULL": "F&A-Modus",
         "STOP_CURRENT_SESSION_FIRST": "Bitte stoppen Sie zuerst die aktuelle Sitzung, bevor Sie eine neue erstellen",
         "NO_HISTORY_SESSION": "Keine historischen Sitzungsaufzeichnungen",
+        "MERMAID_SAVE_ARCH": "Als Architekturdiagramm speichern",
+        "MERMAID_ARCH_OVERWRITE_TITLE": "Überschreiben bestätigen",
+        "MERMAID_ARCH_OVERWRITE_CONTENT": "Architekturdiagramm-Datei existiert bereits im Projektverzeichnis. Überschreiben?",
+        "MERMAID_ARCH_CONFIRM": "Bestätigen",
+        "MERMAID_ARCH_CANCEL": "Abbrechen",
+        "MERMAID_COPY_FAILED": "Kopieren fehlgeschlagen",
+        "MERMAID_SAVE_FAILED": "Speichern fehlgeschlagen",
         "ONBOARDING": {
             "STEP1_TITLE": "Eingabefeld",
             "STEP1_DESC": "Geben Sie hier Ihre Fragen oder Aufgaben ein, bei denen die KI helfen soll. Enter zum Senden, Ctrl+Enter für neue Zeile",
@@ -364,13 +372,19 @@
     },
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "Projekteinstellungen",
+        "ARCH": "Architekturdiagramm",
         "PINMAP": "Pin-Belegung",
         "CIRCUIT": "Schaltplan",
         "DOCUMENTATION": "Dokumentation",
         "FEEDBACK": "Feedback",
         "NO_PINMAP": "Pin-Belegung für dieses Board nicht verfügbar",
         "PINMAP_PARSE_ERROR": "Fehler beim Parsen der Pin-Belegung",
-        "NO_DOCUMENTATION": "Dokumentation für dieses Board nicht verfügbar"
+        "NO_DOCUMENTATION": "Dokumentation für dieses Board nicht verfügbar",
+        "ARCH_ELECTRON_ONLY": "Architekturdiagramm nur in der Desktop-App verfügbar",
+        "NO_PROJECT": "Kein Projekt geöffnet",
+        "NO_ARCH": "arch.md im Projektverzeichnis nicht gefunden",
+        "ARCH_EMPTY": "Kein Mermaid-Diagramm in arch.md gefunden",
+        "ARCH_RENDER_FAILED": "Architekturdiagramm konnte nicht gerendert werden"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "Bitte wählen Sie zuerst einen seriellen Port aus",
@@ -502,7 +516,15 @@
         "ENTER_CREDENTIALS": "Bitte geben Sie Benutzername und Passwort ein",
         "LOGIN_SUCCESS": "Anmeldung erfolgreich",
         "LOGIN_FAILED": "Anmeldung fehlgeschlagen",
-        "LOGIN_NETWORK_ERROR": "Anmeldung fehlgeschlagen, bitte überprüfen Sie die Netzwerkverbindung"
+        "LOGIN_NETWORK_ERROR": "Anmeldung fehlgeschlagen, bitte überprüfen Sie die Netzwerkverbindung",
+        "AGREEMENT_PREFIX": "Ich akzeptiere die",
+        "USER_AGREEMENT": "Nutzungsbedingungen",
+        "AGREEMENT_AND": "und",
+        "PRIVACY_POLICY": "Datenschutzrichtlinie",
+        "AGREEMENT_REQUIRED": "Bitte stimmen Sie den Nutzungsbedingungen und der Datenschutzrichtlinie zu",
+        "MODAL_CLOSE": "Schließen",
+        "AGREEMENT_LOAD_FAILED": "Nutzungsbedingungen konnten nicht geladen werden",
+        "PRIVACY_LOAD_FAILED": "Datenschutzrichtlinie konnte nicht geladen werden"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "Funktion demnächst verfügbar"

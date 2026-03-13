@@ -253,6 +253,7 @@
         "INSTALLED_TEXT": "已安装",
         "REMOVE": "移除",
         "INSTALLING": "正在安装",
+        "INSTALL_FAILED": "安装失败",
         "UNINSTALLING": "正在卸载",
         "UNINSTALLED": "已卸载",
         "IMPORTING": "正在导入",
@@ -366,6 +367,13 @@
         "MODE_QA_FULL": "问答模式",
         "STOP_CURRENT_SESSION_FIRST": "请先停止当前会话，再新建",
         "NO_HISTORY_SESSION": "没有历史会话记录",
+        "MERMAID_SAVE_ARCH": "保存为框架图",
+        "MERMAID_ARCH_OVERWRITE_TITLE": "覆盖确认",
+        "MERMAID_ARCH_OVERWRITE_CONTENT": "项目目录下已存在框架图文件，是否覆盖？",
+        "MERMAID_ARCH_CONFIRM": "确认",
+        "MERMAID_ARCH_CANCEL": "取消",
+        "MERMAID_COPY_FAILED": "复制失败",
+        "MERMAID_SAVE_FAILED": "保存失败",
         "ONBOARDING": {
             "STEP1_TITLE": "输入框",
             "STEP1_DESC": "在这里输入你想问的问题或需要AI帮助完成的任务，按 Enter 发送，Ctrl+Enter 换行",
@@ -413,13 +421,19 @@
     },
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "项目设置",
+        "ARCH": "框架图",
         "PINMAP": "引脚图",
         "CIRCUIT": "电路连接",
         "DOCUMENTATION": "文档",
         "FEEDBACK": "反馈",
         "NO_PINMAP": "该开发板没有提供引脚图",
         "PINMAP_PARSE_ERROR": "引脚图解析失败",
-        "NO_DOCUMENTATION": "该开发板没有提供文档链接"
+        "NO_DOCUMENTATION": "该开发板没有提供文档链接",
+        "ARCH_ELECTRON_ONLY": "框架图仅在桌面应用中可用",
+        "NO_PROJECT": "未打开项目",
+        "NO_ARCH": "项目目录下未找到 arch.md",
+        "ARCH_EMPTY": "arch.md 中未找到 mermaid 图表",
+        "ARCH_RENDER_FAILED": "框架图渲染失败"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "请先选择串口",
@@ -561,7 +575,15 @@
         "ENTER_CREDENTIALS": "请输入用户名和密码",
         "LOGIN_SUCCESS": "登录成功",
         "LOGIN_FAILED": "登录失败",
-        "LOGIN_NETWORK_ERROR": "登录失败，请检查网络连接"
+        "LOGIN_NETWORK_ERROR": "登录失败，请检查网络连接",
+        "AGREEMENT_PREFIX": "我已阅读并同意",
+        "USER_AGREEMENT": "用户协议",
+        "AGREEMENT_AND": "和",
+        "PRIVACY_POLICY": "隐私政策",
+        "AGREEMENT_REQUIRED": "请先勾选同意用户协议和隐私政策",
+        "MODAL_CLOSE": "关闭",
+        "AGREEMENT_LOAD_FAILED": "加载用户协议失败",
+        "PRIVACY_LOAD_FAILED": "加载隐私政策失败"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "功能即将上线",

@@ -7,11 +7,14 @@ import { Subscription } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { ElectronService } from '../../services/electron.service';
 import { NzMessageService } from 'ng-zorro-antd/message';
+import { NzModalService } from 'ng-zorro-antd/modal';
 import { UiService } from '../../services/ui.service';
 import { ConnectionGraphService } from '../../services/connection-graph.service';
 import { BackgroundAgentService } from '../../services/background-agent.service';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { ImageViewerComponent } from '../image-viewer/image-viewer.component';
+import { MermaidComponent } from '../../tools/aily-chat/components/aily-mermaid-viewer/mermaid/mermaid.component';
+import mermaid from 'mermaid';
 @Component({
   selector: 'app-float-sider',
   imports: [
@@ -35,6 +38,7 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
     private router: Router,
     private electronService: ElectronService,
     private message: NzMessageService,
+    private modal: NzModalService,
     private uiService: UiService,
     private connectionGraphService: ConnectionGraphService,
     private backgroundAgent: BackgroundAgentService,
@@ -131,6 +135,75 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
 
   openSettings() {
     this.uiService.openProjectSettings();
+  }
+
+  /** 从 arch.md 提取 mermaid 代码（支持 ```mermaid 块或纯 mermaid 内容） */
+  private extractMermaidCode(content: string): string {
+    const trimmed = content.trim();
+    const blockMatch = trimmed.match(/```mermaid\s*([\s\S]*?)```/);
+    if (blockMatch) return blockMatch[1].trim();
+    return trimmed;
+  }
+
+  /** 点击显示框架图：读取项目目录下 arch.md 并用 mermaid 全屏预览 */
+  async showArch(): Promise<void> {
+    if (!this.electronService.isElectron) {
+      this.message.warning(this.translate.instant('FLOAT_SIDER.ARCH_ELECTRON_ONLY'));
+      return;
+    }
+    const projectPath = this.projectService.currentProjectPath;
+    if (!projectPath) {
+      this.message.error(this.translate.instant('FLOAT_SIDER.NO_PROJECT'));
+      return;
+    }
+    const archPath = (window as any).path?.join
+      ? (window as any).path.join(projectPath, 'arch.md')
+      : `${projectPath}/arch.md`;
+    if (!this.electronService.exists(archPath)) {
+      // TODO @i3water: AI 后台生成流程图及创建 arch.md 文件功能
+      this.message.error(this.translate.instant('FLOAT_SIDER.NO_ARCH'));
+      return;
+    }
+    try {
+      const raw = this.electronService.readFile(archPath);
+      const code = this.extractMermaidCode(raw);
+      if (!code?.trim()) {
+        this.message.warning(this.translate.instant('FLOAT_SIDER.ARCH_EMPTY'));
+        return;
+      }
+      mermaid.initialize({ theme: 'dark', startOnLoad: false });
+      const diagramId = `mermaid-arch-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const result = await mermaid.render(diagramId, code);
+      const svg = typeof result === 'object' && result?.svg ? result.svg : typeof result === 'string' ? result : '';
+      document.getElementById(diagramId)?.remove();
+      if (!svg?.trim()) {
+        this.message.warning(this.translate.instant('FLOAT_SIDER.ARCH_RENDER_FAILED'));
+        return;
+      }
+      const forcedStyle = 'width: 60vw !important; height: 80vh !important; max-width: 100% !important; display: block !important;';
+      const enhancedSvg = svg
+        .replace('<svg', `<svg id="${diagramId}" data-mermaid-svg="true"`)
+        .replace(/width="[^"]*"/, 'width="60vw"')
+        .replace(/height="[^"]*"/, 'height="80vh"')
+        .replace(/<svg([^>]*)>/, (_m: string, attrs: string) => {
+          const merged = /style=/.test(attrs)
+            ? attrs.replace(/style="[^"]*"/, `style="${forcedStyle}"`)
+            : `${attrs} style="${forcedStyle}"`;
+          return `<svg${merged}>`;
+        });
+      this.modal.create({
+        nzTitle: null,
+        nzFooter: null,
+        nzClosable: false,
+        nzBodyStyle: { padding: '0' },
+        nzContent: MermaidComponent,
+        nzData: { svg: enhancedSvg },
+        nzWidth: 'fit-content',
+      });
+    } catch (err) {
+      console.warn('Arch diagram render failed:', err);
+      this.message.error(this.translate.instant('FLOAT_SIDER.ARCH_RENDER_FAILED'));
+    }
   }
 
   openFeedback() {

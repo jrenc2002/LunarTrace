@@ -265,10 +265,20 @@ export class ChatEngineService {
     this.projectPathSubscription = AilyHost.get().project.currentProjectPath$.pipe(
       distinctUntilChanged(), skip(1)
     ).subscribe((newPath: string) => {
-      this.prjPath = newPath === AilyHost.get().project.projectRootPath ? '' : newPath;
-      this.prjRootPath = AilyHost.get().project.projectRootPath;
+      const rootPath = AilyHost.get().project.projectRootPath;
+      this.prjPath = newPath === rootPath ? '' : newPath;
+      this.prjRootPath = rootPath;
+
+      // 新建项目时自动领养根目录下的孤儿会话
+      if (newPath && newPath !== rootPath) {
+        const adopted = this.chatHistoryService.adoptOrphanSessions(newPath, rootPath);
+        if (adopted > 0) {
+          console.log(`[ChatEngine] 项目切换，自动领养 ${adopted} 个孤儿会话到: ${newPath}`);
+        }
+      }
+
       this.session.refreshHistoryList();
-      if (newPath && newPath !== AilyHost.get().project.projectRootPath) {
+      if (newPath && newPath !== rootPath) {
         this.absAutoSyncService.initialize(newPath);
       }
     });

@@ -57,7 +57,11 @@
         }
         @case ('wechat') {
         <div class="wechat ccenter">
-            @if (wechatStatus === 'loading') {
+            @if (wechatStatus === 'pending_agreement') {
+            <div class="qrcode ccenter">
+                <div class="agreement-prompt">{{ 'LOGIN.AGREEMENT_REQUIRED' | translate }}</div>
+            </div>
+            } @else if (wechatStatus === 'loading') {
             <div class="qrcode ccenter">
                 <div class="loading-icon lloading ccenter">
                     <i class="fa-light fa-spinner-third"></i>
@@ -134,6 +138,14 @@
         <div class="text text2">{{ 'LOGIN.SELECT_METHOD' | translate }}</div>
         }
         }
+        <div class="agreement-section">
+            <label nz-checkbox [(ngModel)]="agreedToTerms" (ngModelChange)="onAgreementChange()">
+                <span>{{ 'LOGIN.AGREEMENT_PREFIX' | translate }}</span>
+                <a class="agreement-link" (click)="showUserAgreement(); $event.preventDefault(); $event.stopPropagation()">{{ 'LOGIN.USER_AGREEMENT' | translate }}</a>
+                <span>{{ 'LOGIN.AGREEMENT_AND' | translate }}</span>
+                <a class="agreement-link" (click)="showPrivacyPolicy(); $event.preventDefault(); $event.stopPropagation()">{{ 'LOGIN.PRIVACY_POLICY' | translate }}</a>
+            </label>
+        </div>
     </div>
 </div>
 }

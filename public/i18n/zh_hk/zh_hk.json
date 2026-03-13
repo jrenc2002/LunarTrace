@@ -204,6 +204,7 @@
         "INSTALLED_TEXT": "已安裝",
         "REMOVE": "移除",
         "INSTALLING": "正在安裝",
+        "INSTALL_FAILED": "安裝失敗",
         "UNINSTALLING": "正在解除安裝",
         "UNINSTALLED": "已解除安裝",
         "IMPORTING": "正在導入",
@@ -317,6 +318,13 @@
         "MODE_QA_FULL": "問答模式",
         "STOP_CURRENT_SESSION_FIRST": "請先停止當前會話，再新建",
         "NO_HISTORY_SESSION": "沒有歷史會話記錄",
+        "MERMAID_SAVE_ARCH": "保存為框架圖",
+        "MERMAID_ARCH_OVERWRITE_TITLE": "覆蓋確認",
+        "MERMAID_ARCH_OVERWRITE_CONTENT": "項目目錄下已存在框架圖文件，是否覆蓋？",
+        "MERMAID_ARCH_CONFIRM": "確認",
+        "MERMAID_ARCH_CANCEL": "取消",
+        "MERMAID_COPY_FAILED": "複製失敗",
+        "MERMAID_SAVE_FAILED": "保存失敗",
         "ONBOARDING": {
             "STEP1_TITLE": "輸入框",
             "STEP1_DESC": "在這裡輸入你想問的問題或需要AI幫助完成的任務，按 Enter 發送，Ctrl+Enter 換行",
@@ -364,13 +372,19 @@
     },
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "項目設置",
+        "ARCH": "框架圖",
         "PINMAP": "引腳圖",
         "CIRCUIT": "電路連接",
         "DOCUMENTATION": "文檔",
         "FEEDBACK": "反饋",
         "NO_PINMAP": "該開發板沒有提供引腳圖",
         "PINMAP_PARSE_ERROR": "引腳圖解析失敗",
-        "NO_DOCUMENTATION": "該開發板沒有提供文檔鏈接"
+        "NO_DOCUMENTATION": "該開發板沒有提供文檔鏈接",
+        "ARCH_ELECTRON_ONLY": "框架圖僅在桌面應用中可用",
+        "NO_PROJECT": "未打開項目",
+        "NO_ARCH": "項目目錄下未找到 arch.md",
+        "ARCH_EMPTY": "arch.md 中未找到 mermaid 圖表",
+        "ARCH_RENDER_FAILED": "框架圖渲染失敗"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "請先選擇串口",
@@ -502,7 +516,15 @@
         "ENTER_CREDENTIALS": "請輸入用戶名和密碼",
         "LOGIN_SUCCESS": "登錄成功",
         "LOGIN_FAILED": "登錄失敗",
-        "LOGIN_NETWORK_ERROR": "登錄失敗，請檢查網絡連接"
+        "LOGIN_NETWORK_ERROR": "登錄失敗，請檢查網絡連接",
+        "AGREEMENT_PREFIX": "我已閱讀並同意",
+        "USER_AGREEMENT": "用戶協議",
+        "AGREEMENT_AND": "和",
+        "PRIVACY_POLICY": "隱私政策",
+        "AGREEMENT_REQUIRED": "請先勾選同意用戶協議和隱私政策",
+        "MODAL_CLOSE": "關閉",
+        "AGREEMENT_LOAD_FAILED": "加載用戶協議失敗",
+        "PRIVACY_LOAD_FAILED": "加載隱私政策失敗"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "功能即將上線"

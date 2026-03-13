@@ -204,6 +204,7 @@
         "INSTALLED_TEXT": "Installé",
         "REMOVE": "Supprimer",
         "INSTALLING": "Installation en cours",
+        "INSTALL_FAILED": "Échec de l'installation",
         "UNINSTALLING": "Désinstallation en cours",
         "UNINSTALLED": "Désinstallé",
         "IMPORTING": "Importation en cours",
@@ -317,6 +318,13 @@
         "MODE_QA_FULL": "Mode Q&R",
         "STOP_CURRENT_SESSION_FIRST": "Veuillez d'abord arrêter la session en cours avant d'en créer une nouvelle",
         "NO_HISTORY_SESSION": "Aucun enregistrement de session historique",
+        "MERMAID_SAVE_ARCH": "Enregistrer comme diagramme d'architecture",
+        "MERMAID_ARCH_OVERWRITE_TITLE": "Confirmer l'écrasement",
+        "MERMAID_ARCH_OVERWRITE_CONTENT": "Le fichier du diagramme d'architecture existe déjà dans le répertoire du projet. Écraser ?",
+        "MERMAID_ARCH_CONFIRM": "Confirmer",
+        "MERMAID_ARCH_CANCEL": "Annuler",
+        "MERMAID_COPY_FAILED": "Échec de la copie",
+        "MERMAID_SAVE_FAILED": "Échec de l'enregistrement",
         "ONBOARDING": {
             "STEP1_TITLE": "Zone de saisie",
             "STEP1_DESC": "Tapez ici vos questions ou tâches pour l'assistance IA. Appuyez sur Entrée pour envoyer, Ctrl+Entrée pour nouvelle ligne",
@@ -364,13 +372,19 @@
     },
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "Paramètres du Projet",
+        "ARCH": "Diagramme d'Architecture",
         "PINMAP": "Schéma des Broches",
         "CIRCUIT": "Schéma de Câblage",
         "DOCUMENTATION": "Documentation",
         "FEEDBACK": "Retour d'information",
         "NO_PINMAP": "Schéma des broches non disponible pour cette carte",
         "PINMAP_PARSE_ERROR": "Échec de l'analyse du schéma des broches",
-        "NO_DOCUMENTATION": "Documentation non disponible pour cette carte"
+        "NO_DOCUMENTATION": "Documentation non disponible pour cette carte",
+        "ARCH_ELECTRON_ONLY": "Le diagramme d'architecture n'est disponible que dans l'application bureau",
+        "NO_PROJECT": "Aucun projet ouvert",
+        "NO_ARCH": "arch.md introuvable dans le répertoire du projet",
+        "ARCH_EMPTY": "Aucun diagramme mermaid trouvé dans arch.md",
+        "ARCH_RENDER_FAILED": "Échec du rendu du diagramme d'architecture"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "Veuillez d'abord sélectionner un port série",
@@ -502,7 +516,15 @@
         "ENTER_CREDENTIALS": "Veuillez entrer le nom d'utilisateur et le mot de passe",
         "LOGIN_SUCCESS": "Connexion réussie",
         "LOGIN_FAILED": "Échec de la connexion",
-        "LOGIN_NETWORK_ERROR": "Échec de la connexion, veuillez vérifier la connexion réseau"
+        "LOGIN_NETWORK_ERROR": "Échec de la connexion, veuillez vérifier la connexion réseau",
+        "AGREEMENT_PREFIX": "J'ai lu et j'accepte les",
+        "USER_AGREEMENT": "Conditions d'utilisation",
+        "AGREEMENT_AND": "et la",
+        "PRIVACY_POLICY": "Politique de confidentialité",
+        "AGREEMENT_REQUIRED": "Veuillez accepter les conditions d'utilisation et la politique de confidentialité",
+        "MODAL_CLOSE": "Fermer",
+        "AGREEMENT_LOAD_FAILED": "Échec du chargement des conditions d'utilisation",
+        "PRIVACY_LOAD_FAILED": "Échec du chargement de la politique de confidentialité"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "Fonctionnalité bientôt disponible"

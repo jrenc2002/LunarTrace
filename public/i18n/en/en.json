@@ -253,6 +253,7 @@
         "INSTALLED_TEXT": "Installed",
         "REMOVE": "Remove",
         "INSTALLING": "Installing",
+        "INSTALL_FAILED": "Installation Failed",
         "UNINSTALLING": "Uninstalling",
         "UNINSTALLED": "Uninstalled",
         "IMPORTING": "Importing",
@@ -366,6 +367,13 @@
         "MODE_QA_FULL": "Q&A Mode",
         "STOP_CURRENT_SESSION_FIRST": "Please stop the current session before creating a new one",
         "NO_HISTORY_SESSION": "No history session records",
+        "MERMAID_SAVE_ARCH": "Save as architecture diagram",
+        "MERMAID_ARCH_OVERWRITE_TITLE": "Overwrite confirmation",
+        "MERMAID_ARCH_OVERWRITE_CONTENT": "Architecture diagram file already exists in project directory. Overwrite?",
+        "MERMAID_ARCH_CONFIRM": "Confirm",
+        "MERMAID_ARCH_CANCEL": "Cancel",
+        "MERMAID_COPY_FAILED": "Copy failed",
+        "MERMAID_SAVE_FAILED": "Save failed",
         "ONBOARDING": {
             "STEP1_TITLE": "Input Box",
             "STEP1_DESC": "Type your questions or tasks here for AI assistance. Press Enter to send, Ctrl+Enter for new line",
@@ -413,13 +421,19 @@
     },
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "Project Settings",
+        "ARCH": "Architecture Diagram",
         "PINMAP": "Pin Map",
         "CIRCUIT": "Circuit Diagram",
         "DOCUMENTATION": "Documentation",
         "FEEDBACK": "Feedback",
         "NO_PINMAP": "Pin map not available for this board",
         "PINMAP_PARSE_ERROR": "Pin map parsing failed",
-        "NO_DOCUMENTATION": "Documentation not available for this board"
+        "NO_DOCUMENTATION": "Documentation not available for this board",
+        "ARCH_ELECTRON_ONLY": "Architecture diagram is only available in desktop app",
+        "NO_PROJECT": "No project opened",
+        "NO_ARCH": "arch.md not found in project directory",
+        "ARCH_EMPTY": "No mermaid diagram found in arch.md",
+        "ARCH_RENDER_FAILED": "Failed to render architecture diagram"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "Please select a serial port first",
@@ -561,7 +575,15 @@
         "ENTER_CREDENTIALS": "Please enter username and password",
         "LOGIN_SUCCESS": "Login successful",
         "LOGIN_FAILED": "Login failed",
-        "LOGIN_NETWORK_ERROR": "Login failed, please check network connection"
+        "LOGIN_NETWORK_ERROR": "Login failed, please check network connection",
+        "AGREEMENT_PREFIX": "I have read and agree to the",
+        "USER_AGREEMENT": "User Agreement",
+        "AGREEMENT_AND": "and",
+        "PRIVACY_POLICY": "Privacy Policy",
+        "AGREEMENT_REQUIRED": "Please agree to the User Agreement and Privacy Policy first",
+        "MODAL_CLOSE": "Close",
+        "AGREEMENT_LOAD_FAILED": "Failed to load User Agreement",
+        "PRIVACY_LOAD_FAILED": "Failed to load Privacy Policy"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "Feature coming soon",

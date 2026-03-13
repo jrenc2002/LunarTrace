@@ -202,6 +202,7 @@
         "INSTALLED_TEXT": "Instalado",
         "REMOVE": "Remover",
         "INSTALLING": "Instalando",
+        "INSTALL_FAILED": "Falha na instalação",
         "UNINSTALLING": "Desinstalando",
         "UNINSTALLED": "Desinstalado",
         "IMPORTING": "Importando",
@@ -317,6 +318,13 @@
         "MODE_QA_FULL": "Modo P&R",
         "STOP_CURRENT_SESSION_FIRST": "Por favor, pare a sessão atual antes de criar uma nova",
         "NO_HISTORY_SESSION": "Nenhum registro de sessão de histórico",
+        "MERMAID_SAVE_ARCH": "Salvar como diagrama de arquitetura",
+        "MERMAID_ARCH_OVERWRITE_TITLE": "Confirmar sobrescrita",
+        "MERMAID_ARCH_OVERWRITE_CONTENT": "O arquivo do diagrama de arquitetura já existe no diretório do projeto. Sobrescrever?",
+        "MERMAID_ARCH_CONFIRM": "Confirmar",
+        "MERMAID_ARCH_CANCEL": "Cancelar",
+        "MERMAID_COPY_FAILED": "Falha ao copiar",
+        "MERMAID_SAVE_FAILED": "Falha ao salvar",
         "ONBOARDING": {
             "STEP1_TITLE": "Caixa de entrada",
             "STEP1_DESC": "Digite aqui suas perguntas ou tarefas para assistência da IA. Pressione Enter para enviar, Ctrl+Enter para nova linha",
@@ -364,13 +372,19 @@
     },
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "Configurações do Projeto",
+        "ARCH": "Diagrama de Arquitetura",
         "PINMAP": "Mapa de Pinos",
         "CIRCUIT": "Diagrama de Circuito",
         "DOCUMENTATION": "Documentação",
         "FEEDBACK": "Feedback",
         "NO_PINMAP": "Mapa de pinos não disponível para esta placa",
         "PINMAP_PARSE_ERROR": "Falha ao analisar mapa de pinos",
-        "NO_DOCUMENTATION": "Documentação não disponível para esta placa"
+        "NO_DOCUMENTATION": "Documentação não disponível para esta placa",
+        "ARCH_ELECTRON_ONLY": "Diagrama de arquitetura disponível apenas no aplicativo desktop",
+        "NO_PROJECT": "Nenhum projeto aberto",
+        "NO_ARCH": "arch.md não encontrado no diretório do projeto",
+        "ARCH_EMPTY": "Nenhum diagrama mermaid encontrado em arch.md",
+        "ARCH_RENDER_FAILED": "Falha ao renderizar diagrama de arquitetura"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "Selecione uma porta serial primeiro",
@@ -502,7 +516,15 @@
         "ENTER_CREDENTIALS": "Por favor, digite nome de usuário e senha",
         "LOGIN_SUCCESS": "Login bem-sucedido",
         "LOGIN_FAILED": "Falha no login",
-        "LOGIN_NETWORK_ERROR": "Falha no login, verifique a conexão de rede"
+        "LOGIN_NETWORK_ERROR": "Falha no login, verifique a conexão de rede",
+        "AGREEMENT_PREFIX": "Li e concordo com o",
+        "USER_AGREEMENT": "Acordo do Usuário",
+        "AGREEMENT_AND": "e a",
+        "PRIVACY_POLICY": "Política de Privacidade",
+        "AGREEMENT_REQUIRED": "Por favor, concorde com o Acordo do Usuário e a Política de Privacidade primeiro",
+        "MODAL_CLOSE": "Fechar",
+        "AGREEMENT_LOAD_FAILED": "Falha ao carregar o Acordo do Usuário",
+        "PRIVACY_LOAD_FAILED": "Falha ao carregar a Política de Privacidade"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "Recurso em breve"

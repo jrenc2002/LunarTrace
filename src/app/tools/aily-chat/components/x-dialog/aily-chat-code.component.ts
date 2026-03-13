@@ -21,8 +21,13 @@ import { XAilyTaskActionViewerComponent } from './x-aily-task-action-viewer/x-ai
 import { XAilyCodeViewerComponent } from './x-aily-code-viewer/x-aily-code-viewer.component';
 import { XAilyDefaultViewerComponent } from './x-aily-default-viewer/x-aily-default-viewer.component';
 import { NzModalService } from 'ng-zorro-antd/modal';
+import { NzMessageService } from 'ng-zorro-antd/message';
+import { NzToolTipModule } from 'ng-zorro-antd/tooltip';
+import { NzPopconfirmModule } from 'ng-zorro-antd/popconfirm';
+import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { MermaidComponent } from '../aily-mermaid-viewer/mermaid/mermaid.component';
 import mermaid from 'mermaid';
+import { AilyHost } from '../../core/host';
 
 /** 所有 aily-* 自定义代码块类型 */
 const AILY_TYPES = [
@@ -53,6 +58,9 @@ const AILY_TYPES = [
   standalone: true,
   imports: [
     CommonModule,
+    NzToolTipModule,
+    NzPopconfirmModule,
+    TranslateModule,
     XAilyStateViewerComponent,
     XAilyButtonViewerComponent,
     XAilyBoardViewerComponent,
@@ -84,14 +92,52 @@ const AILY_TYPES = [
       <x-aily-think-viewer [data]="parsedData" />
     }
     @if (isType('aily-mermaid') || isMermaidStd) {
-      <div class="aily-mermaid-clickable" (click)="openMermaidFullscreen()" title="点击全屏查看">
-        <ngx-mermaid-code
-          [children]="mermaidCode"
-          [block]="true"
-          [lang]="'mermaid'"
-          [streamStatus]="streamStatus"
-          placeholderText="正在生成图表…"
-        />
+      <div class="aily-mermaid-wrapper" (click)="openMermaidFullscreen()" title="点击全屏查看">
+        <div class="aily-mermaid-toolbar" (click)="$event.stopPropagation()">
+          <button type="button" class="aily-mermaid-toolbar-btn" [class.success]="mermaidCopySuccess"
+            (click)="copyMermaidCode($event)"
+            nz-tooltip [nzTooltipTitle]="'MENU.FILE_COPY' | translate" nzTooltipPlacement="top">
+            @if (mermaidCopySuccess) {
+              <i class="fa-solid fa-check"></i>
+            } @else {
+              <i class="fa-regular fa-copy"></i>
+            }
+          </button>
+          @if (archExistsInProject) {
+            <button type="button" class="aily-mermaid-toolbar-btn" [class.success]="mermaidDownloadSuccess"
+              nz-popconfirm
+              [nzPopconfirmTitle]="'AILY_CHAT.MERMAID_ARCH_OVERWRITE_CONTENT' | translate"
+              [nzOkText]="'AILY_CHAT.MERMAID_ARCH_CONFIRM' | translate"
+              [nzCancelText]="'AILY_CHAT.MERMAID_ARCH_CANCEL' | translate"
+              (nzOnConfirm)="doDownloadArch()"
+              nz-tooltip [nzTooltipTitle]="'AILY_CHAT.MERMAID_SAVE_ARCH' | translate" nzTooltipPlacement="bottom">
+              @if (mermaidDownloadSuccess) {
+                <i class="fa-solid fa-check"></i>
+              } @else {
+                <i class="fa-regular fa-file-arrow-down"></i>
+              }
+            </button>
+          } @else {
+            <button type="button" class="aily-mermaid-toolbar-btn" [class.success]="mermaidDownloadSuccess"
+              (click)="doDownloadArch($event)"
+              nz-tooltip [nzTooltipTitle]="'AILY_CHAT.MERMAID_SAVE_ARCH' | translate" nzTooltipPlacement="top">
+              @if (mermaidDownloadSuccess) {
+                <i class="fa-solid fa-check"></i>
+              } @else {
+                <i class="fa-regular fa-file-arrow-down"></i>
+              }
+            </button>
+          }
+        </div>
+        <div class="aily-mermaid-clickable">
+          <ngx-mermaid-code
+            [children]="mermaidCode"
+            [block]="true"
+            [lang]="'mermaid'"
+            [streamStatus]="streamStatus"
+            placeholderText="正在生成图表…"
+          />
+        </div>
       </div>
     }
     @if (isType('aily-context') && parsedData) {
@@ -115,11 +161,51 @@ const AILY_TYPES = [
   `,
   styles: [`
     :host { display: block; padding: 0.5em 0; }
-    .aily-mermaid-clickable {
+    .aily-mermaid-wrapper {
+      position: relative;
       cursor: pointer;
+    }
+    .aily-mermaid-toolbar {
+      position: absolute;
+      top: 8px;
+      right: 12px;
+      display: flex;
+      gap: 3px;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 1;
+      border: 1px solid #767676;
+      border-radius: 8px;
+      padding: 3px;
+    }
+    .aily-mermaid-wrapper:hover .aily-mermaid-toolbar {
+      opacity: 1;
+    }
+    .aily-mermaid-toolbar-btn {
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: #bababa;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      transition: background 0.2s, color 0.25s ease;
+    }
+    .aily-mermaid-toolbar-btn:hover {
+      color: #e3e2e2;
+    }
+    .aily-mermaid-toolbar-btn.success {
+      color: #52c41a;
+    }
+    .aily-mermaid-clickable {
       transition: opacity 0.2s;
     }
-    .aily-mermaid-clickable:hover {
+    .aily-mermaid-wrapper:hover .aily-mermaid-clickable {
       opacity: 0.95;
     }
   `],
@@ -140,10 +226,16 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
   // ===== State =====
   parsedData: any = null;
   parsedArray: any[] | null = null;
+  mermaidCopySuccess = false;
+  mermaidDownloadSuccess = false;
+  private copySuccessTimer: ReturnType<typeof setTimeout> | null = null;
+  private downloadSuccessTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private cdr: ChangeDetectorRef,
     private modal: NzModalService,
+    private message: NzMessageService,
+    private translate: TranslateService,
   ) {}
 
   // ===== Getters =====
@@ -180,12 +272,24 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
     return this.mermaidData?.code?.trim() ?? '';
   }
 
+  /** 项目目录下是否已存在 arch.md（用于决定是否显示覆盖确认） */
+  get archExistsInProject(): boolean {
+    const host = AilyHost.get();
+    const projectPath = host?.project?.currentProjectPath || host?.project?.projectRootPath;
+    if (!projectPath || !host?.fs || !host?.path) return false;
+    const archPath = host.path.join(projectPath, 'arch.md');
+    return host.fs.existsSync(archPath);
+  }
+
   // ===== Lifecycle =====
   ngOnChanges(changes: SimpleChanges): void {
     this.parseContent();
   }
 
-  ngOnDestroy(): void {}
+  ngOnDestroy(): void {
+    if (this.copySuccessTimer) clearTimeout(this.copySuccessTimer);
+    if (this.downloadSuccessTimer) clearTimeout(this.downloadSuccessTimer);
+  }
 
   // ===== Parsing =====
   private parseContent(): void {
@@ -260,5 +364,80 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
     } catch (err) {
       console.warn('Mermaid fullscreen failed:', err);
     }
+  }
+
+  /** 复制 mermaid 代码到剪贴板 */
+  async copyMermaidCode(ev: Event): Promise<void> {
+    ev.stopPropagation();
+    const code = this.mermaidCode;
+    if (!code?.trim()) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      this.mermaidCopySuccess = true;
+      if (this.copySuccessTimer) clearTimeout(this.copySuccessTimer);
+      this.copySuccessTimer = setTimeout(() => {
+        this.mermaidCopySuccess = false;
+        this.copySuccessTimer = null;
+        this.cdr.markForCheck();
+      }, 2000);
+      this.cdr.markForCheck();
+    } catch {
+      this.message.error(this.translate.instant('AILY_CHAT.MERMAID_COPY_FAILED'));
+    }
+  }
+
+  /** 下载为 arch.md 框架图文件（由模板直接调用或 nzOnConfirm 触发） */
+  doDownloadArch(ev?: Event): void {
+    ev?.stopPropagation();
+    const code = this.mermaidCode;
+    if (!code?.trim()) return;
+
+    const content = `\`\`\`mermaid\n${code}\n\`\`\`\n`;
+
+    const host = AilyHost.get();
+    const projectPath = host?.project?.currentProjectPath || host?.project?.projectRootPath;
+
+    if (projectPath && host?.fs && host?.path) {
+      const archPath = host.path.join(projectPath, 'arch.md');
+      this.writeArchFile(host, archPath, content);
+    } else {
+      this.downloadArchAsBlob(content);
+    }
+  }
+
+  private showDownloadSuccessIcon(): void {
+    this.mermaidDownloadSuccess = true;
+    if (this.downloadSuccessTimer) clearTimeout(this.downloadSuccessTimer);
+    this.downloadSuccessTimer = setTimeout(() => {
+      this.mermaidDownloadSuccess = false;
+      this.downloadSuccessTimer = null;
+      this.cdr.markForCheck();
+    }, 2000);
+    this.cdr.markForCheck();
+  }
+
+  private writeArchFile(host: { fs: { existsSync: (p: string) => boolean; mkdirSync: (p: string, o?: { recursive?: boolean }) => void; writeFileSync: (p: string, c: string) => void }; path: { dirname: (p: string) => string } }, archPath: string, content: string): void {
+    try {
+      const dir = host.path.dirname(archPath);
+      if (!host.fs.existsSync(dir)) {
+        host.fs.mkdirSync(dir, { recursive: true });
+      }
+      host.fs.writeFileSync(archPath, content);
+      this.showDownloadSuccessIcon();
+    } catch (err) {
+      console.warn('Write arch.md failed:', err);
+      this.message.error(this.translate.instant('AILY_CHAT.MERMAID_SAVE_FAILED'));
+    }
+  }
+
+  private downloadArchAsBlob(content: string): void {
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'arch.md';
+    a.click();
+    URL.revokeObjectURL(url);
+    this.showDownloadSuccessIcon();
   }
 }

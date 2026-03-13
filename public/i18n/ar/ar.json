@@ -204,6 +204,7 @@
         "INSTALLED_TEXT": "مثبت",
         "REMOVE": "إزالة",
         "INSTALLING": "جاري التثبيت",
+        "INSTALL_FAILED": "فشل التثبيت",
         "UNINSTALLING": "جاري إلغاء التثبيت",
         "UNINSTALLED": "تم إلغاء التثبيت",
         "IMPORTING": "جاري الاستيراد",
@@ -317,6 +318,13 @@
         "MODE_QA_FULL": "وضع سؤال وجواب",
         "STOP_CURRENT_SESSION_FIRST": "يرجى إيقاف الجلسة الحالية أولاً قبل إنشاء جلسة جديدة",
         "NO_HISTORY_SESSION": "لا توجد سجلات جلسات سابقة",
+        "MERMAID_SAVE_ARCH": "حفظ كرسم بياني للهيكل",
+        "MERMAID_ARCH_OVERWRITE_TITLE": "تأكيد الاستبدال",
+        "MERMAID_ARCH_OVERWRITE_CONTENT": "يوجد ملف الرسم البياني للهيكل بالفعل في مجلد المشروع. هل تريد الاستبدال؟",
+        "MERMAID_ARCH_CONFIRM": "تأكيد",
+        "MERMAID_ARCH_CANCEL": "إلغاء",
+        "MERMAID_COPY_FAILED": "فشل النسخ",
+        "MERMAID_SAVE_FAILED": "فشل الحفظ",
         "ONBOARDING": {
             "STEP1_TITLE": "مربع الإدخال",
             "STEP1_DESC": "اكتب هنا أسئلتك أو المهام التي تحتاج مساعدة الذكاء الاصطناعي فيها. اضغط Enter للإرسال، Ctrl+Enter لسطر جديد",
@@ -364,13 +372,19 @@
     },
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "إعدادات المشروع",
+        "ARCH": "مخطط البنية",
         "PINMAP": "خريطة الدبابيس",
         "CIRCUIT": "مخطط الدائرة",
         "DOCUMENTATION": "التوثيق",
         "FEEDBACK": "ملاحظات",
         "NO_PINMAP": "خريطة الدبابيس غير متوفرة لهذه اللوحة",
         "PINMAP_PARSE_ERROR": "فشل تحليل خريطة الدبابيس",
-        "NO_DOCUMENTATION": "التوثيق غير متوفر لهذه اللوحة"
+        "NO_DOCUMENTATION": "التوثيق غير متوفر لهذه اللوحة",
+        "ARCH_ELECTRON_ONLY": "مخطط البنية متاح فقط في تطبيق سطح المكتب",
+        "NO_PROJECT": "لا يوجد مشروع مفتوح",
+        "NO_ARCH": "لم يتم العثور على arch.md في مجلد المشروع",
+        "ARCH_EMPTY": "لم يتم العثور على مخطط mermaid في arch.md",
+        "ARCH_RENDER_FAILED": "فشل عرض مخطط البنية"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "يرجى تحديد منفذ تسلسلي أولاً",
@@ -502,7 +516,15 @@
         "ENTER_CREDENTIALS": "يرجى إدخال اسم المستخدم وكلمة المرور",
         "LOGIN_SUCCESS": "تم تسجيل الدخول بنجاح",
         "LOGIN_FAILED": "فشل تسجيل الدخول",
-        "LOGIN_NETWORK_ERROR": "فشل تسجيل الدخول، يرجى التحقق من الاتصال بالشبكة"
+        "LOGIN_NETWORK_ERROR": "فشل تسجيل الدخول، يرجى التحقق من الاتصال بالشبكة",
+        "AGREEMENT_PREFIX": "لقد قرأت ووافقت على",
+        "USER_AGREEMENT": "اتفاقية المستخدم",
+        "AGREEMENT_AND": "و",
+        "PRIVACY_POLICY": "سياسة الخصوصية",
+        "AGREEMENT_REQUIRED": "يرجى الموافقة على اتفاقية المستخدم وسياسة الخصوصية أولاً",
+        "MODAL_CLOSE": "إغلاق",
+        "AGREEMENT_LOAD_FAILED": "فشل تحميل اتفاقية المستخدم",
+        "PRIVACY_LOAD_FAILED": "فشل تحميل سياسة الخصوصية"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "الميزة قادمة قريباً"

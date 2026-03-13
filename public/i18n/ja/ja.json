@@ -204,6 +204,7 @@
         "INSTALLED_TEXT": "インストール済み",
         "REMOVE": "削除",
         "INSTALLING": "インストール中",
+        "INSTALL_FAILED": "インストール失敗",
         "UNINSTALLING": "アンインストール中",
         "UNINSTALLED": "アンインストール済み",
         "IMPORTING": "インポート中",
@@ -317,6 +318,13 @@
         "MODE_QA_FULL": "Q&Aモード",
         "STOP_CURRENT_SESSION_FIRST": "新しいセッションを作成する前に、現在のセッションを停止してください",
         "NO_HISTORY_SESSION": "履歴セッション記録がありません",
+        "MERMAID_SAVE_ARCH": "構成図として保存",
+        "MERMAID_ARCH_OVERWRITE_TITLE": "上書き確認",
+        "MERMAID_ARCH_OVERWRITE_CONTENT": "プロジェクトディレクトリに構成図ファイルが既に存在します。上書きしますか？",
+        "MERMAID_ARCH_CONFIRM": "確認",
+        "MERMAID_ARCH_CANCEL": "キャンセル",
+        "MERMAID_COPY_FAILED": "コピーに失敗しました",
+        "MERMAID_SAVE_FAILED": "保存に失敗しました",
         "ONBOARDING": {
             "STEP1_TITLE": "入力ボックス",
             "STEP1_DESC": "ここに質問やAIに手伝ってもらいたいタスクを入力してください。Enterで送信、Ctrl+Enterで改行",
@@ -364,13 +372,19 @@
     },
     "FLOAT_SIDER": {
         "PROJECT_SETTINGS": "プロジェクト設定",
+        "ARCH": "アーキテクチャ図",
         "PINMAP": "ピン配置図",
         "CIRCUIT": "回路接続図",
         "DOCUMENTATION": "ドキュメント",
         "FEEDBACK": "フィードバック",
         "NO_PINMAP": "このボードのピン配置図は利用できません",
         "PINMAP_PARSE_ERROR": "ピン配置図の解析に失敗しました",
-        "NO_DOCUMENTATION": "このボードのドキュメントは利用できません"
+        "NO_DOCUMENTATION": "このボードのドキュメントは利用できません",
+        "ARCH_ELECTRON_ONLY": "アーキテクチャ図はデスクトップアプリでのみ利用可能です",
+        "NO_PROJECT": "プロジェクトが開かれていません",
+        "NO_ARCH": "プロジェクトディレクトリに arch.md が見つかりません",
+        "ARCH_EMPTY": "arch.md に mermaid 図が見つかりません",
+        "ARCH_RENDER_FAILED": "アーキテクチャ図のレンダリングに失敗しました"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "先にシリアルポートを選択してください",
@@ -502,7 +516,15 @@
         "ENTER_CREDENTIALS": "ユーザー名とパスワードを入力してください",
         "LOGIN_SUCCESS": "ログイン成功",
         "LOGIN_FAILED": "ログイン失敗",
-        "LOGIN_NETWORK_ERROR": "ログインに失敗しました。ネットワーク接続を確認してください"
+        "LOGIN_NETWORK_ERROR": "ログインに失敗しました。ネットワーク接続を確認してください",
+        "AGREEMENT_PREFIX": "私は以下を読み、同意します：",
+        "USER_AGREEMENT": "利用規約",
+        "AGREEMENT_AND": "および",
+        "PRIVACY_POLICY": "プライバシーポリシー",
+        "AGREEMENT_REQUIRED": "利用規約とプライバシーポリシーに同意してください",
+        "MODAL_CLOSE": "閉じる",
+        "AGREEMENT_LOAD_FAILED": "利用規約の読み込みに失敗しました",
+        "PRIVACY_LOAD_FAILED": "プライバシーポリシーの読み込みに失敗しました"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "機能は近日公開予定"
