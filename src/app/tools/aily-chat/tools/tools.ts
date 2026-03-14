@@ -2482,10 +2482,11 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
 **调用时机：** generate_schematic 返回引脚摘要后，你生成连线后调用本工具。
 
 **推荐流程：**
-1. **get_component_catalog(includeBoards: true)**：获取开发板 + 组件的 pinmapId 列表
-2. **generate_schematic(pinmapIds: [...])**：获取引脚摘要和连线规则
-3. **你生成连线**：输出 AWS 格式或 JSON 格式
-4. **validate_schematic**：验证并保存`,
+1. **get_context()**：获取当前项目和库的上下文信息，了解当前项目实际使用的开发板和组件
+2. **get_component_catalog(includeBoards: true)**：获取开发板 + 组件的 pinmapId 列表
+3. **generate_schematic(pinmapIds: [...])**：获取引脚摘要和连线规则
+4. **你生成连线**：输出 AWS 格式或 JSON 格式
+5. **validate_schematic**：验证并保存`,
         input_schema: {
             type: 'object',
             properties: {

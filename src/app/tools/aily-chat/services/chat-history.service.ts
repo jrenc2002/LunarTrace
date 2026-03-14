@@ -40,6 +40,12 @@ export interface SessionIndexEntry {
   dataAvailable?: boolean;
 }
 
+/** Subagent 持久化数据（agentName → 对话历史） */
+export interface SubagentHistoryEntry {
+  sessionId: string;
+  messages: any[];
+}
+
 /** 单个会话的完整持久化数据 */
 export interface SessionData {
   /** UI 显示列表 */
@@ -48,6 +54,8 @@ export interface SessionData {
   conversationMessages: any[];
   /** 会话元数据 */
   metadata: SessionMetadata;
+  /** Subagent 对话历史（可选，方案 C 压缩后持久化） */
+  subagentHistories?: Record<string, SubagentHistoryEntry>;
 }
 
 export interface ChatListItem {
@@ -163,7 +171,8 @@ export class ChatHistoryService implements OnDestroy {
     sessionId: string,
     chatList: ChatListItem[],
     conversationMessages: any[],
-    metadata: Partial<SessionMetadata> & { sessionId: string }
+    metadata: Partial<SessionMetadata> & { sessionId: string },
+    subagentHistories?: Record<string, SubagentHistoryEntry>,
   ): void {
     if (!sessionId || (chatList.length === 0 && conversationMessages.length === 0)) {
       return;
@@ -192,6 +201,9 @@ export class ChatHistoryService implements OnDestroy {
       conversationMessages,
       metadata: fullMetadata,
     };
+    if (subagentHistories && Object.keys(subagentHistories).length > 0) {
+      sessionData.subagentHistories = subagentHistories;
+    }
 
     // 更新内存缓存
     this.sessionCache.set(sessionId, sessionData);

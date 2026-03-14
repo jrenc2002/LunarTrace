@@ -165,15 +165,12 @@ export class NotificationComponent {
   }
 
   sendAI() {
-    this.uiService.openTool("aily-chat");
     console.log(this.data);
     const detail = this.cleanLogContent(this.data?.detail || '');
-    setTimeout(() => {
-      window.sendToAilyChat(`运行日志：\n${detail}`, {
-        sender: 'NotificationComponent',
-        type: 'log'
-      });
-    }, 20);
+    this.uiService.openAndSendToChat(`运行日志：\n${detail}`, {
+      sender: 'NotificationComponent',
+      type: 'log'
+    });
   }
 
 }

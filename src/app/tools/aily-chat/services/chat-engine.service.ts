@@ -561,6 +561,21 @@ Do not create non-existent boards and libraries.
       this.insideThink = false;
       this.generateTitle(text);
 
+      // @agentName 直连路由：跳过 mainAgent，直接与子 Agent 对话
+      const atMatch = text.match(/^@(\w+)\s+([\s\S]+)/);
+      if (atMatch) {
+        const targetAgent = atMatch[1];
+        const agentText = atMatch[2].trim();
+        const availableAgents = SubagentSessionService.getAvailableAgents();
+        if (availableAgents.includes(targetAgent) && agentText) {
+          this.msg.appendMessage('user', text);
+          this.msg.appendMessage('aily', '[thinking...]', targetAgent);
+          if (clear) { this.inputValue = ''; }
+          this.sendToSubagentDirect(targetAgent, agentText);
+          return;
+        }
+      }
+
       const resourcesText = this.resourceManager.getResourcesText();
       if (resourcesText) {
         llmText = `${resourcesText}\n\n${text}`;
@@ -621,6 +636,40 @@ Do not create non-existent boards and libraries.
   }
 
   resetChat(): Promise<void> { return this.session.startSession(); }
+
+  // ==================== @agent 直连对话 ====================
+
+  /**
+   * 用户通过 @agentName 直接与 subagent 对话
+   * 跳过 mainAgent 调度，直连目标 agent
+   */
+  private async sendToSubagentDirect(agentName: string, userText: string): Promise<void> {
+    this.isWaiting = true;
+    this.currentMessageSource = agentName;
+
+    // 将 user message 记录到主对话历史（保持对话完整性）
+    this.conversationMessages.push({ role: 'user', content: `@${agentName} ${userText}` });
+
+    try {
+      const result = await this.subagentSessionService.directChat(agentName, userText);
+
+      // 将 subagent 回复记录到主对话历史
+      this.conversationMessages.push({ role: 'assistant', content: `[${agentName}] ${result}` });
+
+      // 确保最后一条消息标记完成
+      if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
+        this.list[this.list.length - 1].state = 'done';
+      }
+    } catch (error: any) {
+      const errMsg = error?.message || `${agentName} 执行失败`;
+      this.msg.appendMessage('aily', `\n\`\`\`aily-error\n{\n  "message": "${this.msg.makeJsonSafe(errMsg)}"}\n\`\`\`\n\n`, agentName);
+    } finally {
+      this.currentMessageSource = 'mainAgent';
+      this.isWaiting = false;
+      this.isCompleted = true;
+      this.session.saveCurrentSession();
+    }
+  }
 
   // ==================== 停止 ====================
 

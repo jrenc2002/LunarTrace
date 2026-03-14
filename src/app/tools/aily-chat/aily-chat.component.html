@@ -104,9 +104,21 @@
             }
           </div>
           }
-          <textarea #chatTextarea class="sscroll" [(ngModel)]="inputValue"
-            (keydown)="onKeyDown($event)">
-          </textarea>
+          <div class="textarea-wrapper">
+            @if (showAgentSuggestions) {
+              <div class="agent-suggestions">
+                @for (agent of agentSuggestions; track agent) {
+                  <div class="agent-suggestion-item" (mousedown)="selectAgent(agent)">
+                    <i class="fa-light fa-user-astronaut"></i>
+                    <span>{{ agent }}</span>
+                  </div>
+                }
+              </div>
+            }
+            <textarea #chatTextarea class="sscroll" [(ngModel)]="inputValue"
+              (keydown)="onKeyDown($event)" (input)="onInputChange()">
+            </textarea>
+          </div>
           <div class="btns">
             <div class="btn ccenter" nz-tooltip nzTooltipPlacement="bottom"
               [nzTooltipTitle]="'AILY_CHAT.ADD_CONTEXT' | translate" (click)="resourceManager.toggleAddList()">

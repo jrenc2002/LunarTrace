@@ -70,6 +70,8 @@ interface SubagentSession {
   running: boolean;
   /** 创建时间 */
   createdAt: number;
+  /** 从持久化恢复的会话，服务端 session 尚未创建 */
+  needsServerSession?: boolean;
 }
 
 /** Subagent 单轮 chatRequest 的状态收集器（局部变量，支持并发） */
@@ -198,6 +200,51 @@ export class SubagentSessionService implements OnDestroy {
   }
 
   /**
+   * 获取所有可用的 subagent 名称列表（从 TOOLS 的 run_* 工具定义中提取）
+   */
+  static getAvailableAgents(): string[] {
+    return (TOOLS as any[])
+      .filter(t => t.name?.startsWith('run_') && t.agents?.includes('mainAgent'))
+      .map(t => t.name.slice(4)); // "run_schematicAgent" → "schematicAgent"
+  }
+
+  /**
+   * 用户通过 @agentName 直接与 subagent 对话
+   *
+   * 与 executeSubagentToolCall 的区别：
+   * - 不需要主 Agent 调度，用户直接发起
+   * - 使用虚拟 toolId 标识本次对话
+   * - 复用相同的 chatWithSubagent 循环
+   *
+   * @param agentName subagent 名称，如 "schematicAgent"
+   * @param userText 用户输入的文本（已去除 @agentName 前缀）
+   * @returns subagent 完整回复文本
+   */
+  async directChat(
+    agentName: string,
+    userText: string,
+    timeout: number = 120000,
+  ): Promise<string> {
+    const toolId = `direct_${agentName}_${Date.now()}`;
+
+    const session = await this.getOrCreateSession(agentName);
+    session.running = true;
+    this.emitProgress('started', agentName, toolId, `正在执行 ${agentName}...`);
+
+    try {
+      const result = await this.chatWithSubagent(session, userText, toolId, timeout);
+      this.emitProgress('completed', agentName, toolId, `${agentName} 执行完成`);
+      return result;
+    } catch (error: any) {
+      const errMsg = error.message || `${agentName} 执行失败`;
+      this.emitProgress('error', agentName, toolId, errMsg);
+      throw error;
+    } finally {
+      session.running = false;
+    }
+  }
+
+  /**
    * 取消指定工具调用
    */
   cancelToolCall(toolId: string): void {
@@ -247,6 +294,68 @@ export class SubagentSessionService implements OnDestroy {
   }
 
   // =========================================================================
+  // 持久化：导出 / 导入 / Plan C 压缩
+  // =========================================================================
+
+  /**
+   * 导出所有 subagent 会话数据（供 saveCurrentSession 调用）。
+   * 导出前执行 Plan C 压缩：每个 subagent 仅保留最近 maxPairs 轮 user/assistant 对。
+   */
+  exportSessions(maxPairs: number = 3): Record<string, { sessionId: string; messages: any[] }> {
+    const result: Record<string, { sessionId: string; messages: any[] }> = {};
+    for (const [agentName, session] of this.sessions) {
+      if (session.messages.length === 0) continue;
+      result[agentName] = {
+        sessionId: session.sessionId,
+        messages: this.trimMessages(session.messages, maxPairs),
+      };
+    }
+    return result;
+  }
+
+  /**
+   * 从持久化数据恢复 subagent 会话（供 getHistory 调用）。
+   * 仅恢复内存中的 messages，不重建服务端 session（下次使用时会 getOrCreateSession）。
+   */
+  importSessions(histories: Record<string, { sessionId: string; messages: any[] }>): void {
+    if (!histories) return;
+    for (const [agentName, data] of Object.entries(histories)) {
+      if (!data.messages || data.messages.length === 0) continue;
+      // 如果已有运行中的会话，不覆盖
+      if (this.sessions.has(agentName) && this.sessions.get(agentName)!.running) continue;
+      this.sessions.set(agentName, {
+        sessionId: data.sessionId,  // 旧 ID，首次使用时会重建
+        agentName,
+        messages: [...data.messages],
+        running: false,
+        createdAt: Date.now(),
+        needsServerSession: true,
+      });
+    }
+  }
+
+  /**
+   * Plan C 压缩：保留最近 N 轮 user/assistant 对话对。
+   * 规则：从尾部向前扫描，保留最近 maxPairs 个 user 消息及其后的所有非 user 消息。
+   * tool 消息视为与其前面的 assistant 消息同组。
+   */
+  private trimMessages(messages: any[], maxPairs: number): any[] {
+    if (messages.length === 0) return [];
+
+    // 找出所有 user 消息的索引
+    const userIndices: number[] = [];
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i].role === 'user') userIndices.push(i);
+    }
+
+    if (userIndices.length <= maxPairs) return [...messages];
+
+    // 保留最后 maxPairs 个 user 及其后续消息
+    const cutIndex = userIndices[userIndices.length - maxPairs];
+    return messages.slice(cutIndex);
+  }
+
+  // =========================================================================
   // 会话管理
   // =========================================================================
 
@@ -256,19 +365,15 @@ export class SubagentSessionService implements OnDestroy {
    */
   private async getOrCreateSession(agentName: string): Promise<SubagentSession> {
     const existing = this.sessions.get(agentName);
-    if (existing) {
-      // console.log(`[SubagentSession] 复用 ${agentName} 会话: ${existing.sessionId}`);
+    if (existing && !existing.needsServerSession) {
       return existing;
     }
 
-    // 创建新会话
+    // 创建新的服务端会话（新建 or 从持久化恢复后首次使用）
     const sessionId = uuidv4();
-    // console.log(`[SubagentSession] 为 ${agentName} 创建新会话: ${sessionId}`);
 
-    // 根据 agentName 过滤可用工具（与 BackgroundAgentService 同逻辑）
     const agentTools = this.getToolsForAgent(agentName);
 
-    // POST /api/v1/start_session
     const payload = {
       session_id: sessionId,
       agent: agentName,
@@ -283,6 +388,13 @@ export class SubagentSessionService implements OnDestroy {
       }
     } catch (error: any) {
       throw new Error(`创建 ${agentName} 会话失败: ${error.message}`);
+    }
+
+    if (existing && existing.needsServerSession) {
+      // 恢复场景：保留历史 messages，更新 sessionId
+      existing.sessionId = sessionId;
+      existing.needsServerSession = false;
+      return existing;
     }
 
     const session: SubagentSession = {

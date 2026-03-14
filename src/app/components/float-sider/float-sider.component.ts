@@ -247,9 +247,9 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
       });
       // // 延迟确保子窗口已打开并注册 IPC 监听，再启动生成
       // setTimeout(() => {
-      //   this.backgroundAgent.generateSchematic();
+        // this.backgroundAgent.generateSchematic();
       // }, 800);
-      this.uiService.openAndSendToChat('生成项目连线图', { autoSend: true });
+      this.uiService.openAndSendToChat('@schematicAgent 生成项目连线图', { autoSend: true });
     }
   }
 }
