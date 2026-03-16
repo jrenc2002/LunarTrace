@@ -1,5 +1,7 @@
 import { json } from "stream/consumers";
 
+import { buildRunSubagentDescription } from './runSubagentTool';
+
 export const toolParamNames = [
     "command"
 ] as const;
@@ -55,6 +57,11 @@ export const DEFERRED_TOOL_GROUPS: DeferredToolGroup[] = [
     name: '项目管理',
     brief: '创建项目、重新加载项目、TODO 任务管理',
     tools: ['create_project', 'reload_project', 'todo_write_tool']
+  },
+  {
+    name: '终端工具',
+    brief: '后台命令执行、获取终端输出',
+    tools: ['start_background_command', 'get_terminal_output']
   }
 ];
 
@@ -223,18 +230,15 @@ export const TOOLS = [
     // 子代理工具 - 始终发送给 LLM（core）
     // =============================================================================
     {
-        name: 'run_schematicAgent',
-        description: `启动 schematicAgent 子代理，为用户生成开发板与电子模块的可视化接线图（电路原理图）。
-子代理会独立运行，使用专属工具集完成接线图的生成和编辑，完成后返回结果。如果返回结果不完整或不符合预期，可以继续调用该工具与子代理进行多轮交互，直到获得满意的接线图结果。
-
-使用场景：
- - 用户要求生成、更新或修改接线图/电路图
- - 涉及开发板引脚连线的可视化需求
-
-注意：调用前应先通过 get_context 和 get_project_info 获取当前项目信息，将相关上下文传入 context 参数。`,
+        name: 'run_subagent',
+        get description() { return buildRunSubagentDescription(); },
         input_schema: {
             type: 'object',
             properties: {
+                agent: {
+                    type: 'string',
+                    description: '目标子代理名称（如 schematicAgent）'
+                },
                 task: {
                     type: 'string',
                     description: '交给子代理的具体任务描述'
@@ -244,7 +248,7 @@ export const TOOLS = [
                     description: '相关上下文信息（项目信息、代码片段、硬件连接等）'
                 }
             },
-            required: ['task']
+            required: ['agent', 'task']
         },
         agents: ["mainAgent"]
     },
@@ -265,7 +269,9 @@ export const TOOLS = [
     },
     {
         name: 'execute_command',
-        description: `执行系统CLI命令。用于执行系统操作或运行特定命令来完成用户任务中的任何步骤。支持命令链，优先使用相对命令和路径以保持终端一致性。`,
+        description: `执行系统CLI命令。用于执行系统操作或运行特定命令来完成用户任务中的任何步骤。支持命令链，优先使用相对命令和路径以保持终端一致性。
+
+如果命令需要长时间运行（如服务器、监控），请使用 start_background_command 代替。`,
         input_schema: {
             type: 'object',
             properties: {
@@ -273,6 +279,49 @@ export const TOOLS = [
                 cwd: { type: 'string', description: '工作目录，可选' }
             },
             required: ['command']
+        },
+        agents: ["mainAgent"]
+    },
+    // =============================================================================
+    // 终端会话工具 — 后台命令执行与输出获取（参考 Copilot run_in_terminal/get_terminal_output）
+    // =============================================================================
+    {
+        name: 'start_background_command',
+        description: `在后台启动一个长时间运行的命令，不等待完成即返回。返回 session_id 用于后续查询输出。
+
+适合场景：
+- 启动开发服务器（如 npm run dev）
+- 启动串口监控
+- 执行耗时较长的编译/下载任务
+
+启动后使用 get_terminal_output 查看实时输出。`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                command: { type: 'string', description: '要执行的命令' },
+                cwd: { type: 'string', description: '工作目录（可选，默认当前项目路径）' },
+                label: { type: 'string', description: '可选标签，用于识别该会话（如 "build", "server"）' }
+            },
+            required: ['command']
+        },
+        agents: ["mainAgent"]
+    },
+    {
+        name: 'get_terminal_output',
+        description: `获取后台命令的当前输出。默认返回自上次读取以来的新输出（增量模式）。
+
+使用场景：
+- 检查后台命令的执行进度和输出
+- 获取服务器启动日志
+- 监控编译进度`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                session_id: { type: 'string', description: '终端会话 ID（由 start_background_command 返回）' },
+                incremental: { type: 'boolean', description: '是否仅获取新输出（默认 true）', default: true },
+                max_chars: { type: 'number', description: '最大返回字符数（默认 50000）', default: 50000 }
+            },
+            required: ['session_id']
         },
         agents: ["mainAgent"]
     },
@@ -552,6 +601,72 @@ editFileTool({
                 }
             },
             required: ['path']
+        },
+        agents: ["mainAgent", "schematicAgent"]
+    },
+    // =============================================================================
+    // 精确替换工具（从 edit_file 拆分，参考 Copilot replace_string_in_file）
+    // =============================================================================
+    {
+        name: 'replace_string_in_file',
+        description: `精确替换文件中的一段字符串。要求 old_string 在文件中唯一匹配（不允许多个匹配，确保精确修改）。
+
+这是编辑文件最安全的方式：
+- 自动检测并拒绝多匹配（防止意外修改错误位置）
+- 建议在 old_string 中包含 3-5 行上下文以确保唯一性
+- 当 old_string 为空时，创建新文件并写入 new_string
+- 自动 lint 检测（JSON/JS 文件）
+
+适合场景：单个小改动、修改函数、修复 bug、调整配置项`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                path: {
+                    type: 'string',
+                    description: '要编辑的文件路径'
+                },
+                old_string: {
+                    type: 'string',
+                    description: '要替换的原字符串。必须在文件中唯一匹配，建议包含 3-5 行上下文。为空时创建新文件'
+                },
+                new_string: {
+                    type: 'string',
+                    description: '替换后的新字符串'
+                }
+            },
+            required: ['path', 'old_string', 'new_string']
+        },
+        agents: ["mainAgent", "schematicAgent"]
+    },
+    {
+        name: 'multi_replace_string_in_file',
+        description: `批量精确替换 — 在一次调用中对一个或多个文件执行多次字符串替换。每个替换操作按顺序执行。
+
+适合场景：
+- 需要同时修改多个文件
+- 一个文件中需要修改多处不同位置
+- 重构操作（如重命名变量、更新导入路径）
+
+每个替换等同于单独调用 replace_string_in_file，均要求唯一匹配。
+最多支持 50 个替换操作。`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                replacements: {
+                    type: 'array',
+                    description: '替换操作列表',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            path: { type: 'string', description: '文件路径' },
+                            old_string: { type: 'string', description: '要替换的原字符串' },
+                            new_string: { type: 'string', description: '替换后的新字符串' }
+                        },
+                        required: ['path', 'old_string', 'new_string']
+                    }
+                }
+            },
+            required: ['replacements']
         },
         agents: ["mainAgent", "schematicAgent"]
     },
@@ -2692,6 +2807,93 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
         input_schema: {
             type: 'object',
             properties: {},
+            required: []
+        },
+        agents: ["mainAgent"]
+    },
+    // =============================================================================
+    // 记忆工具 — 持久化笔记存储（参考 Copilot memory 工具）
+    // =============================================================================
+    {
+        name: 'memory',
+        description: `持久化记忆工具 — 跨会话保存和读取笔记、偏好、项目约定等信息。
+
+两层作用域：
+- **project**: 项目记忆，存储在项目根目录的 aily.md 中。记录项目特定的约定、架构决策、常见问题等。
+- **global**: 全局记忆，跨项目持久化。记录用户偏好、通用模式、经验教训等。
+
+**何时使用：**
+- 用户明确要求"记住"某些偏好或约定时
+- 发现重要的项目模式/约定需要记录时
+- 遇到反复出现的问题，记录解决方案
+- 读取之前保存的上下文以提供连续的协助体验
+
+**不要滥用：** 不要每次对话都写入，只记录真正有价值的持久化知识。`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                command: {
+                    type: 'string',
+                    enum: ['read', 'write', 'append', 'replace', 'clear'],
+                    description: '操作命令: read=读取, write=覆写, append=追加, replace=精确替换, clear=清空'
+                },
+                scope: {
+                    type: 'string',
+                    enum: ['project', 'global'],
+                    description: '作用域: project=项目级(aily.md), global=全局级(跨项目)'
+                },
+                content: {
+                    type: 'string',
+                    description: 'write/append 时的内容'
+                },
+                old_text: {
+                    type: 'string',
+                    description: 'replace 时要替换的旧文本'
+                },
+                new_text: {
+                    type: 'string',
+                    description: 'replace 时的新文本'
+                }
+            },
+            required: ['command', 'scope']
+        },
+        agents: ["mainAgent"]
+    },
+    // =============================================================================
+    // 错误诊断工具（参考 Copilot get_errors）
+    // =============================================================================
+    {
+        name: 'get_errors',
+        description: `获取当前项目或指定文件的错误诊断信息。整合 lint 错误和编译错误，一次性返回所有已知问题。
+
+数据来源：
+1. **Lint 错误**: JSON/JS 文件的语法检查
+2. **编译错误**: 上次 build_project 的编译结果
+
+适合场景：
+- 编辑文件后快速检查是否引入错误
+- 编译失败后分析具体错误原因
+- 修复错误前先了解全部问题再一次性修复
+
+注意：编译错误来自上次 build_project 的缓存结果，如果代码已修改建议重新编译。`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                path: {
+                    type: 'string',
+                    description: '要检查的文件路径（可选，不指定则检查整个项目关键文件）'
+                },
+                include_lint: {
+                    type: 'boolean',
+                    description: '是否包含 lint 错误',
+                    default: true
+                },
+                include_build: {
+                    type: 'boolean',
+                    description: '是否包含上次编译错误',
+                    default: true
+                }
+            },
             required: []
         },
         agents: ["mainAgent"]

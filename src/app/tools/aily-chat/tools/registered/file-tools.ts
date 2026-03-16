@@ -19,6 +19,7 @@ import { getDirectoryTreeTool as getDirectoryTreeHandler } from '../getDirectory
 import { grepTool as grepHandler } from '../grepTool';
 import { AilyHost } from '../../core/host';
 import globHandler from '../globTool';
+import { replaceStringInFileTool as replaceStringHandler, multiReplaceStringInFileTool as multiReplaceHandler } from '../replaceStringTool';
 import { TOOLS as LEGACY_TOOLS } from '../tools';
 
 // ============================
@@ -409,6 +410,56 @@ class GlobTool implements IAilyTool {
 }
 
 // ============================
+// replace_string_in_file
+// ============================
+
+class ReplaceStringInFileTool implements IAilyTool {
+  readonly name = 'replace_string_in_file';
+  readonly schema = findLegacySchema('replace_string_in_file');
+
+  async invoke(args: any, _ctx: ToolContext): Promise<ToolUseResult> {
+    return replaceStringHandler(args);
+  }
+
+  getStartText(args: any): string {
+    let fileName = getFileName(args?.path);
+    if (fileName === 'project.abs') fileName = '项目文件';
+    return `替换: ${fileName}`;
+  }
+
+  getResultText(args: any, result?: ToolUseResult): string {
+    let fileName = getFileName(args?.path);
+    if (fileName === 'project.abs') fileName = '项目文件';
+    if (result?.is_error) return `替换 ${fileName} 异常, 即将重试`;
+    return `替换 ${fileName} 成功`;
+  }
+}
+
+// ============================
+// multi_replace_string_in_file
+// ============================
+
+class MultiReplaceStringInFileTool implements IAilyTool {
+  readonly name = 'multi_replace_string_in_file';
+  readonly schema = findLegacySchema('multi_replace_string_in_file');
+
+  async invoke(args: any, _ctx: ToolContext): Promise<ToolUseResult> {
+    return multiReplaceHandler(args);
+  }
+
+  getStartText(args: any): string {
+    const count = Array.isArray(args?.replacements) ? args.replacements.length : 0;
+    return `批量替换: ${count} 处修改`;
+  }
+
+  getResultText(args: any, result?: ToolUseResult): string {
+    const count = Array.isArray(args?.replacements) ? args.replacements.length : 0;
+    if (result?.is_error) return `批量替换异常, 即将重试`;
+    return `批量替换 ${count} 处修改成功`;
+  }
+}
+
+// ============================
 // 注册所有文件操作类工具
 // ============================
 
@@ -416,6 +467,8 @@ ToolRegistry.register(new ReadFileTool());
 ToolRegistry.register(new CreateFileTool());
 ToolRegistry.register(new CreateFolderTool());
 ToolRegistry.register(new EditFileTool());
+ToolRegistry.register(new ReplaceStringInFileTool());
+ToolRegistry.register(new MultiReplaceStringInFileTool());
 ToolRegistry.register(new DeleteFileTool());
 ToolRegistry.register(new DeleteFolderTool());
 ToolRegistry.register(new CheckExistsTool());

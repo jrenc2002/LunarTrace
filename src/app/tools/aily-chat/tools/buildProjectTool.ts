@@ -1,5 +1,6 @@
 import { ToolUseResult } from "./tools";
 import { BuilderService } from "../../../services/builder.service";
+import { setLastBuildErrors, clearLastBuildErrors } from './getErrorsTool';
 
 interface BuildProjectInput {
     /** 是否仅做预编译检查（更快，但不生成完整产物） */
@@ -92,6 +93,9 @@ export async function buildProjectTool(
         // 执行完整编译 - 成功时返回结果，失败时会 throw
         const result = await builderService.build();
 
+        // 编译成功 → 清除缓存的编译错误
+        clearLastBuildErrors();
+
         return {
             is_error: false,
             content: JSON.stringify({
@@ -108,6 +112,11 @@ export async function buildProjectTool(
 
         // 提取关键错误信息
         const compileErrors = extractCompileErrors(fullStdErr);
+
+        // 缓存编译错误供 get_errors 工具使用
+        if (compileErrors) {
+            setLastBuildErrors(compileErrors);
+        }
 
         return {
             is_error: true,

@@ -34,6 +34,7 @@ import { ToolRegistry } from '../core/tool-registry';
 import { createSecurityContext } from './security.service';
 import { TOOLS } from '../tools/tools';
 import { registerAskUserCallback, unregisterAskUserCallback, AskUserResponse } from '../tools/askUserTool';
+import { cleanupAllTerminalSessions } from '../tools/terminalSessionTool';
 
 import { AILY_CHAT_ONBOARDING_CONFIG } from '../../../configs/onboarding.config';
 
@@ -205,6 +206,7 @@ export class ChatEngineService {
     this.chatHistoryService.flushAll();
 
     unregisterAskUserCallback();
+    cleanupAllTerminalSessions();
     this._resolveAskUser = null;
 
     this.cleanupSubscriptions();

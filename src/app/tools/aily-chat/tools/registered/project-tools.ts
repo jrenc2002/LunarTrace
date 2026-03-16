@@ -11,12 +11,19 @@ import { getProjectInfoTool as getProjectInfoHandler } from '../getProjectInfoTo
 import { buildProjectTool as buildProjectHandler } from '../buildProjectTool';
 import { reloadProjectTool as reloadProjectHandler } from '../reloadProjectTool';
 import { askApprovalTool as askApprovalHandler } from '../askApprovalTool';
+import { askUserTool as askUserHandler } from '../askUserTool';
 import { searchBoardsLibrariesTool } from '../searchBoardsLibrariesTool';
 import { getHardwareCategoriesTool } from '../getHardwareCategoriesTools';
 import { getBoardParametersTool } from '../getBoardParametersTool';
 import { fetchTool as fetchHandler } from '../fetchTool';
 import { webSearchTool as webSearchHandler } from '../webSearchTool';
 import { todoWriteTool as todoWriteHandler, injectTodoReminder } from '../todoWriteTool';
+import { memoryTool as memoryHandler } from '../memoryTool';
+import { getErrorsTool as getErrorsHandler, setLastBuildErrors } from '../getErrorsTool';
+import {
+  startBackgroundCommandTool as startBgCmdHandler,
+  getTerminalOutputTool as getTermOutputHandler,
+} from '../terminalSessionTool';
 import { TOOLS as LEGACY_TOOLS } from '../tools';
 
 function findLegacySchema(name: string): any {
@@ -309,6 +316,31 @@ class AskApprovalTool implements IAilyTool {
 }
 
 // ============================
+// ask_user（参考 Copilot vscode_askQuestions）
+// ============================
+
+class AskUserTool implements IAilyTool {
+  readonly name = 'ask_user';
+  readonly schema = findLegacySchema('ask_user');
+  readonly displayMode = 'silent' as const;
+
+  async invoke(args: any, _ctx: ToolContext): Promise<ToolUseResult> {
+    return askUserHandler(args);
+  }
+
+  getStartText(args: any): string {
+    const q = args?.question || '向用户提问';
+    return q.length > 30 ? q.substring(0, 30) + '...' : q;
+  }
+
+  getResultText(args: any, result?: ToolUseResult): string {
+    if (result?.metadata?.skipped) return '用户跳过了问题';
+    if (result?.is_error) return '提问失败';
+    return '已获取用户回答';
+  }
+}
+
+// ============================
 // search_boards_libraries
 // ============================
 
@@ -529,9 +561,114 @@ ToolRegistry.register(new GetProjectInfoTool());
 ToolRegistry.register(new BuildProjectTool());
 ToolRegistry.register(new ReloadProjectTool());
 ToolRegistry.register(new AskApprovalTool());
+ToolRegistry.register(new AskUserTool());
 ToolRegistry.register(new SearchBoardsLibrariesTool());
 ToolRegistry.register(new GetHardwareCategoriesTool());
 ToolRegistry.register(new GetBoardParametersTool());
 ToolRegistry.register(new FetchTool());
 ToolRegistry.register(new WebSearchTool());
 ToolRegistry.register(new TodoWriteTool());
+
+// ============================
+// memory — 记忆工具
+// ============================
+
+class MemoryTool implements IAilyTool {
+  readonly name = 'memory';
+  readonly schema = findLegacySchema('memory');
+  readonly displayMode = 'silent' as const;
+
+  async invoke(args: any, _ctx: ToolContext): Promise<ToolUseResult> {
+    return memoryHandler(args);
+  }
+
+  getStartText(args: any): string {
+    const scope = args?.scope === 'global' ? '全局' : '项目';
+    const cmd = args?.command || 'read';
+    return `${scope}记忆: ${cmd}`;
+  }
+
+  getResultText(args: any, result?: ToolUseResult): string {
+    const scope = args?.scope === 'global' ? '全局' : '项目';
+    if (result?.is_error) return `${scope}记忆操作失败`;
+    return `${scope}记忆操作成功`;
+  }
+}
+
+ToolRegistry.register(new MemoryTool());
+
+// ============================
+// get_errors — 错误诊断工具
+// ============================
+
+class GetErrorsTool implements IAilyTool {
+  readonly name = 'get_errors';
+  readonly schema = findLegacySchema('get_errors');
+  readonly displayMode = 'appendMessage' as const;
+
+  async invoke(args: any, _ctx: ToolContext): Promise<ToolUseResult> {
+    return getErrorsHandler(args);
+  }
+
+  getStartText(args: any): string {
+    const path = args?.path;
+    return path ? `检查错误: ${path.split(/[\\/]/).pop()}` : '检查项目错误...';
+  }
+
+  getResultText(args: any, result?: ToolUseResult): string {
+    if (result?.is_error) return '错误检查失败';
+    const count = result?.metadata?.errorCount || 0;
+    return count > 0 ? `发现 ${count} 个问题` : '未发现错误';
+  }
+}
+
+ToolRegistry.register(new GetErrorsTool());
+
+// ============================
+// start_background_command — 后台命令执行
+// ============================
+
+class StartBackgroundCommandTool implements IAilyTool {
+  readonly name = 'start_background_command';
+  readonly schema = findLegacySchema('start_background_command');
+
+  async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
+    if (!args.cwd && ctx.host?.project) {
+      args.cwd = ctx.host.project.currentProjectPath || ctx.host.project.projectRootPath;
+    }
+    return startBgCmdHandler(args);
+  }
+
+  getStartText(args: any): string {
+    const cmd = (args?.command || '').split(/\s+/).slice(0, 3).join(' ');
+    return `后台启动: ${cmd}`;
+  }
+
+  getResultText(args: any, result?: ToolUseResult): string {
+    if (result?.is_error) return '后台命令启动失败';
+    return `后台命令已启动 (${result?.metadata?.sessionId || ''})`;
+  }
+}
+
+// ============================
+// get_terminal_output — 获取后台命令输出
+// ============================
+
+class GetTerminalOutputTool implements IAilyTool {
+  readonly name = 'get_terminal_output';
+  readonly schema = findLegacySchema('get_terminal_output');
+  readonly displayMode = 'silent' as const;
+
+  async invoke(args: any, _ctx: ToolContext): Promise<ToolUseResult> {
+    return getTermOutputHandler(args);
+  }
+
+  getResultText(args: any, result?: ToolUseResult): string {
+    if (result?.is_error) return '获取终端输出失败';
+    const status = result?.metadata?.status || 'unknown';
+    return `终端输出获取成功 (${status})`;
+  }
+}
+
+ToolRegistry.register(new StartBackgroundCommandTool());
+ToolRegistry.register(new GetTerminalOutputTool());

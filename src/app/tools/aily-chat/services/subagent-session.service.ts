@@ -24,6 +24,7 @@ import { ChatAPI } from '../core/api-endpoints';
 import { AilyHost } from '../core/host';
 import { AilyChatConfigService } from './aily-chat-config.service';
 import { TOOLS, ToolUseResult } from '../tools/tools';
+import { getRegisteredSubagents } from '../tools/runSubagentTool';
 import { createSecurityContext } from './security.service';
 // ToolRegistry: 统一工具调度
 import { ToolRegistry } from '../core/tool-registry';
@@ -200,12 +201,10 @@ export class SubagentSessionService implements OnDestroy {
   }
 
   /**
-   * 获取所有可用的 subagent 名称列表（从 TOOLS 的 run_* 工具定义中提取）
+   * 获取所有可用的 subagent 名称列表（从 runSubagentTool 注册表中获取）
    */
   static getAvailableAgents(): string[] {
-    return (TOOLS as any[])
-      .filter(t => t.name?.startsWith('run_') && t.agents?.includes('mainAgent'))
-      .map(t => t.name.slice(4)); // "run_schematicAgent" → "schematicAgent"
+    return getRegisteredSubagents().map(a => a.name);
   }
 
   /**

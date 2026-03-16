@@ -10,7 +10,9 @@ import { ToolCallState } from '../core/chat-types';
 import { AilyHost } from '../core/host';
 import { ToolRegistry } from '../core/tool-registry';
 import { SubagentSessionService } from '../services/subagent-session.service';
+import { validateRunSubagentArgs, getSubagentDefinition } from '../tools/runSubagentTool';
 import { injectTodoReminder } from '../tools';
+import { getMemoryPromptSnippet } from '../tools/memoryTool';
 import {
   getPreferredHttpErrorMessage as _getPreferredHttpErrorMessage,
 } from '../services/http-error-handler.service';
@@ -244,7 +246,65 @@ export class StreamProcessorHelper {
             if (statelessMode) { this.engine.activeToolExecutions++; }
 
             try {
-              if (data.tool_name.startsWith('mcp_')) {
+              if (data.tool_name === 'run_subagent') {
+                // run_subagent — LLM 主动调用子代理（泛化版）
+                const validationError = validateRunSubagentArgs(toolArgs);
+                if (validationError) {
+                  toolResult = validationError;
+                  resultState = 'error';
+                  resultText = validationError.content as string;
+                } else {
+                  const agentDef = getSubagentDefinition(toolArgs.agent);
+                  const agentDisplayName = agentDef?.displayName || toolArgs.agent;
+                  const agentSource = toolArgs.agent;
+
+                  // 切换消息来源到子代理
+                  if (this.engine.currentMessageSource !== agentSource) {
+                    if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
+                      this.engine.list[this.engine.list.length - 1].state = 'done';
+                    }
+                    this.engine.currentMessageSource = agentSource;
+                  }
+
+                  // 构造 SubagentToolCallRequest 并执行
+                  const subagentRequest = {
+                    tool_id: data.tool_id,
+                    tool_name: `run_${toolArgs.agent}`,
+                    tool_type: 'subagent' as const,
+                    agent_name: toolArgs.agent,
+                    tool_args: JSON.stringify({ task: toolArgs.task, context: toolArgs.context || '' }),
+                  };
+                  const subagentStartTime = Date.now();
+                  this.engine.subagentSessionService.executeSubagentToolCall(subagentRequest as any).then(
+                    (result: string) => {
+                      const elapsed = ((Date.now() - subagentStartTime) / 1000).toFixed(1);
+                      console.log(`[Subagent] ✅ run_subagent(${toolArgs.agent}) 完成 (${elapsed}s)`);
+                      if (this.engine.currentMessageSource !== 'mainAgent') {
+                        if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
+                          this.engine.list[this.engine.list.length - 1].state = 'done';
+                        }
+                        this.engine.currentMessageSource = 'mainAgent';
+                      }
+                      this.engine.pendingToolResults.push({ tool_id: data.tool_id, tool_name: data.tool_name, content: result, is_error: false });
+                      this.engine.turnLoop.onToolExecutionComplete();
+                    },
+                    (error: any) => {
+                      const elapsed = ((Date.now() - subagentStartTime) / 1000).toFixed(1);
+                      const errMsg = error?.message || `${agentDisplayName} 执行失败`;
+                      console.error(`[Subagent] ❌ run_subagent(${toolArgs.agent}) 失败 (${elapsed}s):`, errMsg);
+                      if (this.engine.currentMessageSource !== 'mainAgent') {
+                        if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
+                          this.engine.list[this.engine.list.length - 1].state = 'done';
+                        }
+                        this.engine.currentMessageSource = 'mainAgent';
+                      }
+                      this.engine.pendingToolResults.push({ tool_id: data.tool_id, tool_name: data.tool_name, content: errMsg, is_error: true });
+                      this.engine.turnLoop.onToolExecutionComplete();
+                    }
+                  );
+                  return; // 异步处理，提前返回
+                }
+              } else if (data.tool_name.startsWith('mcp_')) {
                 data.tool_name = data.tool_name.substring(4);
                 toolResult = await this.engine.mcpService.use_tool(data.tool_name, toolArgs);
               } else if (data.tool_name === 'search_available_tools') {
@@ -308,7 +368,8 @@ export class StreamProcessorHelper {
               if (!isSubagent && (needsRules || shouldInjectRules || toolResult?.metadata?.newProject)) {
                 this.engine.rulesInjectedThisSession = true;
                 const deferredListing = getDeferredToolsListing(messageSource, this._getAgentExcludedTools(messageSource));
-                toolContent += `\n${BLOCKLY_RULES_TEXT}\n${deferredListing}\n<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
+                const memorySnippet = getMemoryPromptSnippet();
+                toolContent += `\n${BLOCKLY_RULES_TEXT}\n${deferredListing}\n${memorySnippet}\n<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
               } else {
                 toolContent += `<toolResult>${toolResult?.content}</toolResult>${reminder}`;
               }
@@ -316,7 +377,8 @@ export class StreamProcessorHelper {
               if (shouldInjectRules) {
                 this.engine.rulesInjectedThisSession = true;
                 const deferredListing = getDeferredToolsListing(messageSource, this._getAgentExcludedTools(messageSource));
-                toolContent = `\n<rules>${ASK_MODE_ROLE_TEXT}</rules>\n${deferredListing}\n<toolResult>${toolResult?.content || '工具执行完成，无返回内容'}</toolResult>\n${agentInfoTip}`;
+                const memorySnippet = getMemoryPromptSnippet();
+                toolContent = `\n<rules>${ASK_MODE_ROLE_TEXT}</rules>\n${deferredListing}\n${memorySnippet}\n<toolResult>${toolResult?.content || '工具执行完成，无返回内容'}</toolResult>\n${agentInfoTip}`;
               } else {
                 toolContent = `<toolResult>${toolResult?.content || '工具执行完成，无返回内容'}</toolResult>`;
               }
