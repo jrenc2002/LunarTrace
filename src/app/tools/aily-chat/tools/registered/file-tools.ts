@@ -59,36 +59,25 @@ class ReadFileTool implements IAilyTool {
   private resolveLibInfo(path: string): { isLib: boolean; libNickName: string } {
     if (!path) return { isLib: false, libNickName: '' };
 
-    const hasLibPrefix = path.includes('lib-') && (path.endsWith('README.md') || path.endsWith('readme.md'));
-    if (!hasLibPrefix) return { isLib: false, libNickName: '' };
+    const normalized = path.replace(/\\/g, '/');
+    // 检测路径是否在 @aily-project/lib-* 库目录下
+    const libMatch = normalized.match(/@aily-project\/(lib-[^/]+)/);
+    if (!libMatch) return { isLib: false, libNickName: '' };
+
+    const libName = libMatch[1];
 
     // Try to read nickname from package.json
     let nickname = '';
     try {
-      const normalized = path.replace(/\\/g, '/');
       const ailyIdx = normalized.indexOf('/@aily-project/');
-      if (ailyIdx !== -1) {
-        const after = normalized.substring(ailyIdx + '/@aily-project/'.length);
-        const libName = after.split('/')[0];
-        if (libName) {
-          const pkgPath = normalized.substring(0, ailyIdx) + '/@aily-project/' + libName + '/package.json';
-          if (typeof window !== 'undefined' && AilyHost.get().fs?.existsSync?.(pkgPath)) {
-            const pkg = JSON.parse(AilyHost.get().fs.readFileSync(pkgPath, 'utf-8'));
-            nickname = pkg.nickname || '';
-          }
-        }
+      const pkgPath = normalized.substring(0, ailyIdx) + '/@aily-project/' + libName + '/package.json';
+      if (typeof window !== 'undefined' && AilyHost.get().fs?.existsSync?.(pkgPath)) {
+        const pkg = JSON.parse(AilyHost.get().fs.readFileSync(pkgPath, 'utf-8'));
+        nickname = pkg.nickname || '';
       }
     } catch { /* ignore */ }
 
-    // Fallback: extract lib-xxx from path
-    if (!nickname) {
-      const parts = path.split(/[/\\]/);
-      for (const part of parts) {
-        if (part.startsWith('lib-')) { nickname = part; break; }
-      }
-    }
-
-    return { isLib: true, libNickName: nickname };
+    return { isLib: true, libNickName: nickname || libName };
   }
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
