@@ -45,7 +45,19 @@ export interface FunctionTypeDef {
   textColor: string;
 }
 
-/** 组件完整配置（来自 *_config.json） */
+/** 同库下的类似组件（来自 pinmap_catalog.json） */
+export interface SimilarComponent {
+  fullId: string;
+  modelId: string;
+  variantId: string;
+  name: string;
+  modelName?: string;
+  pinmapFile?: string;
+  /** 对应 pinmapFile 的完整配置内容 */
+  data?: ComponentConfig;
+}
+
+/** 组件完整配置（来自 *_config.json 或 pinmaps/xxx.json） */
 export interface ComponentConfig {
   id: string;
   name: string;
@@ -54,6 +66,8 @@ export interface ComponentConfig {
   images: ComponentImage[];
   pins: ConfigPin[];
   functionTypes: FunctionTypeDef[];
+  /** 同库下的类似组件列表（来自 pinmap_catalog.json，仅 pinmapId 加载时有） */
+  similarComponents?: SimilarComponent[];
 }
 
 /** 连线端点 */
@@ -645,6 +659,50 @@ export class ConnectionGraphService {
     }
 
     return null;
+  }
+
+  /**
+   * 从 pinmap_catalog.json 构建同库下的类似组件列表（含自身）
+   * @param packagePath 库包路径 (如 .../node_modules/@aily-project/lib-dht)
+   * @param currentFullId 当前组件的 fullId（用于构建 fullId，自身也会包含在列表中）
+   */
+  private buildSimilarComponentsFromCatalog(
+    packagePath: string,
+    currentFullId: string
+  ): SimilarComponent[] {
+    const catalog = this.readPinmapCatalog(packagePath);
+    if (!catalog?.models?.length) return [];
+
+    const result: SimilarComponent[] = [];
+    const { packageSlug } = this.parsePinmapId(currentFullId);
+
+    for (const model of catalog.models) {
+      for (const variant of model.variants || []) {
+        const fullId = this.buildPinmapId(packageSlug, model.id, variant.id);
+
+        let pinmapFile = variant.pinmapFile;
+        if (!pinmapFile && variant.pinmapRef && catalog.sharedPinmaps?.[variant.pinmapRef]) {
+          pinmapFile = catalog.sharedPinmaps[variant.pinmapRef].file;
+        }
+
+        let data: ComponentConfig | undefined;
+        if (pinmapFile) {
+          const pinmapPath = this.electronService.pathJoin(packagePath, pinmapFile);
+          data = this.readComponentConfig(pinmapPath) || undefined;
+        }
+
+        result.push({
+          fullId,
+          modelId: model.id,
+          variantId: variant.id,
+          name: variant.name,
+          modelName: model.name,
+          pinmapFile: pinmapFile || undefined,
+          data,
+        });
+      }
+    }
+    return result;
   }
 
   /**
@@ -1380,8 +1438,16 @@ export class ConnectionGraphService {
           console.log('[getComponentConfigs] trying loadPinmapById:', comp.pinmapId);
           const config = this.loadPinmapById(comp.pinmapId, inferredBasePath);
           if (config) {
-            configs[comp.refId] = config;
-            console.log('[getComponentConfigs] loaded via pinmapId:', comp.refId, config.name);
+            // 从 pinmap_catalog.json 合并类似组件列表
+            const { packageSlug } = this.parsePinmapId(comp.pinmapId);
+            const packagePath = this.electronService.pathJoin(inferredBasePath, '@aily-project', packageSlug);
+            const similarComponents = this.buildSimilarComponentsFromCatalog(packagePath, comp.pinmapId);
+            if (similarComponents.length > 0) {
+              configs[comp.refId] = { ...config, similarComponents };
+            } else {
+              configs[comp.refId] = config;
+            }
+            console.log('[getComponentConfigs] loaded via pinmapId:', comp.refId, config.name, 'similarComponents:', similarComponents.length);
             continue;
           } else {
             console.log('[getComponentConfigs] loadPinmapById returned null');
