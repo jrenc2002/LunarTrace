@@ -166,38 +166,52 @@ export const TOOLS = [
     // =============================================================================
     {
         name: 'ask_user',
-        description: `向用户提出问题并等待回答。当你需要用户做出决策、提供额外信息或确认操作时使用此工具。
+        description: `向用户提出一个或多个问题并等待回答。当你需要用户做出决策、提供额外信息或确认操作时使用此工具。
 工具会暂停对话，在聊天界面显示问题和可选项，等待用户回答后继续。
 
+传入 questions 数组，单问题即长度为 1 的数组。
+
 使用场景：
-- 需要用户在多个方案中做选择（提供 choices）
-- 需要用户提供关键信息（如项目名称、配置参数等）
+- 需要用户在多个方案中做选择（提供 options）
+- 需要用户提供多项关键信息（如项目名称 + 开发板类型 + 语言偏好）
 - 需要用户确认重要操作前的决策
 - 需求有歧义时主动澄清
 
 注意：
 - 不要滥用此工具，只在确实需要用户输入时使用
 - 如果可以合理推断，优先自行决定而非打断用户
-- 一次只问一个问题，避免多层嵌套提问`,
+- 相关问题可合并为一次调用，减少打断次数`,
         input_schema: {
             type: 'object',
             properties: {
-                question: {
-                    type: 'string',
-                    description: '要向用户提出的问题'
-                },
-                choices: {
+                questions: {
                     type: 'array',
-                    items: { type: 'string' },
-                    description: '可选的选择项列表。提供后用户可从中选择，也可根据 allow_freeform 决定是否允许自由输入'
-                },
-                allow_freeform: {
-                    type: 'boolean',
-                    description: '当提供了 choices 时，是否仍然允许用户自由输入（默认 false）。不提供 choices 时始终允许自由输入',
-                    default: false
+                    description: '问题列表（单问题传长度为 1 的数组即可）',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            question: { type: 'string', description: '问题内容' },
+                            options: {
+                                type: 'array',
+                                description: '可选项列表',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        label: { type: 'string', description: '选项文本' },
+                                        description: { type: 'string', description: '选项说明（可选）' },
+                                        recommended: { type: 'boolean', description: '是否为推荐选项' }
+                                    },
+                                    required: ['label']
+                                }
+                            },
+                            allow_freeform: { type: 'boolean', description: '是否允许自由输入（有 options 时默认 false）', default: false },
+                            multi_select: { type: 'boolean', description: '是否允许多选（默认 false）', default: false }
+                        },
+                        required: ['question']
+                    }
                 }
             },
-            required: ['question']
+            required: ['questions']
         },
         agents: ["mainAgent", "schematicAgent"]
     },

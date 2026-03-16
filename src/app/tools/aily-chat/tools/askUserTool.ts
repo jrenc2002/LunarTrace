@@ -1,10 +1,10 @@
 /**
  * ask_user 工具 — 向用户提问并等待回答
  *
- * 参考 VS Code Copilot 的 ask_user / vscode_askQuestions 工具设计。
- * 支持两种交互模式：
- *   1. 选择题模式：提供可选项列表，用户点选
- *   2. 自由输入模式：用户自由输入文本
+ * 参考 VS Code Copilot 的 vscode_askQuestions 工具设计：
+ * - 统一使用 questions 数组，单问题即长度为 1 的数组
+ * - 每个问题可有选项列表（含描述、推荐标记）
+ * - 支持多选 / 自由输入
  *
  * 工具执行时会暂停 LLM 对话，等待用户在聊天界面中回答后再继续。
  */
@@ -15,19 +15,36 @@ import { ToolUseResult } from './tools';
 // 类型定义
 // ============================
 
-export interface AskUserArgs {
-  /** 向用户提出的问题 */
-  question: string;
-  /** 可选的选择项（不提供则为自由输入模式） */
-  choices?: string[];
-  /** 是否允许自由输入（当有 choices 时，默认 false；无 choices 时固定 true） */
-  allow_freeform?: boolean;
+/** 单个选项（富信息） */
+export interface AskUserOption {
+  label: string;
+  description?: string;
+  recommended?: boolean;
 }
 
+/** 问题定义 */
+export interface AskUserQuestion {
+  question: string;
+  options?: AskUserOption[];
+  allow_freeform?: boolean;
+  multi_select?: boolean;
+}
+
+/** 工具入参 */
+export interface AskUserArgs {
+  questions: AskUserQuestion[];
+}
+
+/** 单个问题的回答 */
+export interface AskUserAnswer {
+  selected: string[];
+  freeText: string | null;
+  skipped: boolean;
+}
+
+/** 兼容旧回调的单问题应答 */
 export interface AskUserResponse {
-  /** 用户的回答内容 */
   answer: string;
-  /** 是否为自由输入（而非选中选项） */
   wasFreeform: boolean;
 }
 
@@ -55,48 +72,98 @@ export function unregisterAskUserCallback(): void {
 }
 
 // ============================
+// 内部辅助：执行单个问题
+// ============================
+
+async function askSingleQuestion(
+  question: string,
+  choices?: string[],
+  allowFreeform?: boolean,
+): Promise<AskUserAnswer> {
+  let response: AskUserResponse | undefined;
+
+  if (_registeredCallback) {
+    response = await _registeredCallback(question, choices, allowFreeform);
+  } else {
+    response = await fallbackPrompt(question, choices, allowFreeform);
+  }
+
+  if (!response || !response.answer) {
+    return { selected: [], freeText: null, skipped: true };
+  }
+
+  if (response.wasFreeform) {
+    return { selected: [], freeText: response.answer, skipped: false };
+  }
+  return { selected: [response.answer], freeText: null, skipped: false };
+}
+
+// ============================
 // 工具执行函数
 // ============================
 
 export async function askUserTool(args: AskUserArgs): Promise<ToolUseResult> {
-  const { question, choices, allow_freeform } = args;
-
-  if (!question || typeof question !== 'string' || question.trim().length === 0) {
-    return {
-      is_error: true,
-      content: '参数错误：question 不能为空',
-    };
-  }
-
-  // 确定是否允许自由输入
-  const allowFreeform = choices && choices.length > 0 ? (allow_freeform ?? false) : true;
-
   try {
-    let response: AskUserResponse | undefined;
-
-    if (_registeredCallback) {
-      // UI 层已注册回调，通过聊天界面交互
-      response = await _registeredCallback(question.trim(), choices, allowFreeform);
-    } else {
-      // 降级：使用 window.prompt（仅 GUI 环境）
-      response = await fallbackPrompt(question.trim(), choices, allowFreeform);
+    const { questions } = args;
+    if (!questions || !Array.isArray(questions) || questions.length === 0) {
+      return {
+        is_error: true,
+        content: '参数错误：questions 数组不能为空',
+      };
     }
 
-    if (!response || !response.answer) {
+    const answers: Record<string, AskUserAnswer> = {};
+    let allSkipped = true;
+
+    for (const q of questions) {
+      if (!q.question || typeof q.question !== 'string' || q.question.trim().length === 0) {
+        continue;
+      }
+      // 将 AskUserOption[] 转换为 string[] 供现有回调使用
+      const choiceLabels = q.options?.map(o => {
+        if (o.description) return `${o.label} — ${o.description}`;
+        return o.label;
+      });
+      const allowFreeform = choiceLabels && choiceLabels.length > 0 ? (q.allow_freeform ?? false) : true;
+
+      const answer = await askSingleQuestion(q.question.trim(), choiceLabels, allowFreeform);
+
+      // 如果用户选择了带描述的选项，提取纯 label
+      if (answer.selected.length > 0 && q.options) {
+        answer.selected = answer.selected.map(sel => {
+          const match = q.options!.find(o => `${o.label} — ${o.description}` === sel || o.label === sel);
+          return match ? match.label : sel;
+        });
+      }
+
+      answers[q.question.trim()] = answer;
+      if (!answer.skipped) allSkipped = false;
+    }
+
+    if (allSkipped) {
       return {
         is_error: false,
-        content: '用户未提供回答（跳过或取消）。',
+        content: '用户未提供任何回答（全部跳过或取消）。',
         metadata: { skipped: true },
+      };
+    }
+
+    // 单问题时简化输出格式
+    if (questions.length === 1) {
+      const key = Object.keys(answers)[0];
+      const ans = answers[key];
+      const answerText = ans.freeText || ans.selected.join(', ');
+      return {
+        is_error: false,
+        content: answerText,
+        metadata: { originalQuestion: key, wasFreeform: !!ans.freeText },
       };
     }
 
     return {
       is_error: false,
-      content: response.answer,
-      metadata: {
-        wasFreeform: response.wasFreeform,
-        originalQuestion: question.trim(),
-      },
+      content: JSON.stringify({ answers }, null, 2),
+      metadata: { questionCount: questions.length },
     };
   } catch (error: any) {
     return {
@@ -120,7 +187,6 @@ async function fallbackPrompt(
   }
 
   if (choices && choices.length > 0 && !allowFreeform) {
-    // 选择题模式：构建带编号的选择提示
     const choiceText = choices.map((c, i) => `${i + 1}. ${c}`).join('\n');
     const promptText = `${question}\n\n${choiceText}\n\n请输入选项编号 (1-${choices.length}):`;
     const input = window.prompt(promptText);
@@ -131,11 +197,9 @@ async function fallbackPrompt(
     if (idx >= 1 && idx <= choices.length) {
       return { answer: choices[idx - 1], wasFreeform: false };
     }
-    // 无效输入，返回原始输入
     return { answer: input.trim(), wasFreeform: true };
   }
 
-  // 自由输入模式
   let promptText = question;
   if (choices && choices.length > 0) {
     const choiceText = choices.map((c, i) => `${i + 1}. ${c}`).join('\n');
@@ -145,7 +209,6 @@ async function fallbackPrompt(
   const input = window.prompt(promptText);
   if (input === null) return undefined;
 
-  // 检测是否选择了预设选项
   if (choices && choices.length > 0) {
     const idx = parseInt(input.trim(), 10);
     if (idx >= 1 && idx <= choices.length) {
