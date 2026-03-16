@@ -17,6 +17,25 @@ export function getPreferredHttpErrorMessage(err: any): string {
   return getHttpErrorFallbackMessage(err);
 }
 
+function isGenericTransportErrorText(text: string): boolean {
+  const normalized = text.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return [
+    /\bhttp\s*error\b/i,
+    /\brequest failed with status code \d{3}\b/i,
+    /\bstatus(?:\s+code)?\s*[:=]?\s*\d{3}\b/i,
+    /\bnetwork\s*error\b/i,
+    /\bnetworkerror\b/i,
+    /\bfailed to fetch\b/i,
+    /\bload failed\b/i,
+    /\btimeout of \d+ms exceeded\b/i,
+    /^timeout$/i
+  ].some(pattern => pattern.test(normalized));
+}
+
 /**
  * 从错误对象中提取详细错误信息
  */
@@ -66,8 +85,7 @@ export function extractErrorDetailMessage(err: any): string {
     const text = candidate.trim();
     if (!text) continue;
 
-    const isHttpStatusText = /\bhttp\s*error\b/i.test(text) || /\bstatus\s*[:=]?\s*\d{3}\b/i.test(text);
-    if (isHttpStatusText) continue;
+    if (isGenericTransportErrorText(text)) continue;
 
     return text;
   }
@@ -89,12 +107,12 @@ export function getHttpErrorFallbackMessage(err: any): string {
     408: '请求超时，请重试。',
     429: '请求过快，请稍后再试。',
     500: '服务器异常，请稍后再试。',
-    502: '网关无响应，请稍后再试。',
-    503: '服务繁忙，请稍后再试。',
-    504: 'AI响应超时，请重试。'
+    502: '服务连接波动，请稍后重试。',
+    503: '服务暂时不可用，请稍后重试。',
+    504: '服务响应超时，请重试。'
   };
 
-  return statusMessageMap[status] || '网络异常，请检查连接。';
+  return statusMessageMap[status] || '网络波动，请重试。';
 }
 
 /**
@@ -124,7 +142,7 @@ export function extractHttpStatusCode(err: any): number {
   ].filter(Boolean);
 
   for (const text of textCandidates) {
-    const matched = String(text).match(/\b(?:http\s*error[^\d]*|status\s*[:=]?\s*)(\d{3})\b/i);
+    const matched = String(text).match(/\b(?:http\s*error[^\d]*|request failed with status code\s*|status(?:\s+code)?\s*[:=]?\s*)(\d{3})\b/i);
     if (matched?.[1]) {
       return Number(matched[1]);
     }
