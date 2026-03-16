@@ -394,14 +394,40 @@ export class ConnectionGraphService {
     this.setupIpcListeners();
   }
 
-  /** 设置 IPC 监听器 */
+  /** 设置 IPC 监听器（规范：iframe-message-connection-graph，参数 {type, data}） */
   private setupIpcListeners(): void {
     if (this.electronService.isElectron && window['ipcRenderer']) {
-      window['ipcRenderer'].on('save-connection-graph', (_event: any, data: any) => {
-        console.log('[ConnectionGraphService] 收到子窗口保存请求');
-        if (data && data.components && data.connections) {
-          // 静默保存，不触发 IPC 通知（避免循环）
-          this.saveConnectionGraphSilent(data);
+      window['ipcRenderer'].on('iframe-message-connection-graph', async (_event: any, payload: { type: string; data?: any }) => {
+        const { type, data } = payload ?? {};
+        switch (type) {
+          case 'save-graph-data':
+            console.log('[ConnectionGraphService] 收到子窗口保存请求');
+            if (data && data.components && data.connections) {
+              this.saveConnectionGraphSilent(data);
+            }
+            break;
+          case 'get-graph-data': {
+            // 子窗口请求：data 仅有 messageId 无 payload；主窗口响应：返回 messageId + payload
+            const messageId = data?.messageId;
+            if (!messageId || 'payload' in (data ?? {})) break;
+            try {
+              const boardPackagePath = await this.projectService.getBoardPackagePath();
+              const graphPayload = boardPackagePath
+                ? this.buildPayload(boardPackagePath)
+                : null;
+              window['ipcRenderer'].send('iframe-message-connection-graph', {
+                type: 'set-graph-data',
+                data: { messageId, payload: graphPayload },
+              });
+            } catch (e) {
+              console.error('[ConnectionGraphService] 实时构建 payload 失败:', e);
+              window['ipcRenderer'].send('iframe-message-connection-graph', {
+                type: 'set-graph-data',
+                data: { messageId, payload: null },
+              });
+            }
+            break;
+          }
         }
       });
     }
@@ -1196,8 +1222,8 @@ export class ConnectionGraphService {
           theme: 'dark',
         };
         
-        window['ipcRenderer'].send('connection-graph-updated', payload);
-        console.log('[ConnectionGraphService] 已发送 connection-graph-updated IPC (完整 payload)');
+        window['ipcRenderer'].send('iframe-message-connection-graph', { type: 'generate-graph-updated', data: payload });
+        console.log('[ConnectionGraphService] 已发送 iframe-message-connection-graph (generate-graph-updated)');
       } catch (e) {
         console.warn('[ConnectionGraphService] 发送 IPC 失败:', e);
       }

@@ -1,39 +1,54 @@
-<div
-  class="dialog-box animate__animated animate__fadeIn animate__faster"
-  [ngClass]="{ user: role === 'user', subagent: isSubagent }"
->
-  <div class="username">
-    @if (role === "user") {
-      <i class="fa-light fa-user-vneck"></i>&nbsp;&nbsp;me
-    } @else if (isSubagent) {
-      <!-- <i class="fa-light fa-users-gear"></i>&nbsp;&nbsp; -->
-      <i class="fa-light fa-user-astronaut"></i>&nbsp;&nbsp;aily
-      <!-- <span class="subagent-name">{{ subagentDisplayName }}</span> -->
-      <span class="subagent-badge">{{ subagentDisplayName }}</span>
-    } @else {
-      <i class="fa-light fa-user-astronaut"></i>&nbsp;&nbsp;aily
-    }
-  </div>
-  <div class="content" [class.thinking]="content==='[thinking...]'">
-    <!-- @if(content==='[thinking...]'){
-      <div class="thinking">
-        <span class="thinking-text">Thinking</span>
-        <span class="wave-dots">
-          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-        </span>
+@if (isSubagent) {
+  <!-- 子Agent消息折叠视图 -->
+  <div class="subagent-fold animate__animated animate__fadeIn animate__faster">
+    <div class="subagent-fold-header" (click)="subagentExpanded = !subagentExpanded">
+      @if (doing) {
+        <i class="fa-duotone fa-solid fa-loader subagent-fold-icon loading ac-spin"></i>
+      } @else {
+        <i class="fa-light fa-circle-check subagent-fold-icon done"></i>
+      }
+      <span class="subagent-fold-label">{{ doing ? subagentDisplayName + '...' : subagentDisplayName }}</span>
+      <i class="fa-light fa-chevron-down subagent-fold-arrow" [class.expanded]="subagentExpanded"></i>
+    </div>
+    @if (subagentExpanded) {
+      <div class="subagent-fold-body" #subagentBody>
+        @if (streamContent()) {
+          <x-markdown
+            [content]="streamContent()"
+            [streaming]="streamingConfig()"
+            [components]="componentMap"
+            rootClassName="x-markdown-dark"
+          >
+          </x-markdown>
+        }
       </div>
-    } -->
-    @if (streamContent()) {
-      <x-markdown
-        [content]="streamContent()"
-        [streaming]="streamingConfig()"
-        [components]="componentMap"
-        rootClassName="x-markdown-dark"
-      >
-      </x-markdown>
     }
   </div>
-  @if (doing || content==='[thinking...]') {
-    <div class="loader"></div>
-  }
-</div>
+} @else {
+  <div
+    class="dialog-box animate__animated animate__fadeIn animate__faster"
+    [ngClass]="{ user: role === 'user' }"
+  >
+    <div class="username">
+      @if (role === "user") {
+        <i class="fa-light fa-user-vneck"></i>&nbsp;&nbsp;me
+      } @else {
+        <i class="fa-light fa-user-astronaut"></i>&nbsp;&nbsp;aily
+      }
+    </div>
+    <div class="content" [class.thinking]="content==='[thinking...]'">
+      @if (streamContent()) {
+        <x-markdown
+          [content]="streamContent()"
+          [streaming]="streamingConfig()"
+          [components]="componentMap"
+          rootClassName="x-markdown-dark"
+        >
+        </x-markdown>
+      }
+    </div>
+    @if (doing || content==='[thinking...]') {
+      <div class="loader"></div>
+    }
+  </div>
+}

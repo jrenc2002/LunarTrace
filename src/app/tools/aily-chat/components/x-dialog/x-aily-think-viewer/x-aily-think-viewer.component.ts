@@ -6,13 +6,18 @@ import {
   AfterViewChecked,
   OnChanges,
   SimpleChanges,
+  signal,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { XMarkdownComponent } from 'ngx-x-markdown';
+import type { StreamingOption, ComponentMap } from 'ngx-x-markdown';
+import { AilyChatCodeComponent } from '../aily-chat-code.component';
+import { getClosingTagsForOpenBlocks } from '../../../services/content-sanitizer.service';
 
 @Component({
   selector: 'x-aily-think-viewer',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, XMarkdownComponent],
   template: `
     <div class="ac-think" [class.expanded]="thinkExpanded">
       <div class="ac-think-header" (click)="thinkExpanded = !thinkExpanded">
@@ -25,7 +30,16 @@ import { CommonModule } from '@angular/common';
         <i class="fa-light fa-chevron-down ac-think-arrow"></i>
       </div>
       @if (thinkExpanded) {
-        <div class="ac-think-body" #thinkBody>{{ thinkContent }}</div>
+        <div class="ac-think-body" #thinkBody>
+          @if (thinkContent) {
+            <x-markdown
+              [content]="markdownContent()"
+              [streaming]="streamingConfig()"
+              [components]="componentMap"
+              rootClassName="x-markdown-dark"
+            />
+          }
+        </div>
       }
     </div>
   `,
@@ -69,15 +83,65 @@ import { CommonModule } from '@angular/common';
       .ac-think-body {
         padding: 8px 2px;
         margin: 5px -10px 0 0;
-        font-size: 12px;
-        line-height: 1.6;
-        color: #999;
-        white-space: pre-wrap;
-        word-break: break-word;
         max-height: 200px;
         overflow-y: auto;
+        overflow-x: hidden;
         scrollbar-width: thin;
         scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+        scrollbar-gutter: stable;
+        user-select: text;
+      }
+      :host ::ng-deep .ac-think-body .x-markdown-dark {
+        font-size: 13px;
+        line-height: 1.5;
+        color: #999;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+        white-space: normal;
+        max-width: 100%;
+        min-width: 0;
+      }
+      :host ::ng-deep .ac-think-body .x-markdown-dark * {
+        max-width: 100%;
+      }
+      :host ::ng-deep .ac-think-body .x-markdown-dark p {
+        margin: 2px 0;
+      }
+      :host ::ng-deep .ac-think-body .x-markdown-dark h1,
+      :host ::ng-deep .ac-think-body .x-markdown-dark h2,
+      :host ::ng-deep .ac-think-body .x-markdown-dark h3,
+      :host ::ng-deep .ac-think-body .x-markdown-dark h4 {
+        font-size: 13px;
+        font-weight: 600;
+        color: #bbb;
+        margin: 4px 0 2px;
+      }
+      :host ::ng-deep .ac-think-body .x-markdown-dark h2 {
+        border-left: 4px solid #3794ff;
+        padding-left: 6px;
+      }
+      :host ::ng-deep .ac-think-body .x-markdown-dark ul,
+      :host ::ng-deep .ac-think-body .x-markdown-dark ol {
+        padding-left: 1.2em;
+        margin: 2px 0;
+      }
+      :host ::ng-deep .ac-think-body .x-markdown-dark pre {
+        max-width: 100%;
+        overflow-x: auto;
+      }
+      :host ::ng-deep .ac-think-body .x-markdown-dark table {
+        max-width: 100%;
+        display: block;
+        overflow-x: auto;
+      }
+      :host ::ng-deep .ac-think-body .x-markdown-dark th,
+      :host ::ng-deep .ac-think-body .x-markdown-dark td {
+        padding: 4px 8px;
+        font-size: 12px;
+      }
+      :host ::ng-deep .ac-think-body .x-markdown-dark blockquote {
+        margin: 4px 0;
+        padding: 2px 8px;
       }
       @keyframes ac-spin {
         to {
@@ -101,6 +165,9 @@ export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges {
 
   thinkContent = '';
   thinkExpanded = false;
+  markdownContent = signal('');
+  streamingConfig = signal<StreamingOption>({ hasNextChunk: false, enableAnimation: false });
+  readonly componentMap: ComponentMap = { code: AilyChatCodeComponent };
   private shouldScrollThink = false;
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -116,6 +183,11 @@ export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges {
       }
       const prev = this.thinkContent;
       this.thinkContent = raw;
+
+      // 流式中对未闭合的 markdown 结构补全闭合标签
+      const displayContent = this.data.isComplete ? raw : raw + getClosingTagsForOpenBlocks(raw);
+      this.markdownContent.set(displayContent);
+      this.streamingConfig.set({ hasNextChunk: !this.data.isComplete });
       if (raw.length > prev.length) this.shouldScrollThink = true;
       this.thinkExpanded = !this.data.isComplete;
     }

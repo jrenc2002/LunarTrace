@@ -141,9 +141,10 @@ export class StreamProcessorHelper {
 
             // Subagent 工具调用
             if (statelessMode && SubagentSessionService.isSubagentToolCall(data)) {
+              console.log(`[Subagent] 🚀 调用 ${data.tool_name} (id=${data.tool_id})`, '\n  参数:', typeof data.tool_args === 'string' ? data.tool_args : JSON.stringify(data.tool_args, null, 2));
               this.engine.currentTurnToolCalls.push({ tool_id: data.tool_id, tool_name: data.tool_name, tool_args: data.tool_args });
               const subagentDisplayName = data.agent_name || data.tool_name;
-              this.engine.msg.startToolCall(data.tool_id, data.tool_name, `正在执行 ${subagentDisplayName}...`);
+              // this.engine.msg.startToolCall(data.tool_id, data.tool_name, `正在执行 ${subagentDisplayName}...`);
               const agentSource = data.agent_name || 'subAgent';
               if (this.engine.currentMessageSource !== agentSource) {
                 if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
@@ -152,9 +153,12 @@ export class StreamProcessorHelper {
                 this.engine.currentMessageSource = agentSource;
               }
               this.engine.activeToolExecutions++;
+              const subagentStartTime = Date.now();
               this.engine.subagentSessionService.executeSubagentToolCall(data as any).then(
                 (result: string) => {
-                  this.engine.msg.completeToolCall(data.tool_id, data.tool_name, ToolCallState.DONE, `${subagentDisplayName} 完成`);
+                  const elapsed = ((Date.now() - subagentStartTime) / 1000).toFixed(1);
+                  console.log(`[Subagent] ✅ ${data.tool_name} 完成 (${elapsed}s)`, '\n  返回值:', result?.length > 500 ? result.slice(0, 500) + `...(共${result.length}字符)` : result);
+                  // this.engine.msg.completeToolCall(data.tool_id, data.tool_name, ToolCallState.DONE, `${subagentDisplayName} 完成`);
                   if (this.engine.currentMessageSource !== 'mainAgent') {
                     if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') { this.engine.list[this.engine.list.length - 1].state = 'done'; }
                     this.engine.currentMessageSource = 'mainAgent';
@@ -163,8 +167,10 @@ export class StreamProcessorHelper {
                   this.engine.turnLoop.onToolExecutionComplete();
                 },
                 (error: any) => {
+                  const elapsed = ((Date.now() - subagentStartTime) / 1000).toFixed(1);
                   const errMsg = error?.message || `${subagentDisplayName} 执行失败`;
-                  this.engine.msg.completeToolCall(data.tool_id, data.tool_name, ToolCallState.ERROR, errMsg);
+                  console.error(`[Subagent] ❌ ${data.tool_name} 失败 (${elapsed}s)`, '\n  错误:', errMsg);
+                  // this.engine.msg.completeToolCall(data.tool_id, data.tool_name, ToolCallState.ERROR, errMsg);
                   if (this.engine.currentMessageSource !== 'mainAgent') {
                     if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') { this.engine.list[this.engine.list.length - 1].state = 'done'; }
                     this.engine.currentMessageSource = 'mainAgent';

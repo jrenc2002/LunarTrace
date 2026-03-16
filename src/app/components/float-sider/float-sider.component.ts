@@ -9,6 +9,7 @@ import { ElectronService } from '../../services/electron.service';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { NzModalService } from 'ng-zorro-antd/modal';
 import { UiService } from '../../services/ui.service';
+import { ChatService } from '../../tools/aily-chat/public-api';
 import { ConnectionGraphService } from '../../services/connection-graph.service';
 import { BackgroundAgentService } from '../../services/background-agent.service';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
@@ -40,6 +41,7 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
     private message: NzMessageService,
     private modal: NzModalService,
     private uiService: UiService,
+    private chatService: ChatService,
     private connectionGraphService: ConnectionGraphService,
     private backgroundAgent: BackgroundAgentService,
     private translate: TranslateService
@@ -160,8 +162,21 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
       ? (window as any).path.join(projectPath, 'arch.md')
       : `${projectPath}/arch.md`;
     if (!this.electronService.exists(archPath)) {
-      // TODO @i3water: AI 后台生成流程图及创建 arch.md 文件功能
-      this.message.error(this.translate.instant('FLOAT_SIDER.NO_ARCH'));
+      this.uiService.openTool('aily-chat');
+      const prompt = this.translate.instant('FLOAT_SIDER.GENERATE_ARCH_PROMPT');
+      setTimeout(() => {
+        if (this.chatService.isWaiting) {
+          this.message.warning(this.translate.instant('FLOAT_SIDER.ARCH_AI_BUSY'));
+          return;
+        }
+        const hasSession = !!this.chatService.currentSessionId;
+        this.chatService.sendTextToChat(prompt, {
+          sender: 'FloatSider',
+          type: 'arch',
+          autoSend: true,
+          newChatFirst: hasSession
+        });
+      }, 400);
       return;
     }
     try {
@@ -215,15 +230,15 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
   }
 
   showCircuit() {
-    this.message.warning(this.translate.instant('COMING SOON'));
-    return;
+    // this.message.warning(this.translate.instant('COMING SOON'));
+    // return;
     if (!this.electronService.isElectron || !this.boardPackagePath) {
       this.message.warning(this.translate.instant('FLOAT_SIDER.NO_PINMAP'));
       return;
     }
 
-    const windowUrl = 'https://tool.aily.pro/connection-graph?type=json&theme=dark';
-    // const windowUrl = 'http://localhost:4201/connection-graph?type=json&theme=dark';
+    // const windowUrl = 'https://tool.aily.pro/connection-graph?type=json&theme=dark';
+    const windowUrl = 'http://localhost:4201/connection-graph?type=json&theme=dark';
 
     // 构建连线图 payload
     const payload = this.connectionGraphService.buildPayload(this.boardPackagePath);
@@ -245,10 +260,11 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
         width: 900,
         height: 700,
       });
-      // 延迟确保子窗口已打开并注册 IPC 监听，再启动生成
-      setTimeout(() => {
-        this.backgroundAgent.generateSchematic();
-      }, 800);
+      // // 延迟确保子窗口已打开并注册 IPC 监听，再启动生成
+      // setTimeout(() => {
+        // this.backgroundAgent.generateSchematic();
+      // }, 800);
+      this.uiService.openAndSendToChat('@schematicAgent 生成项目连线图', { autoSend: true });
     }
   }
 }

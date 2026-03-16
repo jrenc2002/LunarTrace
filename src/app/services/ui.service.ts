@@ -1,7 +1,7 @@
 /* 这个服务用来控制窗口、工具的显示和隐藏，通过 Subject 来实现组件之间的通信。
  */
 import { Injectable } from '@angular/core';
-import { filter, Subject } from 'rxjs';
+import { filter, Observable, Subject } from 'rxjs';
 import { ElectronService } from './electron.service';
 import { TerminalService } from '../tools/terminal/terminal.service';
 import { NavigationEnd, Router } from '@angular/router';
@@ -36,6 +36,14 @@ export class UiService {
   theme = 'dark';
   isMainWindow = false;
 
+  /**
+   * 向 aily-chat 发送消息的 Subject。
+   * 外部组件通过 openAndSendToChat() 触发，
+   * aily-chat 模组内部订阅 chatMessage$ 消费。
+   */
+  private chatMessageSubject = new Subject<{ text: string; options?: Record<string, any> }>();
+  chatMessage$ = this.chatMessageSubject.asObservable();
+
 
   constructor(
     private electronService: ElectronService,
@@ -48,6 +56,10 @@ export class UiService {
 
   // 初始化UI服务，这个init函数仅供main-window使用
   init(): void {
+    // 注册 window 全局方法，供非 Angular 环境调用
+    (window as any).openAndSendToAilyChat = (text: string, options?: Record<string, any>) => {
+      this.openAndSendToChat(text, options);
+    };
     if (this.electronService.isElectron) {
       this.isMainWindow = true;
       window['ipcRenderer'].on('window-go-main', (event, toolName) => {
@@ -132,6 +144,19 @@ export class UiService {
   // 发送工具信号，格式为 "toolname:action"，如 "serial-monitor:disconnect"
   sendToolSignal(signal: string) {
     this.actionSubject.next({ action: 'signal', type: 'tool', data: signal });
+  }
+
+  /**
+   * 打开 aily-chat 面板并发送消息。
+   * 标准接口：任何需要「代为向大模型发送消息」的场景，统一调用此方法。
+   * aily-chat 模组内部订阅 chatMessage$ 处理，外部无需导入 aily-chat 的任何服务。
+   *
+   * @param text 要发送的文本内容
+   * @param options 发送选项，如 { autoSend: true, cover: true }
+   */
+  openAndSendToChat(text: string, options?: Record<string, any>): void {
+    this.openTool('aily-chat');
+    this.chatMessageSubject.next({ text, options });
   }
 
   // 判断某个工具是否打开

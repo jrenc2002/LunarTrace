@@ -1,5 +1,86 @@
 :host {
     position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.editor-tabs {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    &.single-tab ::ng-deep .ant-tabs-nav {
+        display: none;
+    }
+
+    ::ng-deep {
+        nz-tabs-nav {
+            // height: 30px;
+            margin: 0 !important;
+        }
+
+        .ant-tabs-nav-wrap {
+            background: #262626;
+        }
+
+        .ant-tabs-tab {
+            background-color: #262626;
+            padding: 5px 7.5px !important;
+            border-bottom: none !important;
+
+            button {
+                color: #a5a5a5;
+            }
+
+            &.ant-tabs-tab-active {
+                background-color: #323232;
+            }
+
+            &:nth-child(2) {
+                &.ant-tabs-tab-active {
+                    background-color: #2B2D30;
+                }
+            }
+        }
+
+        .ant-tabs-tab-remove {
+            padding: 0 0 0 5px;
+            margin: 0;
+        }
+
+        .ant-tabs-content {
+            flex: 1;
+            height: 100%;
+        }
+
+        .ant-tabs-content-holder {
+            flex: 1;
+            position: relative;
+        }
+
+        .ant-tabs-tabpane {
+            position: absolute;
+            inset: 0;
+            height: 100%;
+            display: block !important; /* 覆盖 ant 的 display:none，保持层叠 */
+        }
+    }
+}
+
+.tab-content.tab-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transition: opacity 0.15s ease;
+}
+
+.blockly-tab,
+.graph-tab {
+    width: 100%;
+    height: 100%;
 }
 
 blockly-main {

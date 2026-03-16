@@ -180,6 +180,35 @@ export const TOOLS = [
         agents: ["mainAgent", "schematicAgent"]
     },
     // =============================================================================
+    // 子代理工具 - 始终发送给 LLM（core）
+    // =============================================================================
+    {
+        name: 'run_schematicAgent',
+        description: `启动 schematicAgent 子代理，为用户生成开发板与电子模块的可视化接线图（电路原理图）。
+子代理会独立运行，使用专属工具集完成接线图的生成和编辑，完成后返回结果。如果返回结果不完整或不符合预期，可以继续调用该工具与子代理进行多轮交互，直到获得满意的接线图结果。
+
+使用场景：
+ - 用户要求生成、更新或修改接线图/电路图
+ - 涉及开发板引脚连线的可视化需求
+
+注意：调用前应先通过 get_context 和 get_project_info 获取当前项目信息，将相关上下文传入 context 参数。`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                task: {
+                    type: 'string',
+                    description: '交给子代理的具体任务描述'
+                },
+                context: {
+                    type: 'string',
+                    description: '相关上下文信息（项目信息、代码片段、硬件连接等）'
+                }
+            },
+            required: ['task']
+        },
+        agents: ["mainAgent"]
+    },
+    // =============================================================================
     // 核心工具 - 始终发送给 LLM
     // =============================================================================
     {
@@ -2445,32 +2474,55 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
     },
     {
         name: 'validate_schematic',
-        description: `验证并保存接线图。支持 JSON 和 AWS 两种格式输入。
+        description: `验证并保存接线图。
 
-**JSON 格式：** 通过 connection_data 参数传入完整 JSON
 **AWS 格式：** 通过 aws 参数传入 AWS (Aily Wiring Syntax) 语法
 
 **调用时机：** generate_schematic 返回引脚摘要后，你生成连线后调用本工具。
 
 **推荐流程：**
-1. **get_component_catalog(includeBoards: true)**：获取开发板 + 组件的 pinmapId 列表
-2. **generate_schematic(pinmapIds: [...])**：获取引脚摘要和连线规则
-3. **你生成连线**：输出 AWS 格式或 JSON 格式
-4. **validate_schematic**：验证并保存`,
+1. **get_context()**：获取当前项目和库的上下文信息，了解当前项目实际使用的开发板和组件
+2. **get_component_catalog(includeBoards: true)**：获取开发板 + 组件的 pinmapId 列表
+3. **generate_schematic(pinmapIds: [...])**：获取引脚摘要和连线规则
+4. **你生成连线**：输出 AWS 格式
+5. **validate_schematic**：验证并保存`,
         input_schema: {
             type: 'object',
             properties: {
-                connection_data: {
-                    type: 'object',
-                    description: 'JSON 格式的接线图数据（符合 connection_output.json 格式）。与 aws 参数二选一。'
-                },
                 aws: {
                     type: 'string',
-                    description: 'AWS (Aily Wiring Syntax) 格式的接线描述。与 connection_data 参数二选一。'
+                    description: 'AWS (Aily Wiring Syntax) 格式的接线描述。'
                 }
             },
             required: []
         },
+//         description: `验证并保存接线图。支持 JSON 和 AWS 两种格式输入。
+
+// **JSON 格式：** 通过 connection_data 参数传入完整 JSON
+// **AWS 格式：** 通过 aws 参数传入 AWS (Aily Wiring Syntax) 语法
+
+// **调用时机：** generate_schematic 返回引脚摘要后，你生成连线后调用本工具。
+
+// **推荐流程：**
+// 1. **get_context()**：获取当前项目和库的上下文信息，了解当前项目实际使用的开发板和组件
+// 2. **get_component_catalog(includeBoards: true)**：获取开发板 + 组件的 pinmapId 列表
+// 3. **generate_schematic(pinmapIds: [...])**：获取引脚摘要和连线规则
+// 4. **你生成连线**：输出 AWS 格式或 JSON 格式
+// 5. **validate_schematic**：验证并保存`,
+//         input_schema: {
+//             type: 'object',
+//             properties: {
+//                 connection_data: {
+//                     type: 'object',
+//                     description: 'JSON 格式的接线图数据（符合 connection_output.json 格式）。与 aws 参数二选一。'
+//                 },
+//                 aws: {
+//                     type: 'string',
+//                     description: 'AWS (Aily Wiring Syntax) 格式的接线描述。与 connection_data 参数二选一。'
+//                 }
+//             },
+//             required: []
+//         },
         agents: ["schematicAgent"]
     },
     {
@@ -2504,7 +2556,7 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
         name: 'get_current_schematic',
         description: `读取当前项目已保存的连线图完整内容。
 
-**用于编辑流程：** 用户想修改/添加/删除连线时，先调用本工具获取当前完整 JSON，修改后发给 validate_schematic 保存。
+**用于编辑流程：** 用户想修改/添加/删除连线时，先调用本工具获取当前状态，然后编写新的 AWS 内容调用 validate_schematic 保存。
 
 **典型编辑场景：**
 - “删除 DHT20 的 VCC 连线”
@@ -2512,10 +2564,10 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
 - “再添加一个 LED”
 
 **编辑流程：**
-1. **get_current_schematic()**：获取当前连线图完整 JSON（schematicData）
-2. **修改 schematicData**：加创改删其中的 components 和 connections
+1. **get_current_schematic()**：获取当前连线图数据
+2. **修改连线**：基于当前连线信息编写新的 AWS 格式内容
    - 新增组件时：先调用 generate_schematic 获取新组件引脚信息
-3. **validate_schematic(connection_data: modifiedData)**：验证并保存`,
+3. **validate_schematic(aws: "修改后的AWS内容")**：验证并保存`,
         input_schema: {
             type: 'object',
             properties: {},

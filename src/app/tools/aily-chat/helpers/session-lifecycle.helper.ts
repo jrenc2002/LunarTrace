@@ -21,6 +21,10 @@ export class SessionLifecycleHelper {
         || AilyHost.get().project.projectRootPath
         || null;
       const budgetSnapshot = this.engine.contextBudgetService?.getSnapshot();
+
+      // 导出 subagent 会话数据（Plan C 压缩：保留最近 3 轮对话）
+      const subagentHistories = this.engine.subagentSessionService.exportSessions(3);
+
       this.engine.chatHistoryService.saveSession(
         this.engine.sessionId, this.engine.list, this.engine.conversationMessages || [],
         {
@@ -35,7 +39,8 @@ export class SessionLifecycleHelper {
             usagePercent: budgetSnapshot.usagePercent,
           } : undefined,
           toolCallingIteration: this.engine.toolCallingIteration || 0,
-        }
+        },
+        Object.keys(subagentHistories).length > 0 ? subagentHistories : undefined,
       );
       this.refreshHistoryList();
     } catch (error) { console.warn('保存会话失败:', error); }
@@ -289,6 +294,12 @@ export class SessionLifecycleHelper {
       } else {
         this.engine.contextBudgetService?.updateBudget([], this.engine.turnLoop.getCurrentTools());
       }
+
+      // 恢复 subagent 会话历史
+      if (sessionData.subagentHistories) {
+        this.engine.subagentSessionService.importSessions(sessionData.subagentHistories);
+      }
+
       this.engine.scrollManager.scrollToBottom('auto');
     }
   }

@@ -823,79 +823,242 @@ export async function getSensorPinmapCatalogTool(
  * validate_schematic 工具
  *
  * 验证连线配置的安全性，检查短路、电压不匹配、引脚冲突等问题。
- * 如果传入 connection_data 则验证该数据并保存；否则验证项目中已保存的连线。
+ * 支持通过 aws 参数传入 AWS 格式连线，解析后验证并保存；
+ * 不传参数则验证项目中已保存的连线。
  */
 export async function validateConnectionGraphTool(
   connectionGraphService: ConnectionGraphService,
   projectService: ProjectService,
-  input: { connection_data?: any }
+  input: { aws?: string }
 ): Promise<ToolUseResult> {
   try {
-    let data = input.connection_data
-      ? connectionGraphService.parseConnectionGraphJSON(
-          typeof input.connection_data === 'string'
-            ? input.connection_data
-            : JSON.stringify(input.connection_data)
-        )
-      : connectionGraphService.getConnectionGraph();
+    const currentProjectPath = projectService.currentProjectPath;
+    if (!currentProjectPath) {
+      return { is_error: true, content: '当前没有打开的项目，请先创建或打开一个项目。' };
+    }
 
-    if (!data) {
+    const boardPackagePath = await projectService.getBoardPackagePath();
+    if (!boardPackagePath) {
+      return { is_error: true, content: '当前项目没有配置开发板，请先选择开发板。' };
+    }
+
+    const { parseAWS, hasErrors, formatErrors, AWS_SYNTAX_REFERENCE, CONNECTION_COLORS, resolvePin } = await import('../../../services/connection-aws');
+
+    // 1. 获取 AWS 内容
+    let awsContent: string;
+    if (input.aws) {
+      awsContent = input.aws;
+    } else if (connectionGraphService.hasAWSFile()) {
+      awsContent = connectionGraphService.readAWSFile();
+    } else {
+      // 没有 AWS 输入，尝试验证已保存的 JSON 数据
+      const existingData = connectionGraphService.getConnectionGraph();
+      if (!existingData) {
+        return {
+          is_error: true,
+          content: '没有可验证的连线数据。请先使用 generate_schematic 生成连线，然后传入 aws 参数。',
+        };
+      }
+      const validationResults = connectionGraphService.validateConnectionGraph(existingData);
+      const errors = validationResults.filter(r => r.level === 'error');
+      const warnings = validationResults.filter(r => r.level === 'warning');
       return {
-        is_error: true,
-        content: '没有可验证的连线数据。请先使用 generate_schematic 工具生成连线，或传入 connection_data 参数。',
+        is_error: false,
+        content: JSON.stringify({
+          valid: errors.length === 0,
+          saved: false,
+          summary: {
+            totalConnections: existingData.connections.length,
+            totalComponents: existingData.components.length,
+            errors: errors.length,
+            warnings: warnings.length,
+          },
+          issues: validationResults.length > 0 ? validationResults : undefined,
+          message: errors.length === 0
+            ? (warnings.length > 0
+              ? `连线配置基本安全，但有 ${warnings.length} 条警告需要注意。`
+              : '连线配置安全，所有检查通过。')
+            : `发现 ${errors.length} 个安全问题，请修正后重新验证。`,
+          tip: '用户可以点击右侧工具栏的「查看接线」按钮查看连线图。',
+        }, null, 2),
       };
     }
 
-    // 运行安全检查
-    const validationResults = connectionGraphService.validateConnectionGraph(data);
+    // 2. 解析 AWS
+    const parsed = parseAWS(awsContent);
+    if (hasErrors(parsed)) {
+      return {
+        is_error: true,
+        content: JSON.stringify({
+          success: false,
+          errors: parsed.errors,
+          warnings: parsed.warnings,
+          errorMessage: formatErrors(parsed),
+          syntaxReference: AWS_SYNTAX_REFERENCE,
+          tip: '请根据上述错误信息修正 AWS 语法后重试。',
+        }, null, 2),
+      };
+    }
 
-    // 如果传入了新数据，保存到项目文件
-    if (input.connection_data) {
-      const saved = connectionGraphService.saveConnectionGraph(data);
-      if (!saved) {
+    // 3. 加载组件配置
+    const packagesBasePath = `${currentProjectPath}/node_modules`;
+    const configMap = new Map<string, ComponentConfig>();
+    const loadErrors: Array<{ pinmapId: string; error: string; line: number }> = [];
+
+    const boardConfig = connectionGraphService.getBoardConfig(boardPackagePath);
+    if (boardConfig) {
+      configMap.set('board', boardConfig);
+    } else {
+      const usesBoardRef = parsed.connections.some(
+        conn => conn.fromRef === 'board' || conn.toRef === 'board'
+      );
+      if (usesBoardRef) {
         return {
           is_error: true,
-          content: '连线数据验证完成但保存失败，请检查项目路径。',
+          content: JSON.stringify({
+            success: false,
+            error: '开发板引脚配置不存在',
+            tip: '请先使用 generate_pinmap + save_pinmap 为当前开发板生成 pinmap 配置。',
+            syntaxReference: AWS_SYNTAX_REFERENCE,
+          }, null, 2),
         };
       }
+    }
 
-      // 尝试通知 iframe 更新
-      try {
-        const boardPackagePath = await projectService.getBoardPackagePath();
-        if (boardPackagePath) {
-          await connectionGraphService.notifyIframe(data, boardPackagePath);
+    for (const use of parsed.uses) {
+      const config = connectionGraphService.loadPinmapById(use.pinmapId, packagesBasePath);
+      if (!config) {
+        if (use.pinmapId.startsWith('board:') || use.pinmapId.startsWith('board-')) {
+          const bConfig = connectionGraphService.getBoardConfig(boardPackagePath);
+          if (bConfig) { configMap.set(use.alias, bConfig); continue; }
         }
+        loadErrors.push({ pinmapId: use.pinmapId, error: '无法加载组件配置，请检查 pinmapId 是否正确或 pinmap 文件是否存在', line: use.line });
+        continue;
+      }
+      configMap.set(use.alias, config);
+    }
+
+    if (loadErrors.length > 0) {
+      return {
+        is_error: true,
+        content: JSON.stringify({
+          success: false,
+          loadErrors,
+          message: '部分组件配置加载失败',
+          tip: '请调用 get_component_catalog 确认组件状态，使用 generate_pinmap + save_pinmap 补全缺失配置后重试。',
+          syntaxReference: AWS_SYNTAX_REFERENCE,
+        }, null, 2),
+      };
+    }
+
+    // 4. 解析引脚并构建连线
+    const connections: any[] = [];
+    const resolveErrors: Array<{ message: string; line: number; source: string }> = [];
+    let connIndex = 1;
+
+    for (const conn of parsed.connections) {
+      const fromConfig = configMap.get(conn.fromRef);
+      const toConfig = configMap.get(conn.toRef);
+
+      if (!fromConfig) { resolveErrors.push({ message: `找不到组件 "${conn.fromRef}" 的配置`, line: conn.line, source: `${conn.fromRef}.${conn.fromPin}` }); continue; }
+      if (!toConfig) { resolveErrors.push({ message: `找不到组件 "${conn.toRef}" 的配置`, line: conn.line, source: `${conn.toRef}.${conn.toPin}` }); continue; }
+
+      const fromResolved = resolvePin(fromConfig, conn.fromPin);
+      if (!fromResolved) { resolveErrors.push({ message: `在组件 "${conn.fromRef}" (${fromConfig.name}) 中找不到引脚 "${conn.fromPin}"`, line: conn.line, source: `${conn.fromRef}.${conn.fromPin}` }); continue; }
+
+      const toResolved = resolvePin(toConfig, conn.toPin);
+      if (!toResolved) { resolveErrors.push({ message: `在组件 "${conn.toRef}" (${toConfig.name}) 中找不到引脚 "${conn.toPin}"`, line: conn.line, source: `${conn.toRef}.${conn.toPin}` }); continue; }
+
+      const connType = conn.type as keyof typeof CONNECTION_COLORS;
+      const color = CONNECTION_COLORS[connType] || CONNECTION_COLORS.other;
+      const label = conn.note || `${conn.type.toUpperCase()}: ${conn.fromPin} → ${conn.toPin}`;
+
+      connections.push({
+        id: `conn_${connIndex++}`,
+        from: { ref: conn.fromRef, pinId: fromResolved.pinId, function: fromResolved.functionName },
+        to: { ref: conn.toRef, pinId: toResolved.pinId, function: toResolved.functionName },
+        type: conn.type, label, color, bus: conn.bus,
+      });
+    }
+
+    if (resolveErrors.length > 0) {
+      return {
+        is_error: true,
+        content: JSON.stringify({
+          success: false,
+          resolveErrors,
+          message: '引脚解析失败',
+          tip: '请检查引脚名称是否正确。可使用 generate_schematic 获取正确的引脚名称。',
+          syntaxReference: AWS_SYNTAX_REFERENCE,
+        }, null, 2),
+      };
+    }
+
+    // 5. 构建完整 JSON
+    const description = parsed.comments.length > 0
+      ? parsed.comments[0]
+      : `连线方案（${parsed.uses.map(u => u.label || u.alias).join(' + ')}）`;
+
+    const components: any[] = [];
+    if (boardConfig) {
+      const boardPkgName = boardPackagePath.split(/[\\/]/).pop() || 'board';
+      components.push({ refId: 'board', componentId: boardConfig.id, componentName: boardConfig.name, pinmapId: `${boardPkgName}:default:default`, isBoard: true });
+    }
+    for (const [index, use] of parsed.uses.entries()) {
+      const config = configMap.get(use.alias)!;
+      const sameTypeCount = parsed.uses.slice(0, index).filter(u => u.pinmapId === use.pinmapId).length;
+      components.push({ refId: use.alias, componentId: config.id, componentName: use.label || config.name, pinmapId: use.pinmapId, instance: sameTypeCount });
+    }
+
+    const jsonData = { version: '1.0.0', description, components, connections };
+
+    // 6. 运行安全检查
+    const validationResults = connectionGraphService.validateConnectionGraph(jsonData);
+    const errors = validationResults.filter(r => r.level === 'error');
+    const warnings = validationResults.filter(r => r.level === 'warning');
+
+    // 7. 保存 AWS 和 JSON
+    if (input.aws) {
+      connectionGraphService.saveAWSFile(awsContent);
+    }
+    connectionGraphService.saveJSONFile(jsonData);
+
+    // 8. 通知 iframe 刷新
+    if (connectionGraphService.hasActiveIframe) {
+      try {
+        await connectionGraphService.iframeApi.receiveData({
+          componentConfigs: Object.fromEntries(configMap),
+          components: jsonData.components,
+          connections: jsonData.connections,
+        });
       } catch {
         // iframe 通知失败不影响主流程
       }
     }
 
-    const errors = validationResults.filter(r => r.level === 'error');
-    const warnings = validationResults.filter(r => r.level === 'warning');
-
     const result = {
       valid: errors.length === 0,
-      saved: !!input.connection_data,
+      saved: true,
       summary: {
-        totalConnections: data.connections.length,
-        totalComponents: data.components.length,
+        totalConnections: jsonData.connections.length,
+        totalComponents: jsonData.components.length,
         errors: errors.length,
         warnings: warnings.length,
       },
       issues: validationResults.length > 0 ? validationResults : undefined,
       message: errors.length === 0
         ? (warnings.length > 0
-          ? `连线配置基本安全，但有 ${warnings.length} 条警告需要注意。${input.connection_data ? '数据已保存。' : ''}`
-          : `连线配置安全，所有检查通过。${input.connection_data ? '数据已保存。' : ''}`)
+          ? `连线配置基本安全，但有 ${warnings.length} 条警告需要注意。数据已保存。`
+          : '连线配置安全，所有检查通过。数据已保存。')
         : `发现 ${errors.length} 个安全问题，请修正后重新验证。`,
+      awsWarnings: parsed.warnings.length > 0 ? parsed.warnings : undefined,
       tip: '用户可以点击右侧工具栏的「查看接线」按钮查看连线图。',
     };
 
-    const toolResult: ToolUseResult = {
+    return {
       is_error: false,
       content: JSON.stringify(result, null, 2),
     };
-    return toolResult;
   } catch (error: any) {
     return {
       is_error: true,
@@ -1201,12 +1364,12 @@ export async function getCurrentSchematicTool(
           componentType: c.componentType || 'hardware',
         })),
       },
-      // 完整的连线图 JSON，可直接修改后传入 validate_schematic
+      // 完整的连线图 JSON，供了解当前连线状态
       schematicData: data,
       editingTip: [
-        '如需修改连线：直接修改 schematicData.connections 中的连线内容',
-        '如需添加组件：啄 schematicData.components 进行连线同时调用 generate_schematic 获取新组件的引脚摘要',
-        '修改完成后：把修改后的完整 JSON 传入 validate_schematic(connection_data) 保存',
+        '如需修改连线：基于当前 schematicData 的连线信息，编写新的 AWS 格式内容',
+        '如需添加组件：先调用 generate_schematic 获取新组件的引脚摘要',
+        '修改完成后：调用 validate_schematic(aws: "你的AWS内容") 验证并保存',
       ],
     };
 

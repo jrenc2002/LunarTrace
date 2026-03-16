@@ -1,4 +1,5 @@
-import { ChangeDetectorRef, Component } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { LibManagerComponent } from './components/lib-manager/lib-manager.component';
 import { NotificationComponent } from '../../components/notification/notification.component';
 import { UiService } from '../../services/ui.service';
@@ -21,6 +22,8 @@ import { HistoryService } from './services/history.service';
 import { OnboardingService } from '../../services/onboarding.service';
 import { BLOCKLY_ONBOARDING_CONFIG } from '../../configs/onboarding.config';
 import { NoticeService } from '../../services/notice.service';
+import { NzTabsModule } from 'ng-zorro-antd/tabs';
+import { GraphEditorComponent } from '../graph-editor/graph-editor.component';
 
 @Component({
   selector: 'app-blockly-editor',
@@ -29,18 +32,35 @@ import { NoticeService } from '../../services/notice.service';
     LibManagerComponent,
     NotificationComponent,
     TranslateModule,
-    DevToolComponent
+    DevToolComponent,
+    NzTabsModule,
+    GraphEditorComponent,
   ],
-  providers: [
-    _BuilderService,
-    _UploaderService,
-    BitmapUploadService
-  ],
+  providers: [_BuilderService, _UploaderService, BitmapUploadService],
   templateUrl: './blockly-editor.component.html',
-  styleUrl: './blockly-editor.component.scss'
+  styleUrl: './blockly-editor.component.scss',
 })
-export class BlocklyEditorComponent {
+export class BlocklyEditorComponent implements OnInit, OnDestroy {
   showLibraryManager = false;
+
+  tabs: any = [
+    {
+      key: 'blockly',
+      title: 'Blockly',
+      component: BlocklyComponent,
+      closable: false,
+      display: true,
+    },
+    // {
+    //   key: 'graph',
+    //   title: '连线图',
+    //   component: GraphEditorComponent,
+    //   closable: true,
+    //   display: false
+    // }
+  ];
+  activeTabIndex = 0;
+  private actionSubscription?: Subscription;
 
   devmode;
 
@@ -64,15 +84,27 @@ export class BlocklyEditorComponent {
     private _uploadService: _UploaderService,
     private onboardingService: OnboardingService,
     private translate: TranslateService,
-    private noticeService: NoticeService
-  ) { }
+    private noticeService: NoticeService,
+  ) {}
 
   ngOnInit(): void {
-    this.activatedRoute.queryParams.subscribe(params => {
+    this.actionSubscription = this.uiService.actionSubject.subscribe(
+      (e: any) => {
+        if (
+          e.type === 'editor-tab' &&
+          e.action === 'switch' &&
+          e.data === 'graph'
+        ) {
+          this.switchToGraphTab();
+        }
+      },
+    );
+
+    this.activatedRoute.queryParams.subscribe((params) => {
       if (params['path']) {
         console.log('project path', params['path']);
         try {
-          this._projectService.currentProjectPath = params['path']
+          this._projectService.currentProjectPath = params['path'];
           this.projectService.currentProjectPath = params['path'];
           // this._projectService.initHistory(); // 初始化历史服务
           this.loadProject(params['path']);
@@ -95,6 +127,7 @@ export class BlocklyEditorComponent {
   }
 
   ngOnDestroy(): void {
+    this.actionSubscription?.unsubscribe();
     this._projectService.destroy();
     this._builderService.cancel();
     this._builderService.destroy();
@@ -108,13 +141,19 @@ export class BlocklyEditorComponent {
     // 处理 temp 下的 package.json：有则覆盖主项目，无则从主项目复制到 temp
     await this.projectService.syncPackageJsonWithTemp(projectPath);
     // 加载项目package.json
-    const packageJson = JSON.parse(this.electronService.readFile(`${projectPath}/package.json`));
+    const packageJson = JSON.parse(
+      this.electronService.readFile(`${projectPath}/package.json`),
+    );
     // 加载项目开发框架
     this.devmode = packageJson.devmode || 'arduino'; // 可选项: 'arduino', 'micropython'
 
     this.electronService.setTitle(`aily blockly - ${packageJson.nickname}`);
     // 添加到最近打开的项目
-    this.projectService.addRecentlyProject({ name: packageJson.name, path: projectPath, nickname: packageJson.nickname || packageJson.name });
+    this.projectService.addRecentlyProject({
+      name: packageJson.name,
+      path: projectPath,
+      nickname: packageJson.nickname || packageJson.name,
+    });
     // 设置当前项目路径和package.json数据
     this._projectService.currentPackageData = packageJson;
     this.projectService.currentPackageData = packageJson;
@@ -139,7 +178,7 @@ export class BlocklyEditorComponent {
           this.noticeService.update({
             title: this.translate.instant('NPM.INSTALL_FAILED_TITLE'),
             text: this.translate.instant('NPM.BOARD_DEPS_INSTALL_FAILED'),
-            state: 'error'
+            state: 'error',
           });
         }, 1000);
         return;
@@ -150,47 +189,69 @@ export class BlocklyEditorComponent {
           text: this.translate.instant('NPM.DEPS_INSTALL_COMPLETE'),
           state: 'done',
           showProgress: false,
-          setTimeout: 3000
+          setTimeout: 3000,
         });
       }, 100);
     }
     // 3. 加载开发板module中的board.json
-    this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('BLOCKLY_EDITOR.LOADING_BOARD_CONFIG') });
+    this.uiService.updateFooterState({
+      state: 'doing',
+      text: this.translate.instant('BLOCKLY_EDITOR.LOADING_BOARD_CONFIG'),
+    });
     const boardJson = await this.projectService.getBoardJson();
 
     this.projectService.currentBoardConfig = boardJson;
     this.blocklyService.boardConfig = boardJson;
     window['boardConfig'] = boardJson;
     // 4. 加载blockly library
-    this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('BLOCKLY_EDITOR.LOADING_BLOCKLY_LIB') });
+    this.uiService.updateFooterState({
+      state: 'doing',
+      text: this.translate.instant('BLOCKLY_EDITOR.LOADING_BLOCKLY_LIB'),
+    });
     // 获取项目目录下的所有blockly库
-    let libraryModuleList = (await this.npmService.getAllInstalledLibraries(projectPath)).map(item => item.name);
+    let libraryModuleList = (
+      await this.npmService.getAllInstalledLibraries(projectPath)
+    ).map((item) => item.name);
 
-    await new Promise(resolve => setTimeout(resolve, 120));
+    await new Promise((resolve) => setTimeout(resolve, 120));
 
     for (let index = 0; index < libraryModuleList.length; index++) {
       const libPackageName = libraryModuleList[index];
-      this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('BLOCKLY_EDITOR.LOADING_LIB', { name: libPackageName }) });
+      this.uiService.updateFooterState({
+        state: 'doing',
+        text: this.translate.instant('BLOCKLY_EDITOR.LOADING_LIB', {
+          name: libPackageName,
+        }),
+      });
       await this.blocklyService.loadLibrary(libPackageName, projectPath);
     }
     // 5. 加载project.abi数据
-    this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('BLOCKLY_EDITOR.LOADING_BLOCKLY_PROGRAM') });
-    let jsonData = JSON.parse(this.electronService.readFile(`${projectPath}/project.abi`));
+    this.uiService.updateFooterState({
+      state: 'doing',
+      text: this.translate.instant('BLOCKLY_EDITOR.LOADING_BLOCKLY_PROGRAM'),
+    });
+    let jsonData = JSON.parse(
+      this.electronService.readFile(`${projectPath}/project.abi`),
+    );
     this.blocklyService.loadAbiJson(jsonData);
 
     // 6. 加载项目目录中project.abi（这是blockly格式的json文本必须要先安装库才能加载这个json，因为其中可能会用到一些库）
-    this.uiService.updateFooterState({ state: 'done', text: this.translate.instant('BLOCKLY_EDITOR.PROJECT_LOAD_SUCCESS') });
+    this.uiService.updateFooterState({
+      state: 'done',
+      text: this.translate.instant('BLOCKLY_EDITOR.PROJECT_LOAD_SUCCESS'),
+    });
     this.projectService.stateSubject.next('loaded');
 
     // 检查是否需要显示新手引导
     this.checkBlocklyOnboarding();
 
     // 7. 后台安装开发板依赖
-    this.npmService.installBoardDeps()
+    this.npmService
+      .installBoardDeps()
       .then(() => {
         console.log('install board dependencies success');
       })
-      .catch(err => {
+      .catch((err) => {
         console.error('install board dependencies error', err);
       });
   }
@@ -208,13 +269,14 @@ export class BlocklyEditorComponent {
 
   // 检查是否需要显示新手引导
   private checkBlocklyOnboarding() {
-    const hasSeenOnboarding = this.configService.data.blocklyOnboardingCompleted;
+    const hasSeenOnboarding =
+      this.configService.data.blocklyOnboardingCompleted;
     if (!hasSeenOnboarding) {
       // 延迟显示引导，确保 Blockly 工作区已完全渲染
       setTimeout(() => {
         this.onboardingService.start(BLOCKLY_ONBOARDING_CONFIG, {
           onClosed: () => this.onOnboardingClosed(),
-          onCompleted: () => this.onOnboardingClosed()
+          onCompleted: () => this.onOnboardingClosed(),
         });
       }, 500);
     }
@@ -229,5 +291,41 @@ export class BlocklyEditorComponent {
   // 测试用
   reload() {
     this.projectService.projectOpen();
+  }
+
+  switchToGraphTab(): void {
+    const graphIndex = this.tabs.findIndex((t) => t.key === 'graph');
+    if (graphIndex >= 0) {
+      this.activeTabIndex = graphIndex;
+    } else {
+      // tab 被关闭后需重新添加
+      const graphTab = {
+        key: 'graph',
+        title: '连线图',
+        component: GraphEditorComponent,
+        closable: true,
+        display: true,
+      };
+      this.tabs.push(graphTab);
+      this.activeTabIndex = this.tabs.length - 1;
+    }
+    this.cd.detectChanges();
+  }
+
+  closeTab({ index }: { index: number }): void {
+    if (this.tabs[index].closable) {
+      this.tabs[index].display = false;
+    }
+    // 立即切换选中状态，使用户立即看到内容切换，避免等待 iframe 销毁
+    if (index === this.activeTabIndex) {
+      this.activeTabIndex = index > 0 ? index - 1 : 0;
+    } else if (index < this.activeTabIndex) {
+      this.activeTabIndex--;
+    }
+    // 延迟移除 tab，将 iframe 销毁放到下一帧，避免阻塞主线程导致视图卡顿
+    setTimeout(() => {
+      this.tabs.splice(index, 1);
+      this.cd.detectChanges();
+    }, 0);
   }
 }

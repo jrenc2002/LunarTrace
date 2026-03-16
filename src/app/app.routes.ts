@@ -93,6 +93,10 @@ export const routes: Routes = [
         loadComponent: () => import('./windows/iframe/iframe.component').then(m => m.IframeComponent)
     },
     {
+        path: "graph-editor",
+        loadComponent: () => import('./editors/graph-editor/graph-editor.component').then(m => m.GraphEditorComponent)
+    },
+    {
         path: "model-store",
         loadComponent: () => import('./tools/model-store/model-store.component').then(m => m.ModelStoreComponent)
     },

@@ -131,22 +131,87 @@ export function markContentAsHistory(content: string): string {
 }
 
 /**
- * 检查最后一条消息中未闭合的 markdown 结构，返回需要插入的闭合标签
+ * 检查最后一条消息中未闭合的 markdown 结构，返回需要插入的闭合标签。
+ * 使用栈结构按正确顺序闭合嵌套块（内层先闭合）。
+ *
+ * 支持检测：
+ * - `<think>` / `</think>` 标签
+ * - ``` 代码块（含代码块内部的 <think> 被视为字面文本）
+ * - `<details>` / `</details>` 标签
  */
 export function getClosingTagsForOpenBlocks(content: string): string {
   if (!content) return '';
 
-  let closingTags = '';
+  // 使用栈追踪嵌套结构，每个元素代表一个开放的块类型
+  const stack: ('think' | 'codeblock' | 'details')[] = [];
+  let i = 0;
 
-  const thinkOpenCount = (content.match(/<think>/g) || []).length;
-  const thinkCloseCount = (content.match(/<\/think>/g) || []).length;
-  if (thinkOpenCount > thinkCloseCount) {
-    closingTags += '\n</think>\n';
+  while (i < content.length) {
+    const inCodeBlock = stack.length > 0 && stack[stack.length - 1] === 'codeblock';
+
+    // 代码块内只识别 ``` 关闭，不解析 HTML 标签
+    if (inCodeBlock) {
+      if (content.startsWith('```', i)) {
+        stack.pop();
+        i += 3;
+        // 跳过 ``` 后直到行尾的语言标识符（不会出现，因为是关闭）
+        continue;
+      }
+      i++;
+      continue;
+    }
+
+    // 非代码块：检测各种开/闭标签
+    if (content.startsWith('```', i)) {
+      stack.push('codeblock');
+      i += 3;
+      // 跳过 ``` 后同行的语言标识符
+      while (i < content.length && content[i] !== '\n') i++;
+      continue;
+    }
+
+    if (content.startsWith('<think>', i)) {
+      stack.push('think');
+      i += 7;
+      continue;
+    }
+
+    if (content.startsWith('</think>', i)) {
+      // 向上找最近的 think 弹出
+      const idx = stack.lastIndexOf('think');
+      if (idx >= 0) stack.splice(idx, 1);
+      i += 8;
+      continue;
+    }
+
+    if (content.startsWith('<details', i)) {
+      // <details> 或 <details ...>
+      const closeAngle = content.indexOf('>', i + 8);
+      if (closeAngle >= 0) {
+        stack.push('details');
+        i = closeAngle + 1;
+        continue;
+      }
+    }
+
+    if (content.startsWith('</details>', i)) {
+      const idx = stack.lastIndexOf('details');
+      if (idx >= 0) stack.splice(idx, 1);
+      i += 10;
+      continue;
+    }
+
+    i++;
   }
 
-  const codeBlockMatches = content.match(/```/g) || [];
-  if (codeBlockMatches.length % 2 !== 0) {
-    closingTags += '\n```\n';
+  // 从栈顶到栈底依次闭合（内层先闭合）
+  let closingTags = '';
+  for (let j = stack.length - 1; j >= 0; j--) {
+    switch (stack[j]) {
+      case 'codeblock': closingTags += '\n```\n'; break;
+      case 'think': closingTags += '\n</think>\n'; break;
+      case 'details': closingTags += '\n</details>\n'; break;
+    }
   }
 
   return closingTags;

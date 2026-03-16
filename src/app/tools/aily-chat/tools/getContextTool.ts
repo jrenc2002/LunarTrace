@@ -64,7 +64,7 @@ interface GetContextResult {
  * Get context tool implementation for retrieving environment context information
  */
 export async function getContextTool(prjService: ProjectService, input: GetContextInput): Promise<ToolUseResult> {
-    const knownTypes: Array<GetContextInput['info_type']> = ['all', 'project', 'platform', 'system', 'editingMode'];
+    const knownTypes: Array<GetContextInput['info_type']> = ['all', 'project', 'editingMode'];
     const rawType = input.info_type ?? 'all';
     // 未知 type 时降级为 'all'，确保 LLM 发送未识别的 type 时仍能获取完整上下文
     const info_type: GetContextInput['info_type'] = knownTypes.includes(rawType as GetContextInput['info_type'])

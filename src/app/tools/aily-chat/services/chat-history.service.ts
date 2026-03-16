@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ChatHistoryService - Copilot 风格的聊天历史管理服务
  *
  * 采用「全局索引 + 分项目/全局兜底数据」双轨架构：
@@ -40,6 +40,12 @@ export interface SessionIndexEntry {
   dataAvailable?: boolean;
 }
 
+/** Subagent 持久化数据（agentName → 对话历史） */
+export interface SubagentHistoryEntry {
+  sessionId: string;
+  messages: any[];
+}
+
 /** 单个会话的完整持久化数据 */
 export interface SessionData {
   /** UI 显示列表 */
@@ -48,6 +54,8 @@ export interface SessionData {
   conversationMessages: any[];
   /** 会话元数据 */
   metadata: SessionMetadata;
+  /** Subagent 对话历史（可选，方案 C 压缩后持久化） */
+  subagentHistories?: Record<string, SubagentHistoryEntry>;
 }
 
 export interface ChatListItem {
@@ -163,7 +171,8 @@ export class ChatHistoryService implements OnDestroy {
     sessionId: string,
     chatList: ChatListItem[],
     conversationMessages: any[],
-    metadata: Partial<SessionMetadata> & { sessionId: string }
+    metadata: Partial<SessionMetadata> & { sessionId: string },
+    subagentHistories?: Record<string, SubagentHistoryEntry>,
   ): void {
     if (!sessionId || (chatList.length === 0 && conversationMessages.length === 0)) {
       return;
@@ -192,6 +201,9 @@ export class ChatHistoryService implements OnDestroy {
       conversationMessages,
       metadata: fullMetadata,
     };
+    if (subagentHistories && Object.keys(subagentHistories).length > 0) {
+      sessionData.subagentHistories = subagentHistories;
+    }
 
     // 更新内存缓存
     this.sessionCache.set(sessionId, sessionData);
@@ -459,9 +471,27 @@ export class ChatHistoryService implements OnDestroy {
           this.deleteSessionFile(entry.sessionId, null);
         }
       }
+
+      // 6. 迁移孤儿 arch 文件：rootPath/.chat_history/{sessionId}_arch.md → projectPath/arch.md
+      // TODO 如果是多个会话，可能均会迁移，但是会以最后一个会话的 arch 为准，并且其他会话的 arch 文件会被最后一个覆盖掉，产品逻辑可能需要优化
+      if (rootPath && this.hasFs()) {
+        const orphanArchPath = this.joinPath(rootPath, this.PROJECT_CHAT_DIR, `${entry.sessionId}_arch.md`);
+        if (this.fileExists(orphanArchPath)) {
+          try {
+            const content = this.readFileSync(orphanArchPath);
+            const targetArchPath = this.joinPath(projectPath, 'arch.md');
+            this.ensureDir(projectPath);
+            this.writeFileSync(targetArchPath, content);
+            AilyHost.get().fs.unlinkSync(orphanArchPath);
+            console.log(`[ChatHistory] 已迁移孤儿 arch: ${entry.sessionId}_arch.md → ${projectPath}/arch.md`);
+          } catch (err) {
+            console.warn(`[ChatHistory] 迁移孤儿 arch 失败 (${entry.sessionId}):`, err);
+          }
+        }
+      }
     }
 
-    // 6. 持久化索引
+    // 7. 持久化索引
     this.writeIndex();
     console.log(`[ChatHistory] 已将 ${orphans.length} 个孤儿会话迁移到项目: ${projectPath}`);
     return orphans.length;
