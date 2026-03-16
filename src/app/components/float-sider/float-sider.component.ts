@@ -229,42 +229,23 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
     this.uiService.openHistory();
   }
 
-  showCircuit() {
-    // this.message.warning(this.translate.instant('COMING SOON'));
-    // return;
+  async showCircuit() {
     if (!this.electronService.isElectron || !this.boardPackagePath) {
       this.message.warning(this.translate.instant('FLOAT_SIDER.NO_PINMAP'));
       return;
     }
 
-    // const windowUrl = 'https://tool.aily.pro/connection-graph?type=json&theme=dark';
-    const windowUrl = 'http://localhost:4201/connection-graph?type=json&theme=dark';
+    // let windowUrl = 'https://tool.aily.pro/connection-graph?type=json&theme=dark';
+    let windowUrl = 'http://localhost:4201/connection-graph?type=json&theme=dark';
 
-    // 构建连线图 payload
-    const payload = this.connectionGraphService.buildPayload(this.boardPackagePath);
-    console.log('[showCircuit] payload:', payload ? JSON.stringify(payload).slice(0, 500) + '...' : 'null');
+    this.uiService.openWindow({
+      path: `iframe?url=${encodeURIComponent(windowUrl)}`,
+      data: null,
+      width: 900,
+      height: 700,
+    });
 
-    if (payload) {
-      // 场景1: 有连线数据 → 直接展示 + 显示操作按钮
-      this.uiService.openWindow({
-        path: `iframe?url=${encodeURIComponent(windowUrl)}`,
-        data: payload,
-        width: 900,
-        height: 700,
-      });
-    } else {
-      // 场景2: 无连线数据 → 打开窗口 + 启动后台 Agent 自动生成
-      this.uiService.openWindow({
-        path: `iframe?url=${encodeURIComponent(windowUrl)}&mode=generating`,
-        data: null,
-        width: 900,
-        height: 700,
-      });
-      // // 延迟确保子窗口已打开并注册 IPC 监听，再启动生成
-      // setTimeout(() => {
-        // this.backgroundAgent.generateSchematic();
-      // }, 800);
-      this.uiService.openAndSendToChat('@schematicAgent 生成项目连线图', { autoSend: true });
-    }
+    // 直接切换到 blockly-editor 的连线图 tab
+    // this.uiService.actionSubject.next({ action: 'switch', type: 'editor-tab', data: 'graph' });
   }
 }

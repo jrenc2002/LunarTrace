@@ -127,39 +127,7 @@ export class IframeComponent implements OnInit, OnDestroy {
       this.route.queryParams.subscribe((params) => {
         const url = params['url'];
         if (url) {
-          this.iframeSrc = this.sanitizer.bypassSecurityTrustResourceUrl(url);
-          try {
-            this.allowedOrigins = [new URL(url).origin];
-          } catch {
-            this.allowedOrigins = ['*'];
-          }
-
-          // 检测是否为连线图窗口
-          if (url.includes('connection-graph')) {
-            this.isConnectionGraphWindow = true;
-          }
-        }
-
-        // 检测生成模式
-        // const mode = params['mode'];
-        // if (mode === 'generating') {
-        //   this.isGenerating = true;
-        //   this.safeUpdateNotice('正在准备生成连线图...', 'doing');
-        //   this.startProgressIpcListener();
-        // }
-
-        const filePath = params['filePath'];
-        if (filePath && this.electronService.isElectron) {
-          try {
-            if (this.electronService.exists(filePath)) {
-              const content = this.electronService.readFile(filePath);
-              this.iframeData = JSON.parse(content);
-            } else {
-              console.error('文件不存在:', filePath);
-            }
-          } catch (error) {
-            console.error('读取文件失败:', error);
-          }
+          this.applyUrl(url);
         }
       });
 
@@ -256,7 +224,10 @@ export class IframeComponent implements OnInit, OnDestroy {
             this.pushDataToRemote();
           },
           generateGraphData: () => {
-            this.sendToMain('generate-graph-data');
+            // this.backgroundAgent.generateSchematic();
+            // this.uiService.openAndSendToChat('@schematicAgent 生成项目连线图', { autoSend: true });
+            this.sendToChat('@schematicAgent 生成项目连线图');
+            // this.sendToMain('generate-graph-data');
           },
           regenerateGraphData: () => {
             this.onRegenerate();
