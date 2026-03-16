@@ -236,7 +236,22 @@ async function main() {
             }
         });
 
-        // 9. 上传预处理：处理 1200bps touch 和 wait_for_upload
+        // 9. 预构建上传命令（串口用占位符，后续替换）
+        const platform = os.platform() === 'win32' ? 'win32' : (os.platform() === 'darwin' ? 'darwin' : 'linux');
+        const SERIAL_PLACEHOLDER = '__SERIAL_PORT_PLACEHOLDER__';
+        
+        const { command, args: templateArgs } = await processUploadParams(
+            uploadParam,
+            buildPath,
+            toolsPath,
+            fullSdkPath,
+            baudRate,
+            toolDependencies,
+            SERIAL_PLACEHOLDER,
+            platform
+        );
+
+        // 10. 上传预处理：处理 1200bps touch 和 wait_for_upload
         // 四种组合：
         //   touch=false, wait=false → 直接使用原端口
         //   touch=true,  wait=false → 执行 1200bps touch，短暂延时后检测一次新端口
@@ -256,14 +271,12 @@ async function main() {
             try {
                 await perform1200bpsTouch(finalSerialPort);
             } catch (err) {
-                // touch 失败时仅警告，不终止流程，让上传工具自行处理端口
                 logger.warn('1200bps touch 警告（将继续尝试上传）:', err.message);
             }
         }
 
         // Step 2: 等待新端口
         if (wait_for_upload) {
-            // 需要等待新端口：每 200ms 轮询，超时 10s
             const newPort = await waitForNewPort(portsBefore, 10000, 200);
             if (newPort) {
                 finalSerialPort = newPort;
@@ -271,7 +284,6 @@ async function main() {
                 logger.log('未检测到新端口，继续使用原端口:', finalSerialPort);
             }
         } else if (use_1200bps_touch) {
-            // 仅 touch 无需 wait：短暂延时后检测一次新端口
             await delay(200);
             const portsAfter = await getPortsList();
             const newBootloaderPorts = portsAfter.filter(
@@ -285,25 +297,13 @@ async function main() {
             }
         }
 
+        // 11. 将占位符替换为最终串口，生成最终参数
         logger.log('使用串口:', finalSerialPort);
-
-        // 10. 处理上传参数
-        const platform = os.platform() === 'win32' ? 'win32' : (os.platform() === 'darwin' ? 'darwin' : 'linux');
-        
-        const { command, args } = await processUploadParams(
-            uploadParam,
-            buildPath,
-            toolsPath,
-            fullSdkPath,
-            baudRate,
-            toolDependencies,
-            finalSerialPort,
-            platform
-        );
+        const args = templateArgs.map(a => a.replace(SERIAL_PLACEHOLDER, finalSerialPort));
 
         logger.log(`Executing: ${command} ${args.join(' ')}`);
 
-        // 11. 执行上传命令
+        // 12. 执行上传命令
         const child = spawn(command, args, {
             cwd: buildPath,
             shell: true,
