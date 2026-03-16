@@ -34,6 +34,7 @@ export { newProjectTool } from './createProjectTool';
 export { executeCommandTool } from './executeCommandTool';
 export { askApprovalTool } from './askApprovalTool';
 export { askUserTool, registerAskUserCallback, unregisterAskUserCallback } from './askUserTool';
+export type { AskUserArgs, AskUserQuestion, AskUserOption, AskUserAnswer, AskUserResponse } from './askUserTool';
 export { getContextTool } from './getContextTool';
 export { getProjectInfoTool } from './getProjectInfoTool';
 export { fetchTool, FetchToolService } from './fetchTool';
