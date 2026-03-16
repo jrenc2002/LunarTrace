@@ -230,13 +230,16 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
   }
 
   async showCircuit() {
+    this.message.warning('Coming Soon');
+    return;
+
     if (!this.electronService.isElectron || !this.boardPackagePath) {
       this.message.warning(this.translate.instant('FLOAT_SIDER.NO_PINMAP'));
       return;
     }
 
-    // let windowUrl = 'https://tool.aily.pro/connection-graph?type=json&theme=dark';
-    let windowUrl = 'http://localhost:4201/connection-graph?type=json&theme=dark';
+    let windowUrl = 'https://tool.aily.pro/connection-graph?type=json&theme=dark';
+    // let windowUrl = 'http://localhost:4201/connection-graph?type=json&theme=dark';
 
     this.uiService.openWindow({
       path: `iframe?url=${encodeURIComponent(windowUrl)}`,
