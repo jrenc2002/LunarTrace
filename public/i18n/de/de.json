@@ -384,7 +384,9 @@
         "NO_PROJECT": "Kein Projekt geöffnet",
         "NO_ARCH": "arch.md im Projektverzeichnis nicht gefunden",
         "ARCH_EMPTY": "Kein Mermaid-Diagramm in arch.md gefunden",
-        "ARCH_RENDER_FAILED": "Architekturdiagramm konnte nicht gerendert werden"
+        "ARCH_RENDER_FAILED": "Architekturdiagramm konnte nicht gerendert werden",
+        "GENERATE_ARCH_PROMPT": "Projektarchitekturdiagramm erstellen",
+        "ARCH_AI_BUSY": "KI ist gerade in einem Gespräch, bitte versuchen Sie es später erneut"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "Bitte wählen Sie zuerst einen seriellen Port aus",

@@ -248,6 +248,37 @@ export class AilyChatComponent implements OnDestroy {
 
   // ==================== UI 事件处理器 ====================
 
+  // --- @agent 自动补全 ---
+  showAgentSuggestions = false;
+  agentSuggestions: string[] = [];
+  private allAgents: string[] = [];
+
+  /** 处理输入变化，检测 @mention */
+  onInputChange(): void {
+    const val = this.engine.inputValue;
+    if (val.startsWith('@')) {
+      if (this.allAgents.length === 0) {
+        this.allAgents = SubagentSessionService.getAvailableAgents();
+      }
+      const query = val.slice(1).split(/\s/)[0].toLowerCase();
+      this.agentSuggestions = this.allAgents.filter(a => a.toLowerCase().startsWith(query));
+      this.showAgentSuggestions = this.agentSuggestions.length > 0 && !val.includes(' ');
+    } else {
+      this.showAgentSuggestions = false;
+    }
+  }
+
+  /** 选中 agent 自动补全 */
+  selectAgent(agentName: string): void {
+    this.engine.inputValue = `@${agentName} `;
+    this.showAgentSuggestions = false;
+    setTimeout(() => {
+      if (this.chatTextarea?.nativeElement) {
+        this.chatTextarea.nativeElement.focus();
+      }
+    });
+  }
+
   async sendButtonClick(): Promise<void> {
     this.scrollManager.autoScrollEnabled = true;
     this.scrollManager.scrollToBottom();
@@ -262,6 +293,20 @@ export class AilyChatComponent implements OnDestroy {
   }
 
   async onKeyDown(event: KeyboardEvent) {
+    // @agent 补全交互：Enter 选中、Escape 关闭
+    if (this.showAgentSuggestions) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        this.selectAgent(this.agentSuggestions[0]);
+        return;
+      }
+      if (event.key === 'Escape') {
+        this.showAgentSuggestions = false;
+        event.preventDefault();
+        return;
+      }
+    }
+
     if (event.key === 'Enter') {
       if (event.ctrlKey) {
         const textarea = event.target as HTMLTextAreaElement;

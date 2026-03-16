@@ -433,7 +433,9 @@
         "NO_PROJECT": "No project opened",
         "NO_ARCH": "arch.md not found in project directory",
         "ARCH_EMPTY": "No mermaid diagram found in arch.md",
-        "ARCH_RENDER_FAILED": "Failed to render architecture diagram"
+        "ARCH_RENDER_FAILED": "Failed to render architecture diagram",
+        "GENERATE_ARCH_PROMPT": "Generate project architecture diagram",
+        "ARCH_AI_BUSY": "AI is currently in a conversation, please try again later"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "Please select a serial port first",

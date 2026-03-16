@@ -69,6 +69,13 @@
     position: relative;
     background: #292929;
 
+    .textarea-wrapper {
+      position: relative;
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
     textarea {
       font-size: 14px;
       flex-grow: 1;
@@ -77,6 +84,42 @@
       outline: none;
       padding: 7px 0 0 5px;
       background: transparent;
+    }
+
+    .agent-suggestions {
+      position: absolute;
+      bottom: 100%;
+      left: 0;
+      min-width: 200px;
+      max-width: 300px;
+      background: #3a3a3a;
+      border: 1px solid #555;
+      border-radius: 6px;
+      padding: 4px;
+      margin-bottom: 4px;
+      z-index: 100;
+      box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
+
+      .agent-suggestion-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        color: #c4b5fd;
+        transition: background 0.15s;
+
+        i {
+          color: #818cf8;
+          font-size: 14px;
+        }
+
+        &:hover {
+          background: rgba(99, 102, 241, 0.2);
+        }
+      }
     }
 
     .btns {

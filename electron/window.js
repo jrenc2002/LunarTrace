@@ -366,53 +366,37 @@ function registerWindowHandlers(mainWindow) {
         mainWindow.webContents.send('state-update', data);
     });
 
-    // 连线图数据更新通知 - 从主窗口转发给所有子窗口
-    ipcMain.on('connection-graph-updated', (event, payload) => {
-        console.log('[IPC] connection-graph-updated, 转发给', openWindows.size, '个子窗口');
-        openWindows.forEach((subWindow, windowUrl) => {
-            try {
-                if (subWindow && !subWindow.isDestroyed() && subWindow.webContents && !subWindow.webContents.isDestroyed()) {
-                    subWindow.webContents.send('connection-graph-updated', payload);
-                }
-            } catch (error) {
-                console.error('[IPC] 转发 connection-graph-updated 失败:', error.message);
-            }
-        });
-    });
-
-    // 子窗口请求主窗口保存连线图数据
-    ipcMain.on('save-connection-graph', (event, data) => {
-        console.log('[IPC] save-connection-graph, 转发给主窗口');
-        mainWindow.webContents.send('save-connection-graph', data);
-    });
-
     // =====================================================
-    // 连线图自动生成 - IPC 中继
+    // iframe 模块 IPC 通讯（规范：iframe-message-{模块名}，参数 {type, data}）
     // =====================================================
 
-    // 主窗口 → 子窗口：生成进度事件广播
-    ipcMain.on('schematic-generation-progress', (event, data) => {
-        openWindows.forEach((subWindow, windowUrl) => {
-            try {
-                if (subWindow && !subWindow.isDestroyed() && subWindow.webContents && !subWindow.webContents.isDestroyed()) {
-                    subWindow.webContents.send('schematic-generation-progress', data);
+    const IFRAME_CHANNEL_CONNECTION_GRAPH = 'iframe-message-connection-graph';
+
+    ipcMain.on(IFRAME_CHANNEL_CONNECTION_GRAPH, (event, payload) => {
+        const senderWindow = BrowserWindow.fromWebContents(event.sender);
+        const isFromMain = senderWindow && senderWindow.id === mainWindow.id;
+        if (isFromMain) {
+            // 主窗口 → 子窗口：广播给所有子窗口，由各模块按 type 自行处理（含 get-graph-data）
+            openWindows.forEach((subWindow) => {
+                try {
+                    if (subWindow && !subWindow.isDestroyed() && subWindow.webContents && !subWindow.webContents.isDestroyed()) {
+                        subWindow.webContents.send(IFRAME_CHANNEL_CONNECTION_GRAPH, payload);
+                    }
+                } catch (error) {
+                    console.error('[IPC] 转发 iframe-message-connection-graph 失败:', error.message);
                 }
-            } catch (error) {
-                console.error('[IPC] 转发 schematic-generation-progress 失败:', error.message);
+            });
+            // 嵌入模式：主窗口内的 connection-graph（如 blockly-editor 的 graph-editor tab）也会发送 get-graph-data，
+            // 主窗口的 ConnectionGraphService 需要收到请求并响应，故主窗口发出的消息也需回传主窗口
+            if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+                mainWindow.webContents.send(IFRAME_CHANNEL_CONNECTION_GRAPH, payload);
             }
-        });
-    });
-
-    // 子窗口 → 主窗口：重新生成请求
-    ipcMain.on('schematic-regenerate-request', (event) => {
-        console.log('[IPC] schematic-regenerate-request, 转发给主窗口');
-        mainWindow.webContents.send('schematic-regenerate-request');
-    });
-
-    // 子窗口 → 主窗口：同步到代码请求
-    ipcMain.on('schematic-sync-to-code-request', (event) => {
-        console.log('[IPC] schematic-sync-to-code-request, 转发给主窗口');
-        mainWindow.webContents.send('schematic-sync-to-code-request');
+        } else {
+            // 子窗口 → 主窗口：转发给主窗口（含 get-graph-data）
+            if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+                mainWindow.webContents.send(IFRAME_CHANNEL_CONNECTION_GRAPH, payload);
+            }
+        }
     });
 }
 

@@ -19,8 +19,6 @@ import { WorkflowService } from './workflow.service';
 import { TranslateService } from '@ngx-translate/core';
 import { NoticeService } from './notice.service';
 
-const { pt } = (window as any)['electronAPI'].platform;
-
 interface ProjectPackageData {
   name: string;
   nickname?: string;
@@ -129,6 +127,7 @@ export class ProjectService {
   // 新建项目
   async projectNew(newProjectData: NewProjectData) {
     try {
+      const separator = this.platformService.getPlatformSeparator();
       // console.log('newProjectData: ', newProjectData);
       const appDataPath = window['path'].getAppDataPath();
       // const projectPath = (newProjectData.path + newProjectData.name).replace(/\s/g, '_');
@@ -137,12 +136,12 @@ export class ProjectService {
 
       this.uiService.updateFooterState({ state: 'doing', text: this.translate.instant('PROJECT.CREATING_PROJECT') });
       await this.cmdService.runAsync(`npm install ${boardPackage} --prefix "${appDataPath}"`);
-      // const templatePath = `${appDataPath}${pt}node_modules${pt}${newProjectData.board.name}${pt}template`;
+      // const templatePath = `${appDataPath}${separator}node_modules${separator}${newProjectData.board.name}${separator}template`;
       const templatePath = window['path'].join(appDataPath, 'node_modules', newProjectData.board.name, 'template');
       // 创建项目目录
       await this.crossPlatformCmdService.createDirectory(projectPath, true);
       // 复制模板文件到项目目录
-      await this.crossPlatformCmdService.copyItem(`${templatePath}${pt}*`, projectPath, true, true);
+      await this.crossPlatformCmdService.copyItem(`${templatePath}${separator}*`, projectPath, true, true);
 
       // 3. 修改package.json文件
       const packageJson = JSON.parse(window['fs'].readFileSync(`${projectPath}/package.json`));
@@ -1582,6 +1581,7 @@ export class ProjectService {
 
   async changeBoard(boardInfo: { "name": string, "version": string }) {
     try {
+      const separator = this.platformService.getPlatformSeparator();
       if (!this.currentProjectPath) {
         throw new Error('当前项目路径未设置');
       }
@@ -1615,8 +1615,8 @@ export class ProjectService {
       const currentPackageJson = await this.getPackageJson();
       
       // 获取新开发板的模板package.json（从 appDataPath 读取）
-      const templatePath = `${appDataPath}${pt}node_modules${pt}${boardInfo.name}${pt}template`;
-      const templatePackageJsonPath = `${templatePath}${pt}package.json`;
+      const templatePath = `${appDataPath}${separator}node_modules${separator}${boardInfo.name}${separator}template`;
+      const templatePackageJsonPath = `${templatePath}${separator}package.json`;
       
       if (window['fs'].existsSync(templatePackageJsonPath)) {
         // 读取模板package.json

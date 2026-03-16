@@ -524,9 +524,9 @@ export class RepetitionDetectionService {
       if (patternLen === 1) {
         threshold = 50; // 50 个相同字符（如 \t\t\t...）
       } else if (patternLen === 2) {
-        threshold = 8;  // 8 次 2 字符模式（如 \t}\t}...）
+        threshold = 25;  // 25 次 2 字符模式（如 \t}\t}...）
       } else {
-        threshold = 5;  // 5 次 3-5 字符模式
+        threshold = 10;  // 10 次 3-5 字符模式
       }
 
       if (consecutiveCount >= threshold) {

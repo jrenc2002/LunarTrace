@@ -433,7 +433,9 @@
         "NO_PROJECT": "未打开项目",
         "NO_ARCH": "项目目录下未找到 arch.md",
         "ARCH_EMPTY": "arch.md 中未找到 mermaid 图表",
-        "ARCH_RENDER_FAILED": "框架图渲染失败"
+        "ARCH_RENDER_FAILED": "框架图渲染失败",
+        "GENERATE_ARCH_PROMPT": "生成项目架构图",
+        "ARCH_AI_BUSY": "正在进行 AI 对话中，请稍后再试"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "请先选择串口",

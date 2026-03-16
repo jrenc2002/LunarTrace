@@ -1,6 +1,6 @@
-﻿import { Injectable } from '@angular/core';
+import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, Subject } from 'rxjs';
+import { Observable, ReplaySubject } from 'rxjs';
 import { MCPTool } from './mcp.service';
 import { ChatAPI } from '../core/api-endpoints';
 import { AilyChatConfigService, ModelConfigOption } from './aily-chat-config.service';
@@ -14,6 +14,7 @@ export interface ChatTextOptions {
   type?: string;
   cover?: boolean;  // 是否覆盖之前的内容
   autoSend?: boolean; // 是否自动发送
+  newChatFirst?: boolean; // 发送前先新建会话
 }
 
 export interface ChatTextMessage {
@@ -38,7 +39,11 @@ export class ChatService {
 
   titleIsGenerating = false;
 
-  private textSubject = new Subject<ChatTextMessage>();
+  /** 由 ChatEngineService 同步：是否正在等待 AI 响应 */
+  isWaiting = false;
+
+  /** ReplaySubject(1) 缓冲最后一条消息，确保晚订阅的 ChatEngineService 能收到 */
+  private textSubject = new ReplaySubject<ChatTextMessage>(1);
   private static instance: ChatService;
 
   private async readHttpErrorBody(response: Response): Promise<any> {
@@ -442,7 +447,7 @@ export class ChatService {
 
       let buffer = '';
       let offset = 0;
-      const chunkSize = 500; // 模拟分块到达
+      const chunkSize = 100; // 模拟分块到达
 
       const intervalId = setInterval(() => {
         if (aborted) return;
@@ -483,7 +488,7 @@ export class ChatService {
             console.warn('解析JSON失败:', error, line);
           }
         }
-      }, 0);
+      }, 300);
 
       // 取消订阅时停止定时器
       return () => {

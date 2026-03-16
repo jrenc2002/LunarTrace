@@ -28,6 +28,7 @@ import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { MermaidComponent } from '../aily-mermaid-viewer/mermaid/mermaid.component';
 import mermaid from 'mermaid';
 import { AilyHost } from '../../core/host';
+import { ChatService } from '../../services/chat.service';
 
 /** 所有 aily-* 自定义代码块类型 */
 const AILY_TYPES = [
@@ -79,8 +80,8 @@ const AILY_TYPES = [
     @if (isType('aily-state') && parsedData) {
       <x-aily-state-viewer [data]="parsedData" />
     }
-    @if (isType('aily-button') && parsedArray) {
-      <x-aily-button-viewer [data]="parsedArray" />
+    @if (isType('aily-button') && (parsedArray || streamStatus === 'loading')) {
+      <x-aily-button-viewer [data]="parsedArray" [streamStatus]="streamStatus" />
     }
     @if (isType('aily-board')) {
       <x-aily-board-viewer [data]="parsedData" />
@@ -94,7 +95,7 @@ const AILY_TYPES = [
     @if (isType('aily-mermaid') || isMermaidStd) {
       <div class="aily-mermaid-wrapper" (click)="openMermaidFullscreen()" title="点击全屏查看">
         <div class="aily-mermaid-toolbar" (click)="$event.stopPropagation()">
-          <button type="button" class="aily-mermaid-toolbar-btn" [class.success]="mermaidCopySuccess"
+          <!-- <button type="button" class="aily-mermaid-toolbar-btn" [class.success]="mermaidCopySuccess"
             (click)="copyMermaidCode($event)"
             nz-tooltip [nzTooltipTitle]="'MENU.FILE_COPY' | translate" nzTooltipPlacement="top">
             @if (mermaidCopySuccess) {
@@ -102,8 +103,8 @@ const AILY_TYPES = [
             } @else {
               <i class="fa-regular fa-copy"></i>
             }
-          </button>
-          @if (archExistsInProject) {
+          </button> -->
+          @if (archNeedsOverwriteConfirm) {
             <button type="button" class="aily-mermaid-toolbar-btn" [class.success]="mermaidDownloadSuccess"
               nz-popconfirm
               [nzPopconfirmTitle]="'AILY_CHAT.MERMAID_ARCH_OVERWRITE_CONTENT' | translate"
@@ -167,7 +168,7 @@ const AILY_TYPES = [
     }
     .aily-mermaid-toolbar {
       position: absolute;
-      top: 8px;
+      top: 4px;
       right: 12px;
       display: flex;
       gap: 3px;
@@ -177,6 +178,7 @@ const AILY_TYPES = [
       border: 1px solid #767676;
       border-radius: 8px;
       padding: 3px;
+      background: #333333;
     }
     .aily-mermaid-wrapper:hover .aily-mermaid-toolbar {
       opacity: 1;
@@ -236,6 +238,7 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
     private modal: NzModalService,
     private message: NzMessageService,
     private translate: TranslateService,
+    private chatService: ChatService,
   ) {}
 
   // ===== Getters =====
@@ -281,6 +284,24 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
     return host.fs.existsSync(archPath);
   }
 
+  /** 孤儿模式下 .chat_history 下是否已存在 {sessionId}_arch.md（用于决定是否显示覆盖确认） */
+  get archExistsInOrphanChatHistory(): boolean {
+    const host = AilyHost.get();
+    const rootPath = host?.project?.projectRootPath;
+    const projectPath = host?.project?.currentProjectPath || rootPath;
+    const isOrphan = !projectPath || (rootPath && projectPath === rootPath);
+    if (!isOrphan || !rootPath || !host?.fs || !host?.path) return false;
+    const sessionId = this.chatService.currentSessionId;
+    if (!sessionId) return false;
+    const archPath = host.path.join(rootPath, '.chat_history', `${sessionId}_arch.md`);
+    return host.fs.existsSync(archPath);
+  }
+
+  /** 是否需要覆盖确认（项目 arch 或孤儿 arch 已存在） */
+  get archNeedsOverwriteConfirm(): boolean {
+    return this.archExistsInProject || this.archExistsInOrphanChatHistory;
+  }
+
   // ===== Lifecycle =====
   ngOnChanges(changes: SimpleChanges): void {
     this.parseContent();
@@ -293,6 +314,7 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
 
   // ===== Parsing =====
   private parseContent(): void {
+    const prevParsedArray = this.lang === 'aily-button' ? this.parsedArray : null;
     this.parsedData = null;
     this.parsedArray = null;
 
@@ -309,7 +331,10 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
         this.parsedData = parsed;
       }
     } catch {
-      // JSON 解析失败静默忽略
+      // 流式过程中 parse 可能因中间 chunk 失败，保留上次成功结果避免按钮闪烁
+      if (this.streamStatus === 'loading' && prevParsedArray?.length) {
+        this.parsedArray = prevParsedArray;
+      }
     }
   }
 
@@ -396,10 +421,21 @@ export class AilyChatCodeComponent implements OnChanges, OnDestroy {
 
     const host = AilyHost.get();
     const projectPath = host?.project?.currentProjectPath || host?.project?.projectRootPath;
+    const rootPath = host?.project?.projectRootPath;
+    const isOrphan = !projectPath || (rootPath && projectPath === rootPath);
 
-    if (projectPath && host?.fs && host?.path) {
+    if (projectPath && host?.fs && host?.path && !isOrphan) {
       const archPath = host.path.join(projectPath, 'arch.md');
       this.writeArchFile(host, archPath, content);
+    } else if (isOrphan && rootPath && host?.fs && host?.path) {
+      const sessionId = this.chatService.currentSessionId;
+      if (sessionId) {
+        const chatHistoryDir = host.path.join(rootPath, '.chat_history');
+        const archPath = host.path.join(chatHistoryDir, `${sessionId}_arch.md`);
+        this.writeArchFile(host, archPath, content);
+      } else {
+        this.downloadArchAsBlob(content);
+      }
     } else {
       this.downloadArchAsBlob(content);
     }

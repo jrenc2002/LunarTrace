@@ -4,6 +4,9 @@ import {
   OnChanges,
   signal,
   SimpleChanges,
+  ViewChild,
+  ElementRef,
+  AfterViewChecked,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { XMarkdownComponent } from 'ngx-x-markdown';
@@ -17,12 +20,14 @@ import { AilyChatCodeComponent } from './aily-chat-code.component';
   standalone: true,
   imports: [CommonModule, XMarkdownComponent],
 })
-export class XDialogComponent implements OnChanges {
+export class XDialogComponent implements OnChanges, AfterViewChecked {
   @Input() role = 'user';
   @Input() content = '';
   @Input() doing = false;
   /** 消息来源：mainAgent 为主Agent，其他值为子Agent名称 */
   @Input() source: string = 'mainAgent';
+
+  @ViewChild('subagentBody') subagentBodyRef?: ElementRef<HTMLElement>;
 
   /** 判断是否为子Agent消息 */
   get isSubagent(): boolean {
@@ -39,6 +44,11 @@ export class XDialogComponent implements OnChanges {
       .trim();
   }
 
+  /** 子Agent折叠面板展开状态 */
+  subagentExpanded = false;
+  private shouldScrollSubagent = false;
+  private prevDoing = false;
+
   streamContent = signal('');
   streamingConfig = signal<StreamingOption>({ hasNextChunk: false, enableAnimation: false });
   readonly componentMap: ComponentMap = { code: AilyChatCodeComponent };
@@ -54,6 +64,20 @@ export class XDialogComponent implements OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges) {
+    // 子Agent折叠面板：doing时自动展开，完成时自动收起
+    if (this.isSubagent && changes['doing']) {
+      if (this.doing) {
+        this.subagentExpanded = true;
+      } else if (this.prevDoing && !this.doing) {
+        // 从doing→done：自动折叠
+        this.subagentExpanded = false;
+      }
+      this.prevDoing = this.doing;
+    }
+    if (this.isSubagent && changes['content']) {
+      this.shouldScrollSubagent = true;
+    }
+
     if (changes['doing'] || changes['content']) {
       const thinkExecuting = this.isThinkExecuting(this.content || '');
       this.streamingConfig.set({
@@ -84,6 +108,14 @@ export class XDialogComponent implements OnChanges {
     // const separator = current && !current.endsWith('\n') ? '\n\n' : '';
     // this.streamContent.set(current + separator + content);
     this.streamContent.set(content);
+  }
+
+  ngAfterViewChecked(): void {
+    if ((this.shouldScrollSubagent || this.doing) && this.subagentBodyRef?.nativeElement) {
+      const el = this.subagentBodyRef.nativeElement;
+      el.scrollTop = el.scrollHeight;
+      this.shouldScrollSubagent = false;
+    }
   }
 
   // ===== Preprocessing =====

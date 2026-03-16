@@ -380,7 +380,9 @@
         "NO_PROJECT": "열린 프로젝트가 없습니다",
         "NO_ARCH": "프로젝트 디렉토리에서 arch.md를 찾을 수 없습니다",
         "ARCH_EMPTY": "arch.md에서 mermaid 다이어그램을 찾을 수 없습니다",
-        "ARCH_RENDER_FAILED": "아키텍처 다이어그램 렌더링 실패"
+        "ARCH_RENDER_FAILED": "아키텍처 다이어그램 렌더링 실패",
+        "GENERATE_ARCH_PROMPT": "프로젝트 아키텍처 다이어그램 생성",
+        "ARCH_AI_BUSY": "AI 대화가 진행 중입니다. 잠시 후 다시 시도해 주세요"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "먼저 시리얼 포트를 선택하세요",

@@ -384,7 +384,9 @@
         "NO_PROJECT": "Nenhum projeto aberto",
         "NO_ARCH": "arch.md não encontrado no diretório do projeto",
         "ARCH_EMPTY": "Nenhum diagrama mermaid encontrado em arch.md",
-        "ARCH_RENDER_FAILED": "Falha ao renderizar diagrama de arquitetura"
+        "ARCH_RENDER_FAILED": "Falha ao renderizar diagrama de arquitetura",
+        "GENERATE_ARCH_PROMPT": "Gerar diagrama de arquitetura do projeto",
+        "ARCH_AI_BUSY": "A IA está em uma conversa, tente novamente mais tarde"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "Selecione uma porta serial primeiro",

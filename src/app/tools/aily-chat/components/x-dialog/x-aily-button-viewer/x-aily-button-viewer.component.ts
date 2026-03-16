@@ -1,4 +1,4 @@
-﻿import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ChatService } from '../../../services/chat.service';
 import { NzButtonModule } from 'ng-zorro-antd/button';
@@ -35,6 +35,11 @@ interface ButtonData {
   standalone: true,
   imports: [CommonModule, NzButtonModule],
   template: `
+    @if (!isHistory && streamStatus === 'loading' && !buttons.length) {
+      <div class="ac-btns ac-loading">
+        <i class="fa-light fa-spinner-third fa-spin"></i>
+      </div>
+    }
     @if (!isHistory && buttons.length) {
       <div class="ac-btns">
         @for (btn of buttons; track btn.action || $index) {
@@ -78,10 +83,23 @@ interface ButtonData {
     .ac-btn[data-type="link"]:hover { color: #40a9ff; transform: none; box-shadow: none; }
     .ac-btn[data-type="text"] { border: none; background: none; min-width: auto; height: auto; }
     .ac-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
+    .ac-loading {
+      min-height: 48px;
+      align-items: center;
+      justify-content: flex-start;
+      margin: 0;
+      border-radius: 4px;
+      overflow-x: auto;
+      background: #0d1117;
+      padding: 12px;
+      border: 1px solid #444;
+      color: #8c8c8c;
+    }
   `],
 })
 export class XAilyButtonViewerComponent implements OnChanges {
   @Input() data: any = null;
+  @Input() streamStatus: string = 'done';
 
   buttons: ButtonData[] = [];
   isDisabled = false;
@@ -100,7 +118,8 @@ export class XAilyButtonViewerComponent implements OnChanges {
 
   private processData(): void {
     if (!this.data) {
-      this.buttons = [];
+      // 流式过程中 parse 可能因中间 chunk 失败，data 短暂为 null，此时保留已有按钮避免闪烁
+      if (this.streamStatus === 'done') this.buttons = [];
       return;
     }
     this.isHistory = this.data.isHistory === true;

@@ -91,62 +91,27 @@ async function perform1200bpsTouch(portPath) {
     });
 }
 
-// wait_for_upload 操作：等待新串口出现
-async function performWaitForUpload(portPath) {
-    logger.log('执行 wait_for_upload, 当前串口:', portPath);
-    const SP = loadSerialPort();
-    
-    // 获取当前串口列表
-    const portListBefore = await getPortsList();
-    logger.log('操作前串口列表:', portListBefore.map(p => p.path));
-    
-    // 连接串口
-    const port = new SP({
-        path: portPath,
-        baudRate: 1200,
-        autoOpen: false
-    });
-
-    await new Promise((resolve, reject) => {
-        port.open((err) => {
-            if (err) {
-                logger.error('wait_for_upload 串口打开失败:', err.message);
-                reject(err);
-                return;
-            }
-            resolve();
-        });
-    });
-
-    // 等待5秒
-    await delay(5000);
-
-    // 关闭串口
-    await new Promise((resolve) => {
-        port.close((err) => {
-            if (err) {
-                logger.warn('wait_for_upload 串口关闭警告:', err.message);
-            }
-            resolve();
-        });
-    });
-
-    // 获取新的串口列表
-    const portListAfter = await getPortsList();
-    logger.log('操作后串口列表:', portListAfter.map(p => p.path));
-
-    // 找出新增的串口
-    const newPorts = portListAfter.filter(
-        port => !portListBefore.some(existingPort => existingPort.path === port.path)
-    );
-
-    if (newPorts.length > 0) {
-        logger.log('检测到新串口:', newPorts[0].path);
-        return newPorts[0].path;
-    } else {
-        logger.log('没有检测到新串口，继续使用旧串口');
-        return portPath;
+// 轮询等待新串口出现
+// portsBefore: 操作前的串口列表
+// timeout: 超时时间（毫秒），默认 10000
+// interval: 轮询间隔（毫秒），默认 200
+// 返回新端口路径，超时返回 null
+async function waitForNewPort(portsBefore, timeout = 10000, interval = 200) {
+    const startTime = Date.now();
+    logger.log(`开始轮询等待新串口（超时 ${timeout}ms，间隔 ${interval}ms）...`);
+    while (Date.now() - startTime < timeout) {
+        const portsNow = await getPortsList();
+        const newPorts = portsNow.filter(
+            p => !portsBefore.some(ep => ep.path === p.path)
+        );
+        if (newPorts.length > 0) {
+            logger.log(`轮询 ${Date.now() - startTime}ms 后检测到新端口:`, newPorts[0].path);
+            return newPorts[0].path;
+        }
+        await delay(interval);
     }
+    logger.log(`轮询超时（${timeout}ms），未检测到新端口`);
+    return null;
 }
 
 async function main() {
@@ -271,23 +236,58 @@ async function main() {
             }
         });
 
-        // 9. 上传预处理：处理 1200bps touch 和 wait_for_upload
-        let finalSerialPort = initialSerialPort;
+        // 9. 预构建上传命令（串口用占位符，后续替换）
+        const platform = os.platform() === 'win32' ? 'win32' : (os.platform() === 'darwin' ? 'darwin' : 'linux');
+        const SERIAL_PLACEHOLDER = '__SERIAL_PORT_PLACEHOLDER__';
         
+        const { command, args: templateArgs } = await processUploadParams(
+            uploadParam,
+            buildPath,
+            toolsPath,
+            fullSdkPath,
+            baudRate,
+            toolDependencies,
+            SERIAL_PLACEHOLDER,
+            platform
+        );
+
+        // 10. 上传预处理：处理 1200bps touch 和 wait_for_upload
+        // 四种组合：
+        //   touch=false, wait=false → 直接使用原端口
+        //   touch=true,  wait=false → 执行 1200bps touch，短暂延时后检测一次新端口
+        //   touch=false, wait=true  → 不做 touch，轮询等待新端口出现（外部触发）
+        //   touch=true,  wait=true  → 执行 1200bps touch，然后轮询等待新端口出现
+        let finalSerialPort = initialSerialPort;
+
+        // 如果需要检测新端口，先记录当前端口列表作为基准
+        const needDetectNewPort = use_1200bps_touch || wait_for_upload;
+        const portsBefore = needDetectNewPort ? await getPortsList() : [];
+        if (needDetectNewPort) {
+            logger.log('操作前串口列表:', portsBefore.map(p => p.path));
+        }
+
+        // Step 1: 执行 1200bps touch（如果配置了）
         if (use_1200bps_touch) {
-            // 记录 touch 前的端口列表，用于检测 bootloader 新端口
-            const portsBefore1200 = await getPortsList();
             try {
                 await perform1200bpsTouch(finalSerialPort);
             } catch (err) {
-                // touch 失败时仅警告，不终止流程，让上传工具自行处理端口
                 logger.warn('1200bps touch 警告（将继续尝试上传）:', err.message);
             }
-            // 等待 bootloader 枚举
-            await delay(2000);
-            const portsAfter1200 = await getPortsList();
-            const newBootloaderPorts = portsAfter1200.filter(
-                p => !portsBefore1200.some(ep => ep.path === p.path)
+        }
+
+        // Step 2: 等待新端口
+        if (wait_for_upload) {
+            const newPort = await waitForNewPort(portsBefore, 10000, 200);
+            if (newPort) {
+                finalSerialPort = newPort;
+            } else {
+                logger.log('未检测到新端口，继续使用原端口:', finalSerialPort);
+            }
+        } else if (use_1200bps_touch) {
+            await delay(200);
+            const portsAfter = await getPortsList();
+            const newBootloaderPorts = portsAfter.filter(
+                p => !portsBefore.some(ep => ep.path === p.path)
             );
             if (newBootloaderPorts.length > 0) {
                 finalSerialPort = newBootloaderPorts[0].path;
@@ -297,39 +297,13 @@ async function main() {
             }
         }
 
-        if (wait_for_upload && !use_1200bps_touch) {
-            // 仅在未执行 use_1200bps_touch 的情况下才执行 wait_for_upload
-            // 避免双重 1200bps 触发导致设备状态异常
-            try {
-                finalSerialPort = await performWaitForUpload(finalSerialPort);
-            } catch (err) {
-                throw new Error('串口操作失败: ' + err.message);
-            }
-        } else if (wait_for_upload && use_1200bps_touch) {
-            // use_1200bps_touch 已完成触发和端口检测，此处仅额外等待确保 bootloader 就绪
-            await delay(1000);
-            logger.log('use_1200bps_touch 已处理端口切换，跳过 wait_for_upload 的重复触发步骤');
-        }
-
+        // 11. 将占位符替换为最终串口，生成最终参数
         logger.log('使用串口:', finalSerialPort);
-
-        // 10. 处理上传参数
-        const platform = os.platform() === 'win32' ? 'win32' : (os.platform() === 'darwin' ? 'darwin' : 'linux');
-        
-        const { command, args } = await processUploadParams(
-            uploadParam,
-            buildPath,
-            toolsPath,
-            fullSdkPath,
-            baudRate,
-            toolDependencies,
-            finalSerialPort,
-            platform
-        );
+        const args = templateArgs.map(a => a.replace(SERIAL_PLACEHOLDER, finalSerialPort));
 
         logger.log(`Executing: ${command} ${args.join(' ')}`);
 
-        // 11. 执行上传命令
+        // 12. 执行上传命令
         const child = spawn(command, args, {
             cwd: buildPath,
             shell: true,
