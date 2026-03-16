@@ -230,8 +230,8 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
   }
 
   showCircuit() {
-    // this.message.warning(this.translate.instant('COMING SOON'));
-    // return;
+    this.message.warning(this.translate.instant('COMING SOON'));
+    return;
     if (!this.electronService.isElectron || !this.boardPackagePath) {
       this.message.warning(this.translate.instant('FLOAT_SIDER.NO_PINMAP'));
       return;
