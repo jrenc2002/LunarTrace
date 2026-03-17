@@ -531,6 +531,6 @@ export class IframeComponent implements OnInit, OnDestroy {
     //   state: 'doing',
     //   showProgress: false,
     // });
-    this.sendToChat('@schematicAgent 请根据当前连线图方案，将硬件连线配置同步到项目代码中。');
+    this.sendToChat('请根据当前连线图方案，将硬件连线配置同步到项目代码中。');
   }
 }
