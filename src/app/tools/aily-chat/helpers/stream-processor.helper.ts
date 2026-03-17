@@ -385,7 +385,7 @@ export class StreamProcessorHelper {
             }
 
             if ((data.tool_name !== 'todo_write_tool' && data.tool_name !== 'search_available_tools'
-              && data.tool_name !== 'ask_user') && resultText) {
+              && data.tool_name !== 'ask_user' && data.tool_name !== 'save_arch') && resultText) {
               let finalState: ToolCallState;
               switch (resultState) {
                 case 'error': finalState = ToolCallState.ERROR; break;
@@ -393,6 +393,11 @@ export class StreamProcessorHelper {
                 default: finalState = ToolCallState.DONE; break;
               }
               this.engine.msg.completeToolCall(data.tool_id, data.tool_name, finalState, resultText);
+            }
+
+            // 工具返回 metadata.chatContent 时，追加内容到对话中（如框架图渲染）
+            if (toolResult?.metadata?.chatContent) {
+              this.engine.msg.appendMessage('aily', toolResult.metadata.chatContent, messageSource);
             }
 
             if (statelessMode) {

@@ -706,7 +706,7 @@ class SaveArchTool implements IAilyTool {
           host.fs.mkdirSync(dir, { recursive: true });
         }
         host.fs.writeFileSync(archPath, content);
-        return { is_error: false, content: `框架图已保存到 ${archPath}` };
+        return { is_error: false, content: `框架图已保存到 ${archPath}（已在对话中渲染，无需再次输出）`, metadata: { chatContent: `\n\n${content}\n` } };
       } else if (isOrphan && rootPath && ctx.sessionId) {
         const chatHistoryDir = host.path.join(rootPath, '.chat_history');
         if (!host.fs.existsSync(chatHistoryDir)) {
@@ -714,7 +714,7 @@ class SaveArchTool implements IAilyTool {
         }
         const archPath = host.path.join(chatHistoryDir, `${ctx.sessionId}_arch.md`);
         host.fs.writeFileSync(archPath, content);
-        return { is_error: false, content: `框架图已保存到 ${archPath}` };
+        return { is_error: false, content: `框架图已保存到 ${archPath}（已在对话中渲染，无需再次输出）`, metadata: { chatContent: `\n\n${content}\n` } };
       } else {
         return { is_error: true, content: '无法确定保存路径：当前未打开项目且无会话 ID' };
       }
