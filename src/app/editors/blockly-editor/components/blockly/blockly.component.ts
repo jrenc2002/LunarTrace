@@ -428,6 +428,12 @@ export class BlocklyComponent implements OnInit, OnDestroy {
       if (this.configData.blockly.minimap) {
         this.minimap = new Minimap(this.workspace);
         this.minimap.init();
+        // 禁用 minimap 内置的 mirror（Events.fromJson 重放会触发 custom field 的 "associated block is undefined"）
+        // 仅使用 syncMinimap 的全量 XML 同步，避免 Events.fromJson 与 custom field 的兼容性问题
+        (this.minimap as any).mirror = () => {};
+        // 将 focus region 的 update 替换为空实现：mirror 禁用后 minimap 仅由 syncMinimap 更新，空内容时原 update 会算出 NaN 导致 translate(NaN,NaN)；disableFocusRegion 会留下未移除的 resize 监听导致 "must be initialized" 报错
+        const fr = (this.minimap as any).focusRegion;
+        if (fr) fr.update = () => {};
       }
 
       this.workspace.addChangeListener(BlockDynamicConnection.finalizeConnections);
@@ -609,19 +615,30 @@ export class BlocklyComponent implements OnInit, OnDestroy {
   /**
    * 将主工作区状态全量同步到 Minimap
    * 使用 Xml 路径加载，避免 serialization.load 触发的 BLOCK_MOVE 事件导致 "block could not be found" 错误
+   * 同步时禁用事件，避免 custom field 在反序列化时因 "associated block is undefined" 报错
    */
   private syncMinimap(): void {
     const m = this.minimap as any;
     if (!m?.minimapWorkspace || !this.workspace) return;
+    const wasEnabled = Blockly.Events.isEnabled();
     try {
+      Blockly.Events.disable();
       const xml = Blockly.Xml.workspaceToDom(this.workspace, true);
       m.minimapWorkspace.clear();
       Blockly.Xml.domToWorkspace(xml, m.minimapWorkspace);
       Blockly.renderManagement.finishQueuedRenders().then(() => {
-        if (m.minimapWorkspace) m.minimapWorkspace.zoomToFit();
+        try {
+          if (m?.minimapWorkspace) m.minimapWorkspace.zoomToFit();
+        } catch (e) {
+          console.warn('[Blockly] Minimap zoomToFit failed:', e);
+        }
+      }).catch((e) => {
+        console.warn('[Blockly] Minimap render failed:', e);
       });
     } catch (e) {
       console.warn('[Blockly] Minimap sync failed:', e);
+    } finally {
+      if (wasEnabled) Blockly.Events.enable();
     }
   }
 
