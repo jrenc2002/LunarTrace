@@ -202,7 +202,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
       require("fs").writeFileSync(path, buffer);
     },
     mkdirSync: (path) => require("fs").mkdirSync(path, { recursive: true }),
-    copySync: (src, dest) => require("fs-extra").copySync(src, dest),
+    copySync: (src, dest) => require("fs").cpSync(src, dest, { recursive: true }),
     existsSync: (path) => require("fs").existsSync(path),
     statSync: (path) => require("fs").statSync(path),
     isDirectory: (path) => require("fs").statSync(path).isDirectory(),
