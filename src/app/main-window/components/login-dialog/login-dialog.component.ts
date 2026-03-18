@@ -10,7 +10,7 @@ import { AuthService } from '../../../services/auth.service';
 import { Subject, takeUntil } from 'rxjs';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { ElectronService } from '../../../services/electron.service';
-import sha256 from 'crypto-js/sha256';
+import { sha256Hex } from '../../../utils/crypto.utils';
 
 @Component({
   selector: 'app-login-dialog',
@@ -146,7 +146,7 @@ export class LoginDialogComponent {
       try {
         const loginData = {
           username: this.inputUsername,
-          password: sha256(this.inputPassword).toString()
+          password: await sha256Hex(this.inputPassword)
         };
   
         this.authService.login(loginData).subscribe({

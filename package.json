@@ -159,7 +159,6 @@
     "blockly": "^11.2.2",
     "buffer": "^6.0.3",
     "cropperjs": "^1.6.2",
-    "crypto-js": "^4.2.0",
     "dragselect": "^2.7.4",
     "esptool-js": "^0.5.7",
     "fancy-ansi": "^0.1.3",

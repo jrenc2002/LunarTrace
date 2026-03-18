@@ -3,7 +3,6 @@ import { ToolContainerComponent } from '../../components/tool-container/tool-con
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { AuthService, LoginRequest, RegisterRequest } from '../../services/auth.service';
-import sha256 from 'crypto-js/sha256';
 import { Subject, takeUntil } from 'rxjs';
 import { ElectronService } from '../../services/electron.service';
 import { NzModalService } from 'ng-zorro-antd/modal';
