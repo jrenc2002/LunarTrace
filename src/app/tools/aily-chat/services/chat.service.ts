@@ -618,7 +618,8 @@ export class ChatService {
     mode: string = 'agent',
     llmConfig?: any,
     selectModel?: string,
-    maxCount?: number
+    maxCount?: number,
+    agent?: string,
   ): Observable<any> {
     return new Observable(observer => {
       let aborted = false;
@@ -639,6 +640,9 @@ export class ChatService {
       }
       if (selectModel) {
         payload.select_model = selectModel;
+      }
+      if (agent) {
+        payload.agent = agent;
       }
 
       AilyHost.get().auth.getToken!().then(token => {

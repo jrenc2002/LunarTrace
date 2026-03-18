@@ -143,6 +143,17 @@ export class StreamProcessorHelper {
 
             // Subagent 工具调用
             if (statelessMode && SubagentSessionService.isSubagentToolCall(data)) {
+              // 泛化 run_subagent：从 tool_args 中提取真正的 agent 名称
+              // 后端 SSE 事件的 agent_name 可能是 'subagent'（从 tool_name 去掉 run_ 得来），
+              // 而非实际的子代理名称（如 'schematicAgent'），需要从 tool_args.agent 修正
+              if (data.tool_name === 'run_subagent') {
+                try {
+                  const parsedArgs = typeof data.tool_args === 'string' ? JSON.parse(data.tool_args) : data.tool_args;
+                  if (parsedArgs?.agent) {
+                    data.agent_name = parsedArgs.agent;
+                  }
+                } catch { /* tool_args 解析失败则沿用原 agent_name */ }
+              }
               console.log(`[Subagent] 🚀 调用 ${data.tool_name} (id=${data.tool_id})`, '\n  参数:', typeof data.tool_args === 'string' ? data.tool_args : JSON.stringify(data.tool_args, null, 2));
               this.engine.currentTurnToolCalls.push({ tool_id: data.tool_id, tool_name: data.tool_name, tool_args: data.tool_args });
               const subagentDisplayName = data.agent_name || data.tool_name;
