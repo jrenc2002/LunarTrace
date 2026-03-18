@@ -229,6 +229,12 @@ export class IframeComponent implements OnInit, OnDestroy {
             this.pushDataToRemote();
           },
           generateGraphData: () => {
+            this.noticeService.update({
+              title: 'AI生成中',
+              text: '正在生成连线图...',
+              state: 'doing',
+              showProgress: false,
+            });
             // this.backgroundAgent.generateSchematic();
             // this.uiService.openAndSendToChat('@schematicAgent 生成项目连线图', { autoSend: true });
             this.sendToChat('@schematicAgent 生成项目连线图');
@@ -525,12 +531,13 @@ export class IframeComponent implements OnInit, OnDestroy {
    * 操作按钮: 同步到代码
    */
   onSyncToCode(): void {
-    // this.noticeService.update({
-    //   title: 'AI生成中',
-    //   text: '正在同步连线配置到代码，请在对话框中查看进度...',
-    //   state: 'doing',
-    //   showProgress: false,
-    // });
     this.sendToChat('请根据当前连线图方案，将硬件连线配置同步到项目代码中。');
+    this.noticeService.update({
+      title: 'AI生成中',
+      text: '正在同步连线配置到代码，请在对话框中查看进度...',
+      state: 'doing',
+      showProgress: false,
+    });
+    this.sendToChat('@schematicAgent 请根据当前连线图方案，将硬件连线配置同步到项目代码中。');
   }
 }

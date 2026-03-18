@@ -88,7 +88,6 @@ export { ToolCallState };
     FormsModule,
     CommonModule,
     XDialogComponent,
-    DialogComponent,
     NzButtonModule,
     ToolContainerComponent,
     NzResizableModule,
