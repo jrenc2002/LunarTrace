@@ -13,7 +13,7 @@
       <div class="icon ccenter"><i class="{{ item.icon }}"></i></div>
       }
       <div class="name ellipsis">{{ item.name | translate }}</div>
-      <div class="text ellipsis">{{ item.text }}</div>
+      <div class="text ellipsis">{{ formatShortcutForDisplay(item.text) }}</div>
       @if(item.actions && item.actions.length > 0){
       <div class="item-actions" (click)="$event.stopPropagation()">
         @for(act of item.actions; track act.action){

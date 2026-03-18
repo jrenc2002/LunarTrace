@@ -692,9 +692,10 @@ export class ConnectionGraphService {
   }
 
   /**
-   * 从 pinmap_catalog.json 构建同库下的类似组件列表（含自身）
+   * 从 pinmap_catalog.json 构建同 model 下的类似组件列表（含自身）
+   * 仅读取当前 model 的 variants 数组，不遍历整个 models
    * @param packagePath 库包路径 (如 .../node_modules/@aily-project/lib-dht)
-   * @param currentFullId 当前组件的 fullId（用于构建 fullId，自身也会包含在列表中）
+   * @param currentFullId 当前组件的 fullId（如 lib-dht:dht11:module）
    */
   private buildSimilarComponentsFromCatalog(
     packagePath: string,
@@ -703,34 +704,34 @@ export class ConnectionGraphService {
     const catalog = this.readPinmapCatalog(packagePath);
     if (!catalog?.models?.length) return [];
 
+    const { packageSlug, modelId } = this.parsePinmapId(currentFullId);
+    const model = catalog.models.find(m => m.id === modelId);
+    if (!model?.variants?.length) return [];
+
     const result: SimilarComponent[] = [];
-    const { packageSlug } = this.parsePinmapId(currentFullId);
+    for (const variant of model.variants) {
+      const fullId = variant.fullId || this.buildPinmapId(packageSlug, model.id, variant.id);
 
-    for (const model of catalog.models) {
-      for (const variant of model.variants || []) {
-        const fullId = this.buildPinmapId(packageSlug, model.id, variant.id);
-
-        let pinmapFile = variant.pinmapFile;
-        if (!pinmapFile && variant.pinmapRef && catalog.sharedPinmaps?.[variant.pinmapRef]) {
-          pinmapFile = catalog.sharedPinmaps[variant.pinmapRef].file;
-        }
-
-        let data: ComponentConfig | undefined;
-        if (pinmapFile) {
-          const pinmapPath = this.electronService.pathJoin(packagePath, pinmapFile);
-          data = this.readComponentConfig(pinmapPath) || undefined;
-        }
-
-        result.push({
-          fullId,
-          modelId: model.id,
-          variantId: variant.id,
-          name: variant.name,
-          modelName: model.name,
-          pinmapFile: pinmapFile || undefined,
-          data,
-        });
+      let pinmapFile = variant.pinmapFile;
+      if (!pinmapFile && variant.pinmapRef && catalog.sharedPinmaps?.[variant.pinmapRef]) {
+        pinmapFile = catalog.sharedPinmaps[variant.pinmapRef].file;
       }
+
+      let data: ComponentConfig | undefined;
+      if (pinmapFile) {
+        const pinmapPath = this.electronService.pathJoin(packagePath, pinmapFile);
+        data = this.readComponentConfig(pinmapPath) || undefined;
+      }
+
+      result.push({
+        fullId,
+        modelId: model.id,
+        variantId: variant.id,
+        name: variant.name,
+        modelName: model.name,
+        pinmapFile: pinmapFile || undefined,
+        data,
+      });
     }
     return result;
   }

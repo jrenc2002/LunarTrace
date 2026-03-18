@@ -11,6 +11,7 @@
 /node_modules
 npm-debug.log
 yarn-error.log
+yarn.lock
 /child/node
 /child/clangd
 /child/aily-builder

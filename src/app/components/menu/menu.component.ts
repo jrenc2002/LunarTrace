@@ -12,6 +12,7 @@ import {
 import { TranslateModule } from '@ngx-translate/core';
 import { IMenuItem } from '../../configs/menu.config';
 import { Router } from '@angular/router';
+import { PlatformService } from '../../services/platform.service';
 
 @Component({
   selector: 'app-menu',
@@ -52,7 +53,19 @@ export class MenuComponent {
   submenuMaxHeight = 'none';
   submenuOverflow = 'visible';
 
-  constructor(private router: Router) { }
+  constructor(
+    private router: Router,
+    private platformService: PlatformService
+  ) { }
+
+  /** 按平台格式化快捷键显示：macOS 显示 ⌘，Windows 显示 Ctrl */
+  formatShortcutForDisplay(text: string): string {
+    if (!text) return '';
+    if (this.platformService.isMac()) {
+      return text.replace(/Ctrl\/⌘|Ctrl/gi, '⌘');
+    }
+    return text.replace(/Ctrl\/⌘|⌘/g, 'Ctrl');
+  }
 
   ngAfterViewInit(): void {
     document.addEventListener('click', this.handleDocumentClick);

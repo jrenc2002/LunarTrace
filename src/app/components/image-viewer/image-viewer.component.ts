@@ -1,4 +1,4 @@
-import { Component, OnDestroy } from '@angular/core';
+import { Component, OnDestroy, NgZone, ElementRef, ViewChild, AfterViewInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 @Component({
@@ -7,9 +7,12 @@ import { CommonModule } from '@angular/common';
   templateUrl: './image-viewer.component.html',
   styleUrl: './image-viewer.component.scss'
 })
-export class ImageViewerComponent implements OnDestroy {
+export class ImageViewerComponent implements OnDestroy, AfterViewInit {
+  @ViewChild('contentEl') private contentElRef!: ElementRef<HTMLElement>;
   visible = false;
   img = '';
+  private rafId = 0;
+  private contentEl: HTMLElement | null = null;
 
   // 缩放和拖拽相关属性
   scale = 1;
@@ -28,6 +31,18 @@ export class ImageViewerComponent implements OnDestroy {
   readonly MIN_SCALE = 0.1;
   readonly MAX_SCALE = 10;
   readonly SCALE_STEP = 0.1;
+
+  constructor(private ngZone: NgZone) {}
+
+  ngAfterViewInit(): void {
+    this.syncContentEl();
+  }
+
+  private syncContentEl(): void {
+    if (this.contentElRef) {
+      this.contentEl = this.contentElRef.nativeElement;
+    }
+  }
 
   /**
    * 打开图片查看器
@@ -48,6 +63,7 @@ export class ImageViewerComponent implements OnDestroy {
   }
 
   ngOnDestroy(): void {
+    if (this.rafId) cancelAnimationFrame(this.rafId);
     document.removeEventListener('mousemove', this.onDocumentMouseMove);
     document.removeEventListener('mouseup', this.onDocumentMouseUp);
     document.body.style.userSelect = '';
@@ -95,6 +111,7 @@ export class ImageViewerComponent implements OnDestroy {
   // 鼠标按下开始拖拽
   onMouseDown(event: MouseEvent): void {
     if (event.button === 0) {
+      this.syncContentEl();
       this.isDragging = true;
       this.hasDragged = false;
       this.dragStartX = event.clientX;
@@ -102,41 +119,62 @@ export class ImageViewerComponent implements OnDestroy {
       this.lastTranslateX = this.translateX;
       this.lastTranslateY = this.translateY;
 
+      // 拖拽期间禁用 CSS transition
+      if (this.contentEl) this.contentEl.style.transition = 'none';
+
       event.preventDefault();
       document.body.style.userSelect = 'none';
 
-      document.addEventListener('mousemove', this.onDocumentMouseMove);
-      document.addEventListener('mouseup', this.onDocumentMouseUp);
+      // 在 Angular zone 外添加全局鼠标事件监听，避免每次 mousemove 触发变更检测
+      this.ngZone.runOutsideAngular(() => {
+        document.addEventListener('mousemove', this.onDocumentMouseMove);
+        document.addEventListener('mouseup', this.onDocumentMouseUp);
+      });
     }
   }
 
-  // 全局鼠标移动事件
+  // 全局鼠标移动事件（运行在 Angular zone 外）
   onDocumentMouseMove = (event: MouseEvent): void => {
-    if (this.isDragging) {
-      const deltaX = event.clientX - this.dragStartX;
-      const deltaY = event.clientY - this.dragStartY;
+    if (!this.isDragging) return;
+    const deltaX = event.clientX - this.dragStartX;
+    const deltaY = event.clientY - this.dragStartY;
 
-      if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
-        this.hasDragged = true;
-      }
+    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+      this.hasDragged = true;
+    }
 
-      this.translateX = this.lastTranslateX + deltaX;
-      this.translateY = this.lastTranslateY + deltaY;
+    this.translateX = this.lastTranslateX + deltaX;
+    this.translateY = this.lastTranslateY + deltaY;
+
+    // 用 rAF 合并渲染，直接操作 DOM 跳过 Angular 变更检测
+    if (!this.rafId) {
+      this.rafId = requestAnimationFrame(() => {
+        this.rafId = 0;
+        if (this.contentEl) {
+          this.contentEl.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
+        }
+      });
     }
   };
 
   // 全局鼠标松开事件
-  onDocumentMouseUp = (event: MouseEvent): void => {
+  onDocumentMouseUp = (_event: MouseEvent): void => {
     this.isDragging = false;
     document.body.style.userSelect = '';
+
+    // 恢复 CSS transition
+    if (this.contentEl) this.contentEl.style.transition = '';
 
     document.removeEventListener('mousemove', this.onDocumentMouseMove);
     document.removeEventListener('mouseup', this.onDocumentMouseUp);
 
-    // 延迟重置 hasDragged，让 click 事件先判断
-    setTimeout(() => {
-      this.hasDragged = false;
-    }, 0);
+    // 回到 Angular zone 同步状态
+    this.ngZone.run(() => {
+      // 延迟重置 hasDragged，让 click 事件先判断
+      setTimeout(() => {
+        this.hasDragged = false;
+      }, 0);
+    });
   };
 
   // 重置视图

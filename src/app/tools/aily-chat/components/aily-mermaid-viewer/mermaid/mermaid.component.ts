@@ -1,4 +1,4 @@
-import { Component, Inject, OnInit, OnDestroy, AfterViewInit, ElementRef, ViewChild } from '@angular/core';
+import { Component, Inject, OnInit, OnDestroy, AfterViewInit, ElementRef, ViewChild, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { NZ_MODAL_DATA, NzModalRef } from 'ng-zorro-antd/modal';
@@ -19,7 +19,10 @@ export interface MermaidModalData {
 })
 export class MermaidComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('svgContainer') svgContainer!: ElementRef<HTMLElement>;
+  @ViewChild('svgContainer', { read: ElementRef }) private svgContainerRef!: ElementRef;
   renderedSvg: SafeHtml = '';
+  private rafId = 0;
+  private contentEl: HTMLElement | null = null;
   
   // 缩放和拖拽相关属性
   scale = 1;
@@ -43,6 +46,7 @@ export class MermaidComponent implements OnInit, AfterViewInit, OnDestroy {
   constructor(
     private modal: NzModalRef,
     private sanitizer: DomSanitizer,
+    private ngZone: NgZone,
     @Inject(NZ_MODAL_DATA) public data: MermaidModalData
   ) {}
 
@@ -53,6 +57,7 @@ export class MermaidComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit(): void {
+    this.contentEl = this.svgContainer?.nativeElement?.parentElement;
     this.injectHitRect();
   }
 
@@ -80,7 +85,7 @@ export class MermaidComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    // 清理全局事件监听器，防止内存泄漏
+    if (this.rafId) cancelAnimationFrame(this.rafId);
     document.removeEventListener('mousemove', this.onDocumentMouseMove);
     document.removeEventListener('mouseup', this.onDocumentMouseUp);
     document.body.style.userSelect = '';
@@ -116,37 +121,56 @@ export class MermaidComponent implements OnInit, AfterViewInit, OnDestroy {
       this.lastTranslateX = this.translateX;
       this.lastTranslateY = this.translateY;
       
+      // 拖拽期间禁用 CSS transition
+      if (this.contentEl) this.contentEl.style.transition = 'none';
+      
       // 防止文本选择
       event.preventDefault();
       document.body.style.userSelect = 'none';
       
-      // 添加全局鼠标事件监听，确保在整个窗口范围内都能拖拽
-      document.addEventListener('mousemove', this.onDocumentMouseMove);
-      document.addEventListener('mouseup', this.onDocumentMouseUp);
+      // 在 Angular zone 外添加全局鼠标事件监听，避免每次 mousemove 触发变更检测
+      this.ngZone.runOutsideAngular(() => {
+        document.addEventListener('mousemove', this.onDocumentMouseMove);
+        document.addEventListener('mouseup', this.onDocumentMouseUp);
+      });
     }
   }
 
-  // 全局鼠标移动事件
+  // 全局鼠标移动事件（运行在 Angular zone 外）
   onDocumentMouseMove = (event: MouseEvent): void => {
-    if (this.isDragging) {
-      const deltaX = event.clientX - this.dragStartX;
-      const deltaY = event.clientY - this.dragStartY;
-      if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
-        this.hasDragged = true;
-      }
-      this.translateX = this.lastTranslateX + deltaX;
-      this.translateY = this.lastTranslateY + deltaY;
+    if (!this.isDragging) return;
+    const deltaX = event.clientX - this.dragStartX;
+    const deltaY = event.clientY - this.dragStartY;
+    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+      this.hasDragged = true;
+    }
+    this.translateX = this.lastTranslateX + deltaX;
+    this.translateY = this.lastTranslateY + deltaY;
+    // 用 rAF 合并渲染，直接操作 DOM 跳过 Angular 变更检测
+    if (!this.rafId) {
+      this.rafId = requestAnimationFrame(() => {
+        this.rafId = 0;
+        if (this.contentEl) {
+          this.contentEl.style.transform = `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`;
+        }
+      });
     }
   }
 
   // 全局鼠标松开事件
-  onDocumentMouseUp = (event: MouseEvent): void => {
+  onDocumentMouseUp = (_event: MouseEvent): void => {
     this.isDragging = false;
     document.body.style.userSelect = '';
+    
+    // 恢复 CSS transition
+    if (this.contentEl) this.contentEl.style.transition = '';
     
     // 移除全局事件监听
     document.removeEventListener('mousemove', this.onDocumentMouseMove);
     document.removeEventListener('mouseup', this.onDocumentMouseUp);
+    
+    // 回到 Angular zone 同步状态，触发一次变更检测
+    this.ngZone.run(() => {});
   }
 
   // 获取变换样式
