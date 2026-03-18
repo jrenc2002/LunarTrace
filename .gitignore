@@ -52,3 +52,4 @@ child/node*
 child/aily-builder*
 
 aily-todos/*.json
+docs/performance-optimization.md

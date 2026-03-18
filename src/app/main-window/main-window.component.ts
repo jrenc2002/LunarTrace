@@ -23,7 +23,6 @@ import { NavigationEnd, Router, RouterModule } from '@angular/router';
 import { filter } from 'rxjs';
 import { ConfigService } from '../services/config.service';
 import { NzToolTipModule } from 'ng-zorro-antd/tooltip';
-import { FloatSiderComponent } from '../components/float-sider/float-sider.component';
 import { CloudSpaceComponent } from '../tools/cloud-space/cloud-space.component';
 import { UserCenterComponent } from '../tools/user-center/user-center.component';
 import { ModelStoreComponent } from '../tools/model-store/model-store.component';
@@ -51,7 +50,6 @@ import { OnboardingService } from '../services/onboarding.service';
     RouterModule,
     NzToolTipModule,
     NzModalModule,
-    FloatSiderComponent,
     CloudSpaceComponent,
     UserCenterComponent,
     ModelStoreComponent,
@@ -211,6 +209,7 @@ export class MainWindowComponent {
       }
       this.cd.detectChanges();
     });
+
   }
 
   closeRightBox() {
@@ -256,29 +255,6 @@ export class MainWindowComponent {
       // 清空终端
       this.terminalComponent?.clear();
     }
-  }
-
-  showFloatSider = false;
-
-  // 监听鼠标位置，当鼠标在右边缘70px范围内时显示浮动侧边栏
-  onMouseMove(event: MouseEvent): void {
-    const target = event.currentTarget as HTMLElement;
-    const rect = target.getBoundingClientRect();
-    const mouseX = event.clientX;
-    const rightEdge = rect.right;
-    const threshold = 70; // 右边缘阈值距离
-
-    // 当鼠标在右边缘70px范围内时显示浮动侧边栏
-    if (rightEdge - mouseX <= threshold) {
-      this.showFloatSider = true;
-    } else {
-      this.showFloatSider = false;
-    }
-  }
-
-  // 鼠标离开时隐藏浮动侧边栏
-  onMouseLeave(): void {
-    this.showFloatSider = false;
   }
 
   exportLog() {

@@ -10,6 +10,10 @@ export class LogService {
 
   stateSubject = new Subject<LogOptions>();
 
+  private readonly MAX_LOG_SIZE = 10000;
+  // 超出此阈值才触发清理，避免每条都执行清理，每 500 条触发一次
+  private readonly CLEANUP_THRESHOLD = this.MAX_LOG_SIZE + 500;
+
   constructor() { }
 
   /**
@@ -20,6 +24,9 @@ export class LogService {
     opts['timestamp'] = Date.now();
     // opts['showDetail'] = false;
     this.list.push(opts);
+    if (this.list.length > this.CLEANUP_THRESHOLD) {
+      this.list.splice(0, this.list.length - this.MAX_LOG_SIZE);
+    }
     this.stateSubject.next(opts);
   }
 
