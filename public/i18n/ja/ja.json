@@ -386,7 +386,8 @@
         "ARCH_EMPTY": "arch.md に mermaid 図が見つかりません",
         "ARCH_RENDER_FAILED": "アーキテクチャ図のレンダリングに失敗しました",
         "GENERATE_ARCH_PROMPT": "プロジェクトのアーキテクチャ図を生成してください",
-        "ARCH_AI_BUSY": "AIが会話中です。しばらくお待ちください"
+        "ARCH_AI_BUSY": "AIが会話中です。しばらくお待ちください",
+        "LOGIN_REQUIRED": "この機能を使用するには、まずログインしてください"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "先にシリアルポートを選択してください",
