@@ -52,7 +52,7 @@ export class ToolCallLoopHelper {
   async startChatTurn(): Promise<void> {
     if (this.engine.isCancelled) { this.engine.isWaiting = false; return; }
 
-    const toolCallLimit = this.engine.ailyChatConfigService.maxCount || 50;
+    const toolCallLimit = this.engine.ailyChatConfigService.maxCount;
     if (this.engine.toolCallingIteration >= toolCallLimit) {
       console.warn(`[无状态模式] 工具调用循环已达上限 (${toolCallLimit})，强制结束`);
       this.engine.msg.appendMessage('aily', `\n\n> ⚠️ 工具调用轮次已达上限（${toolCallLimit}），请重新发送消息继续。\n\n`);

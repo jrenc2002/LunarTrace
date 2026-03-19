@@ -531,6 +531,7 @@ export class IframeComponent implements OnInit, OnDestroy {
    * 操作按钮: 同步到代码
    */
   onSyncToCode(): void {
+    this.sendToChat('请根据当前连线图方案，将硬件连线配置同步到项目代码中。');
     this.noticeService.update({
       title: 'AI生成中',
       text: '正在同步连线配置到代码，请在对话框中查看进度...',

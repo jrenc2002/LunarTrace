@@ -10,6 +10,8 @@ import { getContextTool as getContextHandler } from '../getContextTool';
 import { getProjectInfoTool as getProjectInfoHandler } from '../getProjectInfoTool';
 import { buildProjectTool as buildProjectHandler } from '../buildProjectTool';
 import { reloadProjectTool as reloadProjectHandler } from '../reloadProjectTool';
+import { switchBoardTool as switchBoardHandler } from '../switchBoardTool';
+import { getBoardConfigTool as getBoardConfigHandler, setBoardConfigTool as setBoardConfigHandler } from '../boardConfigTool';
 import { askApprovalTool as askApprovalHandler } from '../askApprovalTool';
 import { askUserTool as askUserHandler } from '../askUserTool';
 import { searchBoardsLibrariesTool } from '../searchBoardsLibrariesTool';
@@ -297,6 +299,81 @@ class ReloadProjectTool implements IAilyTool {
 }
 
 // ============================
+// switch_board
+// ============================
+
+class SwitchBoardTool implements IAilyTool {
+  readonly name = 'switch_board';
+  readonly schema = findLegacySchema('switch_board');
+
+  async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用，无法切换开发板' };
+    const result = await switchBoardHandler(ctx.host.project as any, args);
+    if (!result.is_error && result.metadata?.boardChanged) {
+      // 通知后续逻辑需要重新注入 Blockly 规则
+      result.metadata = { ...result.metadata, newProject: true };
+    }
+    return result;
+  }
+
+  getStartText(args: any): string {
+    const board = args?.board_name || '未知开发板';
+    const shortName = board.replace('@aily-project/board-', '');
+    return `正在切换开发板: ${shortName}...`;
+  }
+
+  getResultText(args: any, result?: ToolUseResult): string {
+    const board = args?.board_name || '未知开发板';
+    const shortName = board.replace('@aily-project/board-', '');
+    return result?.is_error ? `切换开发板 ${shortName} 失败` : `开发板已切换为 ${shortName}`;
+  }
+}
+
+// ============================
+// get_board_config
+// ============================
+
+class GetBoardConfigTool implements IAilyTool {
+  readonly name = 'get_board_config';
+  readonly schema = findLegacySchema('get_board_config');
+
+  async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用，无法获取开发板配置' };
+    return getBoardConfigHandler(ctx.host.project as any, args);
+  }
+
+  getStartText() { return '获取开发板配置...'; }
+  getResultText(args: any, result?: ToolUseResult): string {
+    return result?.is_error ? '获取开发板配置失败' : '获取开发板配置成功';
+  }
+}
+
+// ============================
+// set_board_config
+// ============================
+
+class SetBoardConfigTool implements IAilyTool {
+  readonly name = 'set_board_config';
+  readonly schema = findLegacySchema('set_board_config');
+
+  async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用，无法设置开发板配置' };
+    return setBoardConfigHandler(ctx.host.project as any, ctx.host.builder as any, args);
+  }
+
+  getStartText(args: any): string {
+    const key = args?.config_key || '';
+    const value = args?.config_value || '';
+    return `设置 ${key} = ${value}...`;
+  }
+
+  getResultText(args: any, result?: ToolUseResult): string {
+    const key = args?.config_key || '';
+    return result?.is_error ? `设置 ${key} 失败` : `${key} 设置成功`;
+  }
+}
+
+// ============================
 // ask_approval
 // ============================
 
@@ -560,6 +637,9 @@ ToolRegistry.register(new GetContextTool());
 ToolRegistry.register(new GetProjectInfoTool());
 ToolRegistry.register(new BuildProjectTool());
 ToolRegistry.register(new ReloadProjectTool());
+ToolRegistry.register(new SwitchBoardTool());
+ToolRegistry.register(new GetBoardConfigTool());
+ToolRegistry.register(new SetBoardConfigTool());
 ToolRegistry.register(new AskApprovalTool());
 ToolRegistry.register(new AskUserTool());
 ToolRegistry.register(new SearchBoardsLibrariesTool());

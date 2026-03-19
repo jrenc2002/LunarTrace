@@ -308,7 +308,7 @@ export class BackgroundAgentService implements OnDestroy {
   private async runToolCallingLoop(): Promise<void> {
     while (!this.aborted) {
       // 检查循环次数限制（读取用户在设置面板中配置的 maxCount）
-      const toolCallLimit = this.ailyChatConfigService.maxCount || 30;
+      const toolCallLimit = this.ailyChatConfigService.maxCount;
       if (this.toolCallingIteration >= toolCallLimit) {
         console.warn(`[BackgroundAgent] 工具调用循环已达上限 (${toolCallLimit})`);
         break;

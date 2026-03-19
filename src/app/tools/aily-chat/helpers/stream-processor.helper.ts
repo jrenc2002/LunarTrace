@@ -72,10 +72,10 @@ export class StreamProcessorHelper {
         try {
           if (data.type === 'ModelClientStreamingChunkEvent') {
             if (data.content) {
-              if (data.content.includes('<think>')) { this.engine.insideThink = true; this.engine.repetitionDetectionService.markBoundary('think_start'); }
-              if (data.content.includes('</think>')) { this.engine.insideThink = false; this.engine.repetitionDetectionService.markBoundary('think_end'); }
-
               const streamRepetitionCheck = this.engine.repetitionDetectionService.checkStreamRepetition(data.content);
+              // 同步 think 状态（由服务内部状态机驱动，支持跨 token 标签拆分）
+              if (streamRepetitionCheck.thinkTransition === 'entered') { this.engine.insideThink = true; }
+              if (streamRepetitionCheck.thinkTransition === 'exited') { this.engine.insideThink = false; }
               if (streamRepetitionCheck.isRepetitive) {
                 console.warn('[重复检测] 流式文本重复:', streamRepetitionCheck.pattern);
                 this.engine.msg.appendMessage('aily', data.content, messageSource);
@@ -143,6 +143,17 @@ export class StreamProcessorHelper {
 
             // Subagent 工具调用
             if (statelessMode && SubagentSessionService.isSubagentToolCall(data)) {
+              // 泛化 run_subagent：从 tool_args 中提取真正的 agent 名称
+              // 后端 SSE 事件的 agent_name 可能是 'subagent'（从 tool_name 去掉 run_ 得来），
+              // 而非实际的子代理名称（如 'schematicAgent'），需要从 tool_args.agent 修正
+              if (data.tool_name === 'run_subagent') {
+                try {
+                  const parsedArgs = typeof data.tool_args === 'string' ? JSON.parse(data.tool_args) : data.tool_args;
+                  if (parsedArgs?.agent) {
+                    data.agent_name = parsedArgs.agent;
+                  }
+                } catch { /* tool_args 解析失败则沿用原 agent_name */ }
+              }
               console.log(`[Subagent] 🚀 调用 ${data.tool_name} (id=${data.tool_id})`, '\n  参数:', typeof data.tool_args === 'string' ? data.tool_args : JSON.stringify(data.tool_args, null, 2));
               this.engine.currentTurnToolCalls.push({ tool_id: data.tool_id, tool_name: data.tool_name, tool_args: data.tool_args });
               const subagentDisplayName = data.agent_name || data.tool_name;
@@ -228,7 +239,7 @@ export class StreamProcessorHelper {
             let resultText = '';
 
             // 检测重复工具调用
-            const toolRepetitionCheck = this.engine.repetitionDetectionService.checkToolCallRepetition(data.tool_name, toolArgs);
+            const toolRepetitionCheck = this.engine.repetitionDetectionService.checkToolCallRepetition(data.tool_name, toolArgs, toolCallId);
             if (toolRepetitionCheck.isRepetitive) {
               console.warn('[重复检测] 工具调用重复:', toolRepetitionCheck.pattern);
               const repetitionErrorContent = `检测到重复调用模式 (${toolRepetitionCheck.pattern})。${toolRepetitionCheck.suggestion || '请重新思考解决方案。'}`;
@@ -394,6 +405,13 @@ export class StreamProcessorHelper {
               }
               this.engine.msg.completeToolCall(data.tool_id, data.tool_name, finalState, resultText);
             }
+
+            this.engine.repetitionDetectionService.recordToolCallOutcome(toolCallId, data.tool_name, toolArgs, {
+              content: toolResult?.content,
+              resultText,
+              isError: toolResult?.is_error ?? resultState === 'error',
+              isWarning: resultState === 'warn'
+            });
 
             // 工具返回 metadata.chatContent 时，追加内容到对话中（如框架图渲染）
             if (toolResult?.metadata?.chatContent) {
