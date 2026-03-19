@@ -329,6 +329,30 @@ export class _UploaderService {
         this.cmdService.run(uploadCmd, null, false).subscribe({
           next: async (output: CmdOutput) => {
             this.streamId = output.streamId;
+
+            if (output.type === 'close') {
+              this.processExitCode = output.code ?? (output.signal ? 1 : 0);
+
+              if (!this.cancelled && this.processExitCode !== 0) {
+                errorText = output.signal
+                  ? `上传进程被信号终止: ${output.signal}`
+                  : `上传进程异常退出，退出码: ${this.processExitCode}`;
+                if (!fullErrorText) {
+                  fullErrorText = errorText;
+                }
+                this.isErrored = true;
+              }
+              return;
+            }
+
+            if (output.type === 'error') {
+              errorText = output.error || '上传进程启动失败';
+              if (!fullErrorText) {
+                fullErrorText = errorText;
+              }
+              this.isErrored = true;
+              return;
+            }
             
             // 如果已被取消且需要立即杀死，现在立即杀死进程
             if (this.cancelled && this['shouldKillImmediately'] && this.streamId) {
@@ -531,10 +555,20 @@ export class _UploaderService {
             
             // 确保 uploadInProgress 在所有情况下都被重置
             this.uploadInProgress = false;
+
+            if (!this.cancelled && !this.isErrored && this.processExitCode !== null && this.processExitCode !== 0) {
+              this.isErrored = true;
+              if (!errorText) {
+                errorText = `上传进程异常退出，退出码: ${this.processExitCode}`;
+              }
+              if (!fullErrorText) {
+                fullErrorText = errorText;
+              }
+            }
             
             // 如果没有检测到完成标志且没有错误，且进程正常退出(code 0)，认为上传成功
             // 这是为了处理某些上传工具没有明确的完成输出但实际已成功的情况
-            if (!this.uploadCompleted && !this.isErrored && !this.cancelled) {
+            if (!this.uploadCompleted && !this.isErrored && !this.cancelled && (this.processExitCode === null || this.processExitCode === 0)) {
               // 进程正常退出（Observable complete 表示进程已结束）
               // 如果没有错误标志，则假定成功
               console.log("进程已正常结束，未检测到明确完成标志，假定上传成功");
@@ -793,6 +827,22 @@ export class _UploaderService {
 
         this.cmdService.run(uploadCmd, null, false).subscribe({
           next: (output: CmdOutput) => {
+            if (output.type === 'close') {
+              if ((output.code ?? 0) !== 0 || output.signal) {
+                hasError = true;
+                errorMessage = output.signal
+                  ? `烧录进程被信号终止: ${output.signal}`
+                  : `烧录进程异常退出，退出码: ${output.code}`;
+              }
+              return;
+            }
+
+            if (output.type === 'error') {
+              hasError = true;
+              errorMessage = output.error || '烧录进程启动失败';
+              return;
+            }
+
             if (output.data) {
               console.log('Softdevice 烧录输出:', output.data);
               const data = output.data;

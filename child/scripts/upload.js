@@ -16,6 +16,27 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 // 动态加载 serialport 模块
 let SerialPort = null;
 
+function formatFatalError(error) {
+    if (!error) return 'Unknown error';
+    if (error instanceof Error) {
+        return error.stack || error.message;
+    }
+    return String(error);
+}
+
+function exitWithFatalError(error) {
+    logger.error(`[ERROR] ${formatFatalError(error)}`);
+    process.exit(1);
+}
+
+process.on('uncaughtException', (error) => {
+    exitWithFatalError(error);
+});
+
+process.on('unhandledRejection', (reason) => {
+    exitWithFatalError(reason);
+});
+
 function loadSerialPort() {
     if (SerialPort) return SerialPort;
     
@@ -300,7 +321,6 @@ async function main() {
         // 11. 将占位符替换为最终串口，生成最终参数
         logger.log('使用串口:', finalSerialPort);
         const args = templateArgs.map(a => a.replace(SERIAL_PLACEHOLDER, finalSerialPort));
-
         logger.log(`Executing: ${command} ${args.join(' ')}`);
 
         // 12. 执行上传命令
@@ -314,12 +334,20 @@ async function main() {
             process.exit(1);
         });
 
-        child.on('close', (code) => {
-            if (code !== 0) {
-                process.exit(code);
-            } else {
-                process.exit(0);
+        child.on('close', (code, signal) => {
+            if (signal) {
+                logger.error(`[ERROR] 上传命令被信号终止: ${signal}`);
+                process.exit(1);
+                return;
             }
+
+            if (code !== 0) {
+                logger.error(`[ERROR] 上传命令异常退出，退出码: ${code}`);
+                process.exit(code || 1);
+                return;
+            }
+
+            process.exit(0);
         });
 
     } catch (error) {
