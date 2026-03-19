@@ -33,8 +33,8 @@ export const DEFERRED_TOOL_GROUPS: DeferredToolGroup[] = [
   },
   {
     name: '网络工具',
-    brief: '网页/API 请求(fetch)、网络搜索(web_search)',
-    tools: ['fetch', 'web_search']
+    brief: '网页/API 请求(fetch)、网络搜索(web_search)、仓库克隆(clone_repository)',
+    tools: ['fetch', 'web_search', 'clone_repository']
   },
   {
     name: '硬件/库搜索',
@@ -1240,6 +1240,47 @@ Query and return specific content (for detailed info)
             required: ['url']
         },
         agents: ["mainAgent", "schematicAgent"]
+    },
+    {
+        name: 'clone_repository',
+        description: `克隆/下载远程 Git 仓库到本地。通过平台 zip 下载 API 获取整个仓库代码并解压，无需本地安装 git。
+
+支持平台：GitHub、Gitee、GitLab、Bitbucket
+
+使用场景：
+- 用户提供了一个仓库 URL，需要获取其完整源码
+- 需要参考某个开源项目的代码结构
+- 下载示例项目或模板项目
+
+注意：
+- 仓库 zip 大小限制 50MB
+- 默认尝试 main 分支，失败后自动回退到 master
+- 支持 sparse_paths 只下载指定子目录`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                url: {
+                    type: 'string',
+                    description: '仓库 URL，如 https://github.com/owner/repo'
+                },
+                branch: {
+                    type: 'string',
+                    description: '分支名称（默认 main，失败自动回退 master）',
+                    default: 'main'
+                },
+                target_dir: {
+                    type: 'string',
+                    description: '目标目录路径（相对项目根或绝对路径，默认为项目根下以仓库名命名的目录）'
+                },
+                sparse_paths: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: '仅下载指定子目录（稀疏检出），如 ["src", "docs"]'
+                }
+            },
+            required: ['url']
+        },
+        agents: ["mainAgent"]
     },
     {
         name: "web_search",

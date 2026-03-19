@@ -22,4 +22,5 @@ export const ChatAPI = {
   get stopSession()   { return `${base()}/api/v1/stop_session`; },
   get cancelTask()    { return `${base()}/api/v1/cancel_task`; },
   get generateTitle() { return `${base()}/api/v1/generate_title`; },
+  get conversationFeedback() { return `${base()}/api/v1/conversation_feedback`; },
 };

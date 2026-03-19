@@ -32,6 +32,11 @@ export class SessionLifecycleHelper {
       // 导出 subagent 会话数据（Plan C 压缩：保留最近 3 轮对话）
       const subagentHistories = this.engine.subagentSessionService.exportSessions(3);
 
+      // 导出 checkpoint 数据用于持久化
+      const editCheckpoints = this.engine.editCheckpointService?.getTotalEditCount() > 0
+        ? this.engine.editCheckpointService.toJSON()
+        : undefined;
+
       this.engine.chatHistoryService.saveSession(
         this.engine.sessionId, this.engine.list, this.engine.conversationMessages || [],
         {
@@ -48,6 +53,7 @@ export class SessionLifecycleHelper {
           toolCallingIteration: this.engine.toolCallingIteration || 0,
         },
         Object.keys(subagentHistories).length > 0 ? subagentHistories : undefined,
+        editCheckpoints,
       );
       this.refreshHistoryList();
     } catch (error) { console.warn('保存会话失败:', error); }
@@ -257,6 +263,7 @@ export class SessionLifecycleHelper {
     this.engine.scrollManager.autoScrollEnabled = true;
     this.engine.isCompleted = false;
     this.engine.isCancelled = true;
+    this.engine.editCheckpointService.clear();
     if (this.engine.messageSubscription) { this.engine.messageSubscription.unsubscribe(); this.engine.messageSubscription = null; }
     this.engine.activeToolExecutions = 0;
     this.engine.sseStreamCompleted = false;
@@ -307,6 +314,11 @@ export class SessionLifecycleHelper {
       // 恢复 subagent 会话历史
       if (sessionData.subagentHistories) {
         this.engine.subagentSessionService.importSessions(sessionData.subagentHistories);
+      }
+
+      // 恢复文件变更 checkpoint
+      if (sessionData.editCheckpoints) {
+        this.engine.editCheckpointService?.restoreFromJSON(sessionData.editCheckpoints);
       }
 
       this.engine.scrollManager.scrollToBottom('auto');

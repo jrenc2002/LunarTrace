@@ -19,6 +19,7 @@ import { getHardwareCategoriesTool } from '../getHardwareCategoriesTools';
 import { getBoardParametersTool } from '../getBoardParametersTool';
 import { fetchTool as fetchHandler } from '../fetchTool';
 import { webSearchTool as webSearchHandler } from '../webSearchTool';
+import { cloneRepositoryTool as cloneRepoHandler } from '../cloneRepositoryTool';
 import { todoWriteTool as todoWriteHandler, injectTodoReminder } from '../todoWriteTool';
 import { memoryTool as memoryHandler } from '../memoryTool';
 import { getErrorsTool as getErrorsHandler, setLastBuildErrors } from '../getErrorsTool';
@@ -571,6 +572,32 @@ class FetchTool implements IAilyTool {
 }
 
 // ============================
+// clone_repository
+// ============================
+
+class CloneRepositoryTool implements IAilyTool {
+  readonly name = 'clone_repository';
+  readonly schema = findLegacySchema('clone_repository');
+
+  async invoke(args: any, _ctx: ToolContext): Promise<ToolUseResult> {
+    return cloneRepoHandler(args);
+  }
+
+  getStartText(args: any): string {
+    const url = args?.url || '';
+    const parts = url.replace(/\.git\/?$/, '').split('/');
+    const repoName = parts.length >= 2 ? `${parts[parts.length - 2]}/${parts[parts.length - 1]}` : url;
+    return `克隆仓库: ${repoName}`;
+  }
+
+  getResultText(args: any, result?: ToolUseResult): string {
+    if (result?.is_error) return '仓库克隆失败';
+    const fileCount = result?.metadata?.fileCount || 0;
+    return `仓库克隆完成，${fileCount} 个文件`;
+  }
+}
+
+// ============================
 // web_search
 // ============================
 
@@ -646,6 +673,7 @@ ToolRegistry.register(new SearchBoardsLibrariesTool());
 ToolRegistry.register(new GetHardwareCategoriesTool());
 ToolRegistry.register(new GetBoardParametersTool());
 ToolRegistry.register(new FetchTool());
+ToolRegistry.register(new CloneRepositoryTool());
 ToolRegistry.register(new WebSearchTool());
 ToolRegistry.register(new TodoWriteTool());
 

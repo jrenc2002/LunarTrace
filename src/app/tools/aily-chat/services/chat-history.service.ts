@@ -56,6 +56,8 @@ export interface SessionData {
   metadata: SessionMetadata;
   /** Subagent 对话历史（可选，方案 C 压缩后持久化） */
   subagentHistories?: Record<string, SubagentHistoryEntry>;
+  /** 文件变更 checkpoint（可选，用于跨会话回滚） */
+  editCheckpoints?: any;
 }
 
 export interface ChatListItem {
@@ -173,6 +175,7 @@ export class ChatHistoryService implements OnDestroy {
     conversationMessages: any[],
     metadata: Partial<SessionMetadata> & { sessionId: string },
     subagentHistories?: Record<string, SubagentHistoryEntry>,
+    editCheckpoints?: any,
   ): void {
     if (!sessionId || (chatList.length === 0 && conversationMessages.length === 0)) {
       return;
@@ -203,6 +206,9 @@ export class ChatHistoryService implements OnDestroy {
     };
     if (subagentHistories && Object.keys(subagentHistories).length > 0) {
       sessionData.subagentHistories = subagentHistories;
+    }
+    if (editCheckpoints) {
+      sessionData.editCheckpoints = editCheckpoints;
     }
 
     // 更新内存缓存

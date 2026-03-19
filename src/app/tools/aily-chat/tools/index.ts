@@ -38,6 +38,7 @@ export type { AskUserArgs, AskUserQuestion, AskUserOption, AskUserAnswer, AskUse
 export { getContextTool } from './getContextTool';
 export { getProjectInfoTool } from './getProjectInfoTool';
 export { fetchTool, FetchToolService } from './fetchTool';
+export { cloneRepositoryTool } from './cloneRepositoryTool';
 export { webSearchTool, WebSearchToolService } from './webSearchTool';
 export { todoWriteTool, injectTodoReminder } from './todoWriteTool';
 export { replaceStringInFileTool, multiReplaceStringInFileTool } from './replaceStringTool';

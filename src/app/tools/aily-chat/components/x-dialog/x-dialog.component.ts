@@ -12,6 +12,7 @@ import { CommonModule } from '@angular/common';
 import { XMarkdownComponent } from 'ngx-x-markdown';
 import type { StreamingOption, ComponentMap } from 'ngx-x-markdown';
 import { AilyChatCodeComponent } from './aily-chat-code.component';
+import { ChatAPI } from '../../core/api-endpoints';
 
 @Component({
   selector: 'aily-x-dialog',
@@ -26,6 +27,11 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   @Input() doing = false;
   /** 消息来源：mainAgent 为主Agent，其他值为子Agent名称 */
   @Input() source: string = 'mainAgent';
+  /** 是否为最后一条 aily 消息（显示操作按钮） */
+  @Input() isLastAily = false;
+  /** 当前会话 ID */
+  @Input() sessionId = '';
+  @Input() msgIndex = -1;
 
   @ViewChild('subagentBody') subagentBodyRef?: ElementRef<HTMLElement>;
 
@@ -52,6 +58,113 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   streamContent = signal('');
   streamingConfig = signal<StreamingOption>({ hasNextChunk: false, enableAnimation: false });
   readonly componentMap: ComponentMap = { code: AilyChatCodeComponent };
+
+  /** 是否显示操作栏（鼠标悬停时） */
+  showActions = false;
+  /** 反馈状态 */
+  feedbackState: 'helpful' | 'unhelpful' | null = null;
+
+  /** 是否可显示操作栏（非 doing 的最后一条 aily 消息） */
+  get canShowActions(): boolean {
+    return this.isLastAily && !this.doing && this.role === 'aily' && !this.isSubagent;
+  }
+
+  get canShowUserActions(): boolean {
+    return this.role === 'user' && !this.doing && this.msgIndex > 0;
+  }
+
+  onRegenerate(): void {
+    document.dispatchEvent(new CustomEvent('aily-task-action', {
+      bubbles: true, detail: { action: 'regenerate' }
+    }));
+  }
+
+  onRestoreCheckpoint(): void {
+    if (this.msgIndex < 0) return;
+    document.dispatchEvent(new CustomEvent('aily-task-action', {
+      bubbles: true, detail: { action: 'restoreCheckpoint', listIndex: this.msgIndex }
+    }));
+  }
+
+  onCopyContent(): void {
+    const raw = this.content || '';
+    const text = this.extractCopyText(raw);
+    navigator.clipboard.writeText(text).catch(() => {});
+  }
+
+  onFeedback(feedback: 'helpful' | 'unhelpful'): void {
+    if (this.feedbackState === feedback || !this.sessionId) return;
+    this.feedbackState = feedback;
+    fetch(`${ChatAPI.conversationFeedback}/${this.sessionId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ feedback }),
+    }).catch(() => {});
+  }
+
+  private extractCopyText(content: string): string {
+    const parts: string[] = [];
+    const toolMap = new Map<string, ToolCallEntry>();
+
+    for (const line of content.split('\n')) {
+      const json = tryJsonParse(line.trim());
+      if (!json) continue;
+      if (json.type === 'tool_call_request' && json.tool_id) {
+        if (!toolMap.has(json.tool_id)) {
+          toolMap.set(json.tool_id, { state: 'doing', text: buildToolText(json.tool_name, json.tool_args) });
+        }
+      }
+      if (json.type === 'ToolCallExecutionEvent' && Array.isArray(json.content)) {
+        for (const item of json.content) {
+          const callId: string = item.call_id || item.id;
+          if (callId && toolMap.has(callId)) {
+            toolMap.get(callId)!.state = item.is_error ? 'error' : 'done';
+          }
+        }
+      }
+    }
+
+    let i = 0;
+    let buf = '';
+    let inThink = false;
+
+    while (i < content.length) {
+      if (!inThink && content.startsWith('<think>', i)) {
+        inThink = true; buf = ''; i += 7; continue;
+      }
+      if (inThink && content.startsWith('</think>', i)) {
+        inThink = false;
+        if (buf.trim()) parts.push('> [思考]\n> ' + buf.trim().split('\n').join('\n> '));
+        buf = ''; i += 8; continue;
+      }
+      if (inThink) { buf += content[i]; i++; continue; }
+
+      const lineEnd = content.indexOf('\n', i);
+      const line = lineEnd === -1 ? content.slice(i) : content.slice(i, lineEnd);
+      i = lineEnd === -1 ? content.length : lineEnd + 1;
+
+      const json = tryJsonParse(line.trim());
+      if (json) {
+        if (json.type === 'tool_call_request' && json.tool_id) {
+          const entry = toolMap.get(json.tool_id);
+          if (entry) {
+            const icon = entry.state === 'done' ? '✓' : entry.state === 'error' ? '✗' : '⋯';
+            parts.push(`${icon} ${entry.text}`);
+          }
+        }
+        continue;
+      }
+
+      const stripped = line.replace(/<(?:attachments|context)>[\s\S]*?<\/(?:attachments|context)>/g, '').trim();
+      if (stripped) parts.push(line);
+    }
+
+    if (inThink && buf.trim()) {
+      parts.push('> [思考]\n> ' + buf.trim().split('\n').join('\n> '));
+    }
+
+    return parts.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
 
   private lastRaw = '';
 

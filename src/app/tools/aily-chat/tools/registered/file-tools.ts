@@ -126,7 +126,10 @@ class CreateFileTool implements IAilyTool {
   readonly schema = findLegacySchema('create_file');
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return createFileHandler(args, ctx.securityContext);
+    if (args?.path) ctx.editCheckpoint?.recordEdit(args.path, 'create');
+    const result = await createFileHandler(args, ctx.securityContext);
+    ctx.editCheckpoint?.publishCurrentSummary();
+    return result;
   }
 
   getStartText(args: any): string {
@@ -175,7 +178,10 @@ class EditFileTool implements IAilyTool {
   readonly schema = findLegacySchema('edit_file');
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return editFileHandler(args);
+    if (args?.path) ctx.editCheckpoint?.recordEdit(args.path, 'modify');
+    const result = await editFileHandler(args);
+    ctx.editCheckpoint?.publishCurrentSummary();
+    return result;
   }
 
   getStartText(args: any): string {
@@ -201,7 +207,10 @@ class DeleteFileTool implements IAilyTool {
   readonly schema = findLegacySchema('delete_file');
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    return deleteFileHandler(args, ctx.securityContext);
+    if (args?.path) ctx.editCheckpoint?.recordEdit(args.path, 'delete');
+    const result = await deleteFileHandler(args, ctx.securityContext);
+    ctx.editCheckpoint?.publishCurrentSummary();
+    return result;
   }
 
   getStartText(args: any): string {
@@ -417,8 +426,11 @@ class ReplaceStringInFileTool implements IAilyTool {
   readonly name = 'replace_string_in_file';
   readonly schema = findLegacySchema('replace_string_in_file');
 
-  async invoke(args: any, _ctx: ToolContext): Promise<ToolUseResult> {
-    return replaceStringHandler(args);
+  async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
+    if (args?.path) ctx.editCheckpoint?.recordEdit(args.path, 'modify');
+    const result = await replaceStringHandler(args);
+    ctx.editCheckpoint?.publishCurrentSummary();
+    return result;
   }
 
   getStartText(args: any): string {
@@ -443,8 +455,20 @@ class MultiReplaceStringInFileTool implements IAilyTool {
   readonly name = 'multi_replace_string_in_file';
   readonly schema = findLegacySchema('multi_replace_string_in_file');
 
-  async invoke(args: any, _ctx: ToolContext): Promise<ToolUseResult> {
-    return multiReplaceHandler(args);
+  async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
+    // 记录每个文件的编辑前状态
+    if (Array.isArray(args?.replacements)) {
+      const recorded = new Set<string>();
+      for (const r of args.replacements) {
+        if (r.path && !recorded.has(r.path)) {
+          ctx.editCheckpoint?.recordEdit(r.path, 'modify');
+          recorded.add(r.path);
+        }
+      }
+    }
+    const result = await multiReplaceHandler(args);
+    ctx.editCheckpoint?.publishCurrentSummary();
+    return result;
   }
 
   getStartText(args: any): string {

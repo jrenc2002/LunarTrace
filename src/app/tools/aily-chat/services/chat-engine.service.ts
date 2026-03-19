@@ -24,6 +24,7 @@ import { RepetitionDetectionService } from './repetition-detection.service';
 import { ContextBudgetService, ContextBudgetSnapshot } from './context-budget.service';
 import { SubagentSessionService, SubagentProgressEvent } from './subagent-session.service';
 import { AbsAutoSyncService } from './abs-auto-sync.service';
+import { EditCheckpointService } from './edit-checkpoint.service';
 import { ScrollManagerService } from './scroll-manager.service';
 import { ResourceManagerService } from './resource-manager.service';
 import { MenuManagerService } from './menu-manager.service';
@@ -85,6 +86,9 @@ export class ChatEngineService {
   sseStreamCompleted = false;
   currentStatelessMode = false;
   serverSessionActive = false;
+
+  /** 缓存的编辑反馈（用户保留/撤销变更后，在下次发送时注入上下文） */
+  private pendingEditFeedback: string | null = null;
 
   setServerSessionInactive() { this.serverSessionActive = false; }
   pendingUserInput = false;
@@ -172,6 +176,7 @@ export class ChatEngineService {
     public contextBudgetService: ContextBudgetService,
     public subagentSessionService: SubagentSessionService,
     private absAutoSyncService: AbsAutoSyncService,
+    public editCheckpointService: EditCheckpointService,
     public translate: TranslateService,
     public message: NzMessageService,
     public scrollManager: ScrollManagerService,
@@ -214,6 +219,7 @@ export class ChatEngineService {
     this.chatService.isWaiting = false;
     this.session.saveCurrentSession();
     this.chatHistoryService.flushAll();
+    this.editCheckpointService.clear();
 
     unregisterAskUserCallback();
     cleanupAllTerminalSessions();
@@ -425,6 +431,7 @@ export class ChatEngineService {
       host: AilyHost.get(),
       securityContext: this.securityContext,
       sessionId: this.sessionId,
+      editCheckpoint: this.editCheckpointService,
     };
   }
 
@@ -513,6 +520,8 @@ Do not create non-existent boards and libraries.
   receiveTextFromExternal(text: string, options?: ChatTextOptions): void {
     if (options?.type === 'button') {
       if (text === '重试') { this.retryLastAction(); return; }
+      if (text === '重新生成') { this.regenerateTurn(); return; }
+      if (text === '撤销变更') { this.undoLastEdits(); return; }
       if (text === '新建会话') { this.newChat(); return; }
       this.send('user', text, false);
       this.scrollManager.autoScrollEnabled = true;
@@ -610,22 +619,36 @@ Do not create non-existent boards and libraries.
       }
 
       const resourcesText = this.resourceManager.getResourcesText();
-      if (resourcesText) {
-        llmText = `${resourcesText}\n\n${text}`;
-        displayText = resourcesText + '\n\n' + text;
+      // 消费缓存的编辑反馈（保留/撤销），作为附加上下文注入
+      const editFeedback = this.pendingEditFeedback;
+      this.pendingEditFeedback = null;
+
+      let contextPrefix = '';
+      if (editFeedback) contextPrefix += editFeedback + '\n';
+      if (resourcesText) contextPrefix += resourcesText + '\n\n';
+
+      if (contextPrefix) {
+        llmText = contextPrefix + text;
+        displayText = (resourcesText ? resourcesText + '\n\n' : '') + text;
       } else {
         llmText = text;
         displayText = text;
       }
 
       this.msg.appendMessage('user', displayText);
-      this.msg.appendMessage('aily', '[thinking...]');
 
       if (this.useStatelessMode) {
         this.conversationMessages.push({ role: 'user', content: llmText });
         this.isWaiting = true;
+        this.msg.appendMessage('aily', '[thinking...]');
         this.currentMessageSource = 'mainAgent';
         this.toolCallingIteration = 0;
+        // 启动新 turn 的 checkpoint（记录 conversationMessages 和 list 的当前位置）
+        this.editCheckpointService.startTurn(
+          0,
+          this.conversationMessages.length - 1,
+          this.list.length - 1
+        );
         this.contextBudgetService.updateBudget(this.conversationMessages, this.turnLoop.getCurrentTools());
         if (clear) { this.inputValue = ''; }
         this.turnLoop.startChatTurn();
@@ -872,10 +895,14 @@ Do not create non-existent boards and libraries.
 
   private handleTaskAction(event: Event): void {
     const customEvent = event as CustomEvent;
-    const { action } = customEvent.detail || {};
+    const { action, checkpointId } = customEvent.detail || {};
     switch (action) {
       case 'continue': this.continueConversation(); break;
       case 'retry': this.retryLastAction(); break;
+      case 'regenerate': this.regenerateTurn(checkpointId); break;
+      case 'undoEdits': this.undoLastEdits(); break;
+      case 'keepEdits': this.onKeepEdits(customEvent.detail); break;
+      case 'restoreCheckpoint': this.restoreToCheckpoint(customEvent.detail.listIndex); break;
       case 'newChat': this.newChat(); break;
       case 'dismiss': break;
       default: console.warn('未知的任务操作:', action);
@@ -894,6 +921,165 @@ Do not create non-existent boards and libraries.
     await this.send('user', '请重试上次的操作。', false);
     this.scrollManager.autoScrollEnabled = true;
     this.scrollManager.scrollToBottom();
+  }
+
+  /**
+   * 回滚/还原后重新同步 ABS 到 Blockly 工作区
+   * 先尝试 importFromAbs（读 .abs 解析加载），失败则 fallback 到 reloadAbiJson（读 .abi 直接加载）
+   */
+  private async reloadAbsWorkspace(): Promise<void> {
+    // 确保 absAutoSyncService 已初始化项目路径
+    const projectPath = this.getCurrentProjectPath();
+    if (projectPath) {
+      this.absAutoSyncService.initialize(projectPath);
+    }
+    try {
+      const imported = await this.absAutoSyncService.importFromAbs();
+      if (!imported) {
+        // ABS 导入失败（文件不存在或解析失败），fallback 到 ABI 直接加载
+        AilyHost.get().editor?.reloadAbiJson?.();
+      }
+    } catch (err) {
+      console.warn('[reloadAbsWorkspace] ABS 导入失败，尝试 ABI reload:', err);
+      try {
+        AilyHost.get().editor?.reloadAbiJson?.();
+      } catch {}
+    }
+  }
+
+  /**
+   * 用户保留文件变更 — 保存反馈状态，待下轮发送时注入上下文
+   */
+  private onKeepEdits(detail: any): void {
+    const { fileCount, totalAdded, totalRemoved } = detail || {};
+    this.pendingEditFeedback = `[用户已确认保留上一轮的文件变更：${fileCount || 0} 个文件，+${totalAdded || 0} / -${totalRemoved || 0} 行]`;
+  }
+
+  /**
+   * 撤销最近一轮的文件变更（不截断对话历史，反馈待下轮注入）
+   */
+  async undoLastEdits(): Promise<void> {
+    if (this.isWaiting) { this.message.warning('正在处理中，请稍候...'); return; }
+
+    const lastCp = this.editCheckpointService.getLastEditCheckpoint();
+    if (!lastCp || lastCp.edits.length === 0) {
+      this.message.info('没有可撤销的文件变更');
+      return;
+    }
+
+    // 仅回滚文件，保留 checkpoint 记录（不影响"还原检查点"功能）
+    const { rolledBackFiles, errors } = this.editCheckpointService.revertFilesOnly(lastCp.id);
+
+    // 保存反馈状态，待下轮发送时注入上下文
+    this.pendingEditFeedback = `[用户撤销了上一轮的 ${rolledBackFiles} 个文件变更，文件已恢复到变更前的状态。后续操作请基于当前文件内容进行。]`;
+
+    if (errors.length > 0) {
+      this.msg.appendMessage('aily', `\n> ⚠️ 撤销了 ${rolledBackFiles} 个文件变更，但有 ${errors.length} 个错误：\n${errors.slice(0, 3).map(e => `> - ${e}`).join('\n')}\n\n`);
+    } else {
+      this.msg.appendMessage('aily', `\n> ✅ 已撤销 ${rolledBackFiles} 个文件变更\n\n`);
+    }
+
+    // 回滚后重新同步 ABS 到工作区
+    await this.reloadAbsWorkspace();
+  }
+
+  async restoreToCheckpoint(listIndex: number): Promise<void> {
+    if (this.isWaiting) { this.message.warning('正在处理中，请稍候...'); return; }
+
+    const targetCp = this.editCheckpointService.getCheckpointByListIndex(listIndex);
+    if (!targetCp) {
+      this.message.info('未找到该消息对应的检查点');
+      return;
+    }
+
+    const { rolledBackFiles, errors } = this.editCheckpointService.rollbackToCheckpoint(targetCp.id);
+    if (errors.length > 0) {
+      console.warn('[restoreToCheckpoint] 回滚文件部分失败:', errors);
+    }
+    if (rolledBackFiles > 0) {
+      this.msg.appendMessage('aily', `\n> ✅ 已还原检查点，回滚了 ${rolledBackFiles} 个文件变更\n\n`);
+    }
+
+    // 回滚后重新同步 ABS 到工作区
+    await this.reloadAbsWorkspace();
+
+    const convCutIndex = targetCp.conversationStartIndex;
+    if (convCutIndex >= 0 && convCutIndex < this.conversationMessages.length) {
+      this.conversationMessages.splice(convCutIndex);
+    }
+
+    if (listIndex >= 0 && listIndex < this.list.length) {
+      this.list.splice(listIndex);
+    }
+
+    this.isCompleted = false;
+    this.isCancelled = false;
+    this.editCheckpointService.dismissSummary();
+  }
+
+  /**
+   * 重新生成 — 回滚文件变更 + 截断对话历史 + 重新发送
+   * @param checkpointId 可选，指定从哪个 checkpoint 开始回滚（默认最新）
+   */
+  async regenerateTurn(checkpointId?: string): Promise<void> {
+    if (this.isWaiting) { this.message.warning('正在处理中，请稍候...'); return; }
+    if (!this.sessionId) { this.message.warning('会话不存在，请开始新对话'); return; }
+
+    // 1. 找到目标 checkpoint
+    const targetCp = checkpointId
+      ? this.editCheckpointService.getCheckpoint(checkpointId)
+      : this.editCheckpointService.getLatestCheckpoint();
+
+    if (!targetCp) {
+      // 没有 checkpoint，降级为普通重试
+      await this.send('user', '请重试上次的操作。', false);
+      return;
+    }
+
+    // 2. 回滚文件变更
+    if (targetCp.edits.length > 0) {
+      const { rolledBackFiles, errors } = this.editCheckpointService.rollbackToCheckpoint(targetCp.id);
+      if (errors.length > 0) {
+        console.warn('[Regenerate] 回滚文件部分失败:', errors);
+      }
+      console.log(`[Regenerate] 回滚了 ${rolledBackFiles} 个文件变更`);
+    }
+
+    // 3. 截断 conversationMessages（回到用户消息发送时的位置）
+    const convCutIndex = targetCp.conversationStartIndex;
+    if (convCutIndex >= 0 && convCutIndex < this.conversationMessages.length) {
+      // 保留 user 消息（convCutIndex 指向 user 消息），截断其后的 assistant/tool 消息
+      this.conversationMessages.splice(convCutIndex + 1);
+    }
+
+    // 4. 截断 UI list（回到 assistant 回复起始位置）
+    const listCutIndex = targetCp.listStartIndex;
+    if (listCutIndex >= 0 && listCutIndex < this.list.length) {
+      this.list.splice(listCutIndex);
+    }
+
+    // 5. 重新发起 turn
+    this.isCompleted = false;
+    this.isCancelled = false;
+    this.isWaiting = true;
+    this.currentMessageSource = 'mainAgent';
+    this.toolCallingIteration = 0;
+    this.repetitionDetectionService.resetStreamTokens();
+    this.insideThink = false;
+
+    // 添加新的助手消息占位
+    this.msg.appendMessage('aily', '[thinking...]');
+
+    // 创建新的 checkpoint
+    this.editCheckpointService.startTurn(
+      0,
+      this.conversationMessages.length - 1,
+      this.list.length - 1
+    );
+
+    this.contextBudgetService.updateBudget(this.conversationMessages, this.turnLoop.getCurrentTools());
+    this.scrollManager.autoScrollEnabled = true;
+    this.turnLoop.startChatTurn();
   }
 
   // ==================== 新手引导 ====================

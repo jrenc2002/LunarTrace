@@ -433,12 +433,12 @@ export class RepetitionDetectionService {
       return cycleResult;
     }
 
-    const retryFamilyCycleResult = this.checkRetryFamilyCyclePattern(toolName, retryFamilyHash);
+    const retryFamilyCycleResult = this.checkRetryFamilyCyclePattern();
     if (retryFamilyCycleResult.isRepetitive) {
       return retryFamilyCycleResult;
     }
 
-    const looseCycleResult = this.checkLooseCyclePattern(toolName, argsHash, retryFamilyHash);
+    const looseCycleResult = this.checkLooseCyclePattern();
     if (looseCycleResult.isRepetitive) {
       return looseCycleResult;
     }
@@ -615,26 +615,18 @@ export class RepetitionDetectionService {
     return { isRepetitive: false };
   }
 
-  private checkRetryFamilyCyclePattern(toolName: string, retryFamilyHash: string): RepetitionCheckResult {
-    const virtualHistory = [
-      ...this.toolCallHistory.slice(-this.CYCLE_PATTERN_LENGTH),
-      {
-        toolCallId: `${toolName}:virtual`,
-        name: toolName,
-        argsHash: '',
-        retryFamilyHash,
-        timestamp: Date.now()
-      }
-    ];
+  private checkRetryFamilyCyclePattern(): RepetitionCheckResult {
+    const completedHistory = this.getCompletedToolHistory(this.CYCLE_PATTERN_LENGTH);
 
-    if (virtualHistory.length >= 4) {
-      const last4 = virtualHistory.slice(-4);
+    if (completedHistory.length >= 4) {
+      const last4 = completedHistory.slice(-4);
       if (
         last4[0].name === last4[2].name &&
         last4[1].name === last4[3].name &&
         last4[0].name !== last4[1].name &&
         last4[0].retryFamilyHash === last4[2].retryFamilyHash &&
-        last4[1].retryFamilyHash === last4[3].retryFamilyHash
+        last4[1].retryFamilyHash === last4[3].retryFamilyHash &&
+        this.hasCycleResultStagnation(last4, true)
       ) {
         return {
           isRepetitive: true,
@@ -644,8 +636,8 @@ export class RepetitionDetectionService {
       }
     }
 
-    if (virtualHistory.length >= 6) {
-      const last6 = virtualHistory.slice(-6);
+    if (completedHistory.length >= 6) {
+      const last6 = completedHistory.slice(-6);
       if (
         last6[0].name === last6[3].name &&
         last6[1].name === last6[4].name &&
@@ -653,7 +645,8 @@ export class RepetitionDetectionService {
         last6[0].retryFamilyHash === last6[3].retryFamilyHash &&
         last6[1].retryFamilyHash === last6[4].retryFamilyHash &&
         last6[2].retryFamilyHash === last6[5].retryFamilyHash &&
-        new Set([last6[0].name, last6[1].name, last6[2].name]).size >= 2
+        new Set([last6[0].name, last6[1].name, last6[2].name]).size >= 2 &&
+        this.hasCycleResultStagnation(last6, true)
       ) {
         return {
           isRepetitive: true,
@@ -670,20 +663,13 @@ export class RepetitionDetectionService {
    * 检测允许少量噪声步骤的循环调用模式
    * 示例：A→X→B→A→Y→B，或 A→B→X→C→A→B→Y→C
    */
-  private checkLooseCyclePattern(toolName: string, argsHash: string, retryFamilyHash: string): RepetitionCheckResult {
-    const virtualHistory = [
-      ...this.toolCallHistory.slice(-(this.CYCLE_PATTERN_LENGTH + this.CYCLE_PATTERN_NOISE_TOLERANCE * 2)),
-      {
-        toolCallId: `${toolName}:virtual`,
-        name: toolName,
-        argsHash,
-        retryFamilyHash,
-        timestamp: Date.now()
-      }
-    ];
+  private checkLooseCyclePattern(): RepetitionCheckResult {
+    const completedHistory = this.getCompletedToolHistory(
+      this.CYCLE_PATTERN_LENGTH + this.CYCLE_PATTERN_NOISE_TOLERANCE * 2
+    );
 
     for (let patternLength = 2; patternLength <= 3; patternLength++) {
-      const exactRounds = this.findLooseCycleRounds(virtualHistory, patternLength, false);
+      const exactRounds = this.findLooseCycleRounds(completedHistory, patternLength, false);
       if (exactRounds) {
         return {
           isRepetitive: true,
@@ -692,7 +678,7 @@ export class RepetitionDetectionService {
         };
       }
 
-      const retryFamilyRounds = this.findLooseCycleRounds(virtualHistory, patternLength, true);
+      const retryFamilyRounds = this.findLooseCycleRounds(completedHistory, patternLength, true);
       if (retryFamilyRounds) {
         return {
           isRepetitive: true,
@@ -817,6 +803,10 @@ export class RepetitionDetectionService {
         });
 
         if (matches) {
+          const previousPattern = previousRound.map(index => history[index]);
+          if (!this.hasCycleResultStagnation([...previousPattern, ...pattern], useRetryFamily)) {
+            continue;
+          }
           return { pattern };
         }
       }
@@ -829,6 +819,56 @@ export class RepetitionDetectionService {
     return a.name === b.name && (
       useRetryFamily ? a.retryFamilyHash === b.retryFamilyHash : a.argsHash === b.argsHash
     );
+  }
+
+  private getCompletedToolHistory(limit: number): ToolCallRecord[] {
+    return this.toolCallHistory
+      .filter(record => !!record.resultCategory)
+      .slice(-limit);
+  }
+
+  private hasCycleResultStagnation(records: readonly ToolCallRecord[], useRetryFamily: boolean): boolean {
+    if (records.length < 4) {
+      return false;
+    }
+
+    const groups = new Map<string, ToolCallRecord[]>();
+    for (const record of records) {
+      const key = `${record.name}::${useRetryFamily ? record.retryFamilyHash : record.argsHash}`;
+      const existing = groups.get(key) || [];
+      existing.push(record);
+      groups.set(key, existing);
+    }
+
+    const groupedRecords = Array.from(groups.values());
+    if (groupedRecords.some(group => group.length < 2)) {
+      return false;
+    }
+
+    let stagnationGroupCount = 0;
+    for (const group of groupedRecords) {
+      const risk = this.evaluateResultRetryRisk(group);
+      if (risk.isStalePayload || risk.isLowNoveltyPayload) {
+        stagnationGroupCount++;
+        continue;
+      }
+
+      const categories = group
+        .map(record => record.resultCategory)
+        .filter((category): category is ToolResultCategory => !!category);
+      const signatures = group
+        .map(record => record.resultStructuredSignature || record.resultSignature)
+        .filter((signature): signature is string => !!signature);
+
+      const allProblematic = categories.length >= 2 && categories.every(category => this.isProblematicToolOutcome(category));
+      const repeatedSameOutcome = signatures.length >= 2 && this.getTopOccurrenceCount(signatures) >= 2;
+
+      if (allProblematic || repeatedSameOutcome) {
+        stagnationGroupCount++;
+      }
+    }
+
+    return stagnationGroupCount >= 1;
   }
 
   private getTrailingRetryFamilyCalls(toolName: string, retryFamilyHash: string): ToolCallRecord[] {
