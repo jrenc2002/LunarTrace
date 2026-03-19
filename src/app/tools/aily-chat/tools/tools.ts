@@ -55,8 +55,8 @@ export const DEFERRED_TOOL_GROUPS: DeferredToolGroup[] = [
   },
   {
     name: '项目管理',
-    brief: '创建项目、重新加载项目',
-    tools: ['create_project', 'reload_project']
+    brief: '创建项目、重新加载项目、切换开发板、开发板配置',
+    tools: ['create_project', 'reload_project', 'switch_board', 'get_board_config', 'set_board_config']
   },
   {
     name: '终端工具',
@@ -2822,6 +2822,92 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
             type: 'object',
             properties: {},
             required: []
+        },
+        agents: ["mainAgent"]
+    },
+    // =============================================================================
+    // 切换开发板工具
+    // =============================================================================
+    {
+        name: 'switch_board',
+        description: `在当前项目中切换开发板。需要提供新的开发板包名称（如 "@aily-project/board-esp32_devkitc"）。
+切换过程会自动卸载当前开发板包、安装新开发板包、更新项目配置并重新加载项目。
+
+注意：
+- 切换开发板会重置编译缓存
+- 项目中非开发板相关的依赖库会被保留
+- 如果不确定开发板名称，可先使用 search_boards_libraries 工具搜索`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                board_name: {
+                    type: 'string',
+                    description: '开发板包名称，如 "@aily-project/board-esp32_devkitc"、"@aily-project/board-arduino_uno"'
+                },
+                board_version: {
+                    type: 'string',
+                    description: '开发板包版本号（可选，不指定则使用最新版）'
+                }
+            },
+            required: ['board_name']
+        },
+        agents: ["mainAgent"]
+    },
+    // =============================================================================
+    // 获取开发板编译/烧录配置
+    // =============================================================================
+    {
+        name: 'get_board_config',
+        description: `获取当前开发板的编译/烧录配置选项及其当前值。
+
+返回信息包括：
+- 当前开发板名称和类型
+- 所有可配置项及其可选值（如上传速度、Flash模式、Flash大小、分区方案等）
+- 每个配置项的当前选中值
+
+支持的开发板配置：
+- **ESP32**: 上传速度(UploadSpeed)、上传模式(UploadMode)、Flash模式(FlashMode)、Flash大小(FlashSize)、分区方案(PartitionScheme)、CDC启动(CDCOnBoot)、PSRAM
+- **STM32**: 开发板型号(pnum)、USB配置(usb)
+- **nRF5**: SoftDevice
+
+如果当前开发板没有额外配置选项（如 Arduino UNO），会返回空列表。`,
+        input_schema: {
+            type: 'object',
+            properties: {},
+            required: []
+        },
+        agents: ["mainAgent"]
+    },
+    // =============================================================================
+    // 设置开发板编译/烧录配置
+    // =============================================================================
+    {
+        name: 'set_board_config',
+        description: `修改当前开发板的编译/烧录配置项。需先通过 get_board_config 工具获取可用的配置项和可选值。
+
+使用方式：
+1. 先调用 get_board_config 获取当前配置和可选值
+2. 根据返回的 config_key 和 options 中的 value，调用此工具设置
+
+示例：
+- 设置ESP32上传速度: set_board_config({ config_key: "UploadSpeed", config_value: "921600" })
+- 设置Flash大小: set_board_config({ config_key: "FlashSize", config_value: "16M" })
+- 设置分区方案: set_board_config({ config_key: "PartitionScheme", config_value: "default" })
+
+注意：配置变更后会自动触发预编译检查。`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                config_key: {
+                    type: 'string',
+                    description: '配置项键名（从 get_board_config 返回的 config_key），如 UploadSpeed, FlashMode, FlashSize, PartitionScheme 等'
+                },
+                config_value: {
+                    type: 'string',
+                    description: '配置项的值（从 get_board_config 返回的 options 中的 value），如 "921600", "qio", "16M"'
+                }
+            },
+            required: ['config_key', 'config_value']
         },
         agents: ["mainAgent"]
     },

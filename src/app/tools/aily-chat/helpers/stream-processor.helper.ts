@@ -239,7 +239,7 @@ export class StreamProcessorHelper {
             let resultText = '';
 
             // 检测重复工具调用
-            const toolRepetitionCheck = this.engine.repetitionDetectionService.checkToolCallRepetition(data.tool_name, toolArgs);
+            const toolRepetitionCheck = this.engine.repetitionDetectionService.checkToolCallRepetition(data.tool_name, toolArgs, toolCallId);
             if (toolRepetitionCheck.isRepetitive) {
               console.warn('[重复检测] 工具调用重复:', toolRepetitionCheck.pattern);
               const repetitionErrorContent = `检测到重复调用模式 (${toolRepetitionCheck.pattern})。${toolRepetitionCheck.suggestion || '请重新思考解决方案。'}`;
@@ -405,6 +405,13 @@ export class StreamProcessorHelper {
               }
               this.engine.msg.completeToolCall(data.tool_id, data.tool_name, finalState, resultText);
             }
+
+            this.engine.repetitionDetectionService.recordToolCallOutcome(toolCallId, data.tool_name, toolArgs, {
+              content: toolResult?.content,
+              resultText,
+              isError: toolResult?.is_error ?? resultState === 'error',
+              isWarning: resultState === 'warn'
+            });
 
             // 工具返回 metadata.chatContent 时，追加内容到对话中（如框架图渲染）
             if (toolResult?.metadata?.chatContent) {
