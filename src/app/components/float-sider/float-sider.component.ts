@@ -115,8 +115,9 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
       //   height: 600
       // });
       this.uiService.openWindow({
-        path: `iframe?url=${encodeURIComponent('https://tool.aily.pro/component-viewer?type=json&theme=dark')}`,
-        // path: `iframe?url=${encodeURIComponent('http://localhost:4201/component-viewer?type=json&theme=dark')}`,
+        title: this.translate.instant('FLOAT_SIDER.PINMAP'),
+        path: `iframe?url=${encodeURIComponent('https://tool.aily.pro/component-viewer?type=json&theme=dark&lang=' + this.translate.currentLang)}`,
+        // path: `iframe?url=${encodeURIComponent('http://localhost:4201/component-viewer?type=json&theme=dark&lang=' + this.translate.currentLang)}`,
         data: this.electronService.readFile(pinmapJsonPath),
         width: 800,
         height: 600
@@ -252,10 +253,11 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
       return;
     }
 
-    let windowUrl = 'https://tool.aily.pro/connection-graph?type=json&theme=dark';
-    // let windowUrl = 'http://localhost:4201/connection-graph?type=json&theme=dark';
+    let windowUrl = 'https://tool.aily.pro/connection-graph?type=json&theme=dark&lang=' + this.translate.currentLang;
+    // let windowUrl = 'http://localhost:4201/connection-graph?type=json&theme=dark&lang=' + this.translate.currentLang;
 
     this.uiService.openWindow({
+      title: this.translate.instant('FLOAT_SIDER.CIRCUIT'),
       path: `iframe?url=${encodeURIComponent(windowUrl)}`,
       data: null,
       width: 900,
