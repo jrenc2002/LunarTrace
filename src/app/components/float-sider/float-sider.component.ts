@@ -244,8 +244,8 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
   }
 
   async showCircuit() {
-    // this.message.warning('Coming Soon');
-    // return;
+    this.message.warning('Coming Soon');
+    return;
     if (!this.requireLogin()) return;
 
     if (!this.electronService.isElectron || !this.boardPackagePath) {
