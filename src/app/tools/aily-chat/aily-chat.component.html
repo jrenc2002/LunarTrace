@@ -55,7 +55,9 @@
             [source]="item.source"
             [isLastAily]="$last && item.role === 'aily'"
             [sessionId]="sessionId"
-            [msgIndex]="$index">
+            [msgIndex]="$index"
+            [activeCheckpointAnchorIndex]="activeCheckpointAnchorIndex"
+            (checkpointHoverChange)="onCheckpointHoverChange($event)">
           </aily-x-dialog>
           }
       </div>

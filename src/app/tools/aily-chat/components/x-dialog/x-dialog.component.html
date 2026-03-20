@@ -1,6 +1,10 @@
 @if (isSubagent) {
   <!-- 子Agent消息折叠视图 -->
-  <div class="subagent-fold animate__animated animate__fadeIn animate__faster">
+  <div
+    class="subagent-fold animate__animated animate__fadeIn animate__faster"
+    (mouseenter)="onDialogMouseEnter()"
+    (mouseleave)="onDialogMouseLeave()"
+  >
     <div class="subagent-fold-header" (click)="subagentExpanded = !subagentExpanded">
       @if (doing) {
         <i class="fa-duotone fa-solid fa-loader subagent-fold-icon loading ac-spin"></i>
@@ -28,15 +32,21 @@
   <div
     class="dialog-box animate__animated animate__fadeIn animate__faster"
     [ngClass]="{ user: role === 'user' }"
-    (mouseenter)="showActions = true"
-    (mouseleave)="showActions = false"
+    (mouseenter)="onDialogMouseEnter()"
+    (mouseleave)="onDialogMouseLeave()"
   >
+    @if (canRenderCheckpointAnchor) {
+      <div class="checkpoint-action-row">
+        <span
+          class="restore-checkpoint-text"
+          [class.visible]="showCheckpointAnchor"
+          (click)="onRestoreCheckpoint()"
+        >还原检查点</span>
+      </div>
+    }
     <div class="username">
       @if (role === "user") {
         <i class="fa-light fa-user-vneck"></i>&nbsp;&nbsp;me
-        @if (canShowUserActions && showActions) {
-          <span class="restore-checkpoint-text" (click)="onRestoreCheckpoint()">还原检查点</span>
-        }
       } @else {
         <i class="fa-light fa-user-astronaut"></i>&nbsp;&nbsp;aily
       }
@@ -60,6 +70,21 @@
         <div class="msg-action-btn" (click)="onRegenerate()" title="重试">
           <i class="fa-light fa-rotate-right"></i>
         </div>
+        <div class="msg-action-btn" (click)="onCopyContent()" title="复制">
+          <i class="fa-light fa-copy"></i>
+        </div>
+        <div class="msg-action-btn" [class.active]="feedbackState === 'helpful'" (click)="onFeedback('helpful')" title="有帮助">
+          <i class="fa-light fa-thumbs-up"></i>
+        </div>
+        <div class="msg-action-btn" [class.active]="feedbackState === 'unhelpful'" (click)="onFeedback('unhelpful')" title="没帮助">
+          <i class="fa-light fa-thumbs-down"></i>
+        </div>
+      </div>
+    } @else if (canShowLimitActions) {
+      <div class="msg-actions">
+        <!-- <div class="msg-action-btn" (click)="onRegenerate()" title="重试">
+          <i class="fa-light fa-rotate-right"></i>
+        </div> -->
         <div class="msg-action-btn" (click)="onCopyContent()" title="复制">
           <i class="fa-light fa-copy"></i>
         </div>

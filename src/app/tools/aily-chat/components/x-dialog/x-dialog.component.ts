@@ -2,6 +2,8 @@ import {
   Component,
   Input,
   OnChanges,
+  Output,
+  EventEmitter,
   signal,
   SimpleChanges,
   ViewChild,
@@ -14,6 +16,7 @@ import type { StreamingOption, ComponentMap } from 'ngx-x-markdown';
 import { AilyChatCodeComponent } from './aily-chat-code.component';
 import { ChatAPI } from '../../core/api-endpoints';
 import { AilyHost } from '../../core/host';
+import { EditCheckpointService } from '../../services/edit-checkpoint.service';
 
 @Component({
   selector: 'aily-x-dialog',
@@ -33,6 +36,9 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   /** 当前会话 ID */
   @Input() sessionId = '';
   @Input() msgIndex = -1;
+  @Input() activeCheckpointAnchorIndex: number | null = null;
+
+  @Output() checkpointHoverChange = new EventEmitter<number | null>();
 
   @ViewChild('subagentBody') subagentBodyRef?: ElementRef<HTMLElement>;
 
@@ -65,13 +71,38 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   /** 反馈状态 */
   feedbackState: 'helpful' | 'unhelpful' | null = null;
 
+  constructor(private editCheckpointService: EditCheckpointService) {}
+
   /** 是否可显示操作栏（非 doing 的最后一条 aily 消息） */
   get canShowActions(): boolean {
     return this.isLastAily && !this.doing && this.role === 'aily' && !this.isSubagent;
   }
 
-  get canShowUserActions(): boolean {
-    return this.role === 'user' && !this.doing && this.msgIndex > 0;
+  get canShowLimitActions(): boolean {
+    return this.role !== 'user' && !this.doing && this.msgIndex > 0;
+  }
+
+  get canShowCheckpointAction(): boolean {
+    return !this.doing && this.msgIndex > 0;
+  }
+
+  get canRenderCheckpointAnchor(): boolean {
+    return this.role === 'user' && this.msgIndex >= 0;
+  }
+
+  get showCheckpointAnchor(): boolean {
+    return this.canRenderCheckpointAnchor && this.activeCheckpointAnchorIndex === this.msgIndex;
+  }
+
+  onDialogMouseEnter(): void {
+    this.showActions = true;
+    const anchorListIndex = this.editCheckpointService.getTurnStartListIndexByAnyListIndex(this.msgIndex);
+    this.checkpointHoverChange.emit(anchorListIndex);
+  }
+
+  onDialogMouseLeave(): void {
+    this.showActions = false;
+    this.checkpointHoverChange.emit(null);
   }
 
   onRegenerate(): void {
