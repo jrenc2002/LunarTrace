@@ -1,13 +1,13 @@
 /**
- * EditCheckpointService — 文件变更快照与回滚服务
+ * EditCheckpointService — Copilot-style 文件变更快照与回滚服务
  *
- * 在 Agent 每次文件操作（create/edit/replace/delete）前记录文件原始状态，
- * 形成按 turn 粒度的 checkpoint 链，支持逐轮回滚。
+ * 完全对标 VS Code Copilot 的 ChatEditingSession 实现：
  *
- * 设计参考 Copilot 的 EditSurvivalTracker + Trajectory 思路：
- * - 记录每个 turn 中所有文件变更的 before/after 快照
- * - 支持按 turn 粒度回滚（恢复文件到变更前状态）
- * - 持久化
+ * 核心设计：
+ * - initialFileContents: 每个文件首次被 AI 编辑前的原始内容（只写一次，不更新）
+ * - timeline: 线性快照时间线，每个 turn 一个 TurnSnapshot，内含 SnapshotStop
+ * - timelineIndex: 当前游标位置，支持 undo/redo 双向导航
+ * - pendingSnapshot: Undo 前自动保存的"最新磁盘状态"快照，确保 redo 可恢复
  */
 
 import { Injectable } from '@angular/core';
@@ -18,58 +18,78 @@ import { AilyHost } from '../core/host';
 // 类型定义
 // ============================
 
-export interface FileEdit {
-  /** 文件绝对路径 */
-  path: string;
-  /** 操作类型 */
-  type: 'create' | 'modify' | 'delete';
-  /** 变更前的文件内容（create 时为 null，表示文件不存在） */
-  oldContent: string | null;
-  /** 变更前文件是否存在 */
-  existed: boolean;
-  /** 时间戳 */
-  timestamp: number;
+export type FileEntryState = 'pending' | 'accepted' | 'rejected';
+
+/** 单个文件在某快照点的状态 */
+export interface SnapshotEntry {
+  resource: string;
+  current: string | null;
+  state: FileEntryState;
 }
 
-export interface TurnCheckpoint {
-  /** checkpoint ID */
-  id: string;
-  /** 对应的 turn 迭代序号 */
+/** 一个快照点 = 该时刻所有被追踪文件的状态集合 */
+export interface SnapshotStop {
+  stopId: string;
+  entries: Record<string, SnapshotEntry>;
+}
+
+/** 一个 turn/request 对应的快照 */
+export interface TurnSnapshot {
+  requestId: string;
   turnIndex: number;
-  /** 在 conversationMessages 中 user 消息的索引位置 */
   conversationStartIndex: number;
-  /** 在 UI list 中 assistant 消息的起始索引 */
   listStartIndex: number;
-  /** 该轮中的所有文件编辑记录 */
-  edits: FileEdit[];
-  /** 创建时间 */
+  stops: SnapshotStop[];
   createdAt: number;
+}
+
+/** 回滚/恢复操作的结果 */
+export interface RollbackResult {
+  rolledBackFiles: number;
+  errors: string[];
 }
 
 // ============================
 // Service
 // ============================
 
-/** 最多保留的 checkpoint 数量 */
-const MAX_CHECKPOINTS = 30;
-
 @Injectable()
 export class EditCheckpointService {
 
-  private checkpoints: TurnCheckpoint[] = [];
-  private currentTurnEdits: FileEdit[] = [];
-  private currentTurnIndex: number = -1;
+  /** 每个文件首次被 AI 编辑前的原始内容 (null = 文件不存在) */
+  private initialFileContents = new Map<string, string | null>();
 
-  /** 当前显示的文件变更摘要（面板通过订阅此信号更新） */
+  /** 快照时间线（线性历史），无上限 */
+  private timeline: TurnSnapshot[] = [];
+
+  /** 当前在时间线中的位置 (-1 = 初始状态/所有 turn 均已 undo) */
+  private timelineIndex: number = -1;
+
+  /**
+   * Copilot-style pendingSnapshot：
+   * 在首次 undo 时自动拍摄当前磁盘状态，确保 redo 到最末端时能恢复。
+   * 新 turn 开始时清除（新操作取代 redo 历史）。
+   */
+  private pendingSnapshot: SnapshotStop | null = null;
+
+  /** 当前 turn 中被修改的文件路径集合 */
+  private currentTurnTrackedPaths = new Set<string>();
+
+  /** 当前 turn 中各文件的操作类型（用于摘要显示） */
+  private currentTurnOperations = new Map<string, 'create' | 'modify' | 'delete'>();
+
+  /** 是否在活跃 turn 中 */
+  private isInTurn = false;
+
+  // ---- UI 信号 ----
+
   private summarySubject = new BehaviorSubject<EditsSummary | null>(null);
   summaryChanged$ = this.summarySubject.asObservable();
 
-  /** 推送新的摘要到面板 */
   publishSummary(summary: EditsSummary | null): void {
     this.summarySubject.next(summary);
   }
 
-  /** 重新计算当前 turn 的摘要并推送到面板（工具每次写盘后调用，实现实时更新） */
   publishCurrentSummary(): void {
     const summary = this.getEditsSummary();
     if (summary) {
@@ -77,328 +97,323 @@ export class EditCheckpointService {
     }
   }
 
-  /** 关闭/隐藏面板 */
   dismissSummary(): void {
     this.summarySubject.next(null);
   }
 
+  // ==================== Turn 管理 ====================
+
   /**
-   * 开始新的 turn（由 ChatEngine 在每轮 startChatTurn / send 时调用）
+   * 开始新的 turn。
+   * 如果处于 undo 状态（timelineIndex < timeline.length - 1），
+   * 截断 redo 历史并清除 pendingSnapshot（新操作取代 redo）。
    */
   startTurn(turnIndex: number, conversationStartIndex: number, listStartIndex: number): void {
-    // 如果上一轮有未提交的编辑，先提交
-    this.commitCurrentTurn();
+    if (this.isInTurn) {
+      this.commitCurrentTurn();
+    }
 
-    this.currentTurnIndex = turnIndex;
-    this.currentTurnEdits = [];
+    // 截断 redo 历史（新操作丢弃将来的快照）
+    if (this.timelineIndex < this.timeline.length - 1) {
+      this.timeline.splice(this.timelineIndex + 1);
+    }
+    this.pendingSnapshot = null;
 
-    // 预创建 checkpoint 以记录 conversation 和 list 的位置
-    this.checkpoints.push({
-      id: `cp_${Date.now()}_${turnIndex}`,
+    const snapshot: TurnSnapshot = {
+      requestId: `cp_${Date.now()}_${turnIndex}`,
       turnIndex,
       conversationStartIndex,
       listStartIndex,
-      edits: this.currentTurnEdits,
+      stops: [],
       createdAt: Date.now(),
-    });
+    };
 
-    // 裁剪旧 checkpoint
-    while (this.checkpoints.length > MAX_CHECKPOINTS) {
-      this.checkpoints.shift();
-    }
+    this.timeline.push(snapshot);
+    this.timelineIndex = this.timeline.length - 1;
+
+    this.currentTurnTrackedPaths.clear();
+    this.currentTurnOperations.clear();
+    this.isInTurn = true;
   }
 
   /**
-   * 记录一次文件编辑（在工具实际写盘前调用）
-   * 自动捕获文件当前内容作为 oldContent
+   * 记录一次文件编辑（在工具实际写盘前调用）。
+   * 首次编辑某文件时自动捕获初始内容（对标 Copilot _initialFileContents 只写一次）。
    */
   recordEdit(filePath: string, type: 'create' | 'modify' | 'delete'): void {
     const fs = AilyHost.get().fs;
-    let oldContent: string | null = null;
-    let existed = false;
 
-    try {
-      if (fs.existsSync(filePath)) {
-        existed = true;
-        if (type !== 'create' || fs.existsSync(filePath)) {
-          oldContent = fs.readFileSync(filePath, 'utf-8');
+    if (!this.initialFileContents.has(filePath)) {
+      let content: string | null = null;
+      try {
+        if (fs.existsSync(filePath)) {
+          content = fs.readFileSync(filePath, 'utf-8');
         }
-      }
-    } catch {
-      // 读取失败，oldContent 保持 null
+      } catch { /* ignore */ }
+      this.initialFileContents.set(filePath, content);
     }
 
-    this.currentTurnEdits.push({
-      path: filePath,
-      type,
-      oldContent,
-      existed,
-      timestamp: Date.now(),
-    });
+    this.currentTurnTrackedPaths.add(filePath);
+    this.currentTurnOperations.set(filePath, type);
   }
 
   /**
-   * 提交当前 turn 的编辑记录
-   * 在 turn 结束时调用（stream complete 或取消时）
+   * 提交当前 turn — 创建快照点，捕获所有追踪文件的当前磁盘状态。
+   * 对标 Copilot _createSnapshot() + _timeline.pushSnapshot()。
    */
   commitCurrentTurn(): void {
-    // edits 数组是引用共享的，已自动写入最新的 checkpoint
-    this.currentTurnIndex = -1;
+    if (!this.isInTurn) return;
+    this.isInTurn = false;
+
+    if (this.currentTurnTrackedPaths.size === 0) return;
+
+    const stop = this.captureCurrentDiskState();
+    const currentTurn = this.timeline[this.timelineIndex];
+    if (currentTurn) {
+      currentTurn.stops.push(stop);
+    }
+  }
+
+  // ==================== Undo / Redo (对标 Copilot undoInteraction / redoInteraction) ====================
+
+  get canUndo(): boolean {
+    return this.timelineIndex >= 0;
+  }
+
+  get canRedo(): boolean {
+    return this.timelineIndex < this.timeline.length - 1 || this.pendingSnapshot !== null;
   }
 
   /**
-   * 仅回滚指定 checkpoint 的文件变更（不移除 checkpoint 记录）
-   * 用于"撤销变更"场景，保留 checkpoint 以便后续"还原检查点"仍可使用
+   * 撤销到上一个快照状态。
+   * 对标 Copilot undoInteraction()：
+   * 1. ensurePendingSnapshot() — 首次 undo 时保存当前磁盘状态
+   * 2. 移动 timelineIndex
+   * 3. 恢复文件到目标状态
    */
-  revertFilesOnly(checkpointId: string): { rolledBackFiles: number; errors: string[] } {
-    const cp = this.checkpoints.find(c => c.id === checkpointId);
-    if (!cp) {
-      return { rolledBackFiles: 0, errors: [`未找到 checkpoint: ${checkpointId}`] };
+  undo(): RollbackResult {
+    if (!this.canUndo) {
+      return { rolledBackFiles: 0, errors: ['没有可撤销的操作'] };
     }
 
-    const fs = AilyHost.get().fs;
-    const pathUtil = AilyHost.get().path;
-    let rolledBackFiles = 0;
-    const errors: string[] = [];
+    this.ensurePendingSnapshot();
 
-    for (let j = cp.edits.length - 1; j >= 0; j--) {
-      const edit = cp.edits[j];
-      try {
-        switch (edit.type) {
-          case 'create':
-            if (!edit.existed && fs.existsSync(edit.path)) {
-              fs.unlinkSync(edit.path);
-              rolledBackFiles++;
-            } else if (edit.existed && edit.oldContent !== null) {
-              fs.writeFileSync(edit.path, edit.oldContent, 'utf-8');
-              rolledBackFiles++;
-            }
-            break;
-          case 'modify':
-            if (edit.oldContent !== null) {
-              fs.writeFileSync(edit.path, edit.oldContent, 'utf-8');
-              rolledBackFiles++;
-            }
-            break;
-          case 'delete':
-            if (edit.oldContent !== null) {
-              const dirPath = pathUtil.dirname(edit.path);
-              if (!fs.existsSync(dirPath)) {
-                fs.mkdirSync(dirPath, { recursive: true });
-              }
-              fs.writeFileSync(edit.path, edit.oldContent, 'utf-8');
-              rolledBackFiles++;
-            }
-            break;
+    this.timelineIndex--;
+
+    const targetStop = this.timelineIndex >= 0
+      ? this.getLastStopAt(this.timelineIndex)
+      : null;
+
+    return this.restoreFilesToState(targetStop);
+  }
+
+  /**
+   * 重做到下一个快照状态。
+   * 对标 Copilot redoInteraction()：
+   * 1. 如果 timeline 中有下一个快照，使用它
+   * 2. 否则使用 pendingSnapshot（恢复到 undo 前的最新状态）
+   */
+  redo(): RollbackResult {
+    if (this.timelineIndex < this.timeline.length - 1) {
+      this.timelineIndex++;
+      const targetStop = this.getLastStopAt(this.timelineIndex);
+      return this.restoreFilesToState(targetStop);
+    }
+
+    if (this.pendingSnapshot) {
+      const result = this.restoreFilesToState(this.pendingSnapshot);
+      this.pendingSnapshot = null;
+      return result;
+    }
+
+    return { rolledBackFiles: 0, errors: ['没有可重做的操作'] };
+  }
+
+  // ==================== Per-file Accept / Reject ====================
+
+  acceptFile(filePath: string): void {
+    this.initialFileContents.delete(filePath);
+
+    for (const turn of this.timeline) {
+      for (const stop of turn.stops) {
+        if (stop.entries[filePath]) {
+          stop.entries[filePath].state = 'accepted';
         }
-      } catch (err: any) {
-        errors.push(`回滚 ${edit.path} 失败: ${err.message}`);
+      }
+    }
+  }
+
+  rejectFile(filePath: string): RollbackResult {
+    const initialContent = this.initialFileContents.get(filePath);
+    if (initialContent === undefined) {
+      return { rolledBackFiles: 0, errors: ['该文件未被追踪'] };
+    }
+
+    const result = this.restoreOneFile(filePath, initialContent);
+
+    for (const turn of this.timeline) {
+      for (const stop of turn.stops) {
+        if (stop.entries[filePath]) {
+          stop.entries[filePath].state = 'rejected';
+        }
       }
     }
 
-    return { rolledBackFiles, errors };
+    this.initialFileContents.delete(filePath);
+
+    return result;
   }
 
+  // ==================== 快照访问 ====================
+
+  getSnapshotByRequestId(requestId: string): TurnSnapshot | undefined {
+    return this.timeline.find(s => s.requestId === requestId);
+  }
+
+  getSnapshotByListIndex(listIndex: number): TurnSnapshot | undefined {
+    return this.timeline.find(s =>
+      s.listStartIndex === listIndex || s.listStartIndex === listIndex + 1
+    );
+  }
+
+  getLatestSnapshot(): TurnSnapshot | undefined {
+    return this.timeline.length > 0 ? this.timeline[this.timeline.length - 1] : undefined;
+  }
+
+  // ==================== 截断（用于 restoreToCheckpoint / regenerate） ====================
+
   /**
-   * 回滚指定 checkpoint 及其之后的所有文件变更
-   * @returns 回滚的文件数量
+   * 回滚到目标快照之前的状态，并截断目标及之后的时间线。
+   * 同时清除 pendingSnapshot（截断操作不可 redo）。
    */
-  rollbackToCheckpoint(checkpointId: string): { rolledBackFiles: number; errors: string[] } {
-    const idx = this.checkpoints.findIndex(cp => cp.id === checkpointId);
+  truncateFromSnapshot(requestId: string): RollbackResult {
+    const idx = this.timeline.findIndex(s => s.requestId === requestId);
     if (idx === -1) {
-      return { rolledBackFiles: 0, errors: [`未找到 checkpoint: ${checkpointId}`] };
+      return { rolledBackFiles: 0, errors: [`未找到快照: ${requestId}`] };
     }
 
-    const fs = AilyHost.get().fs;
-    const pathUtil = AilyHost.get().path;
-    let rolledBackFiles = 0;
-    const errors: string[] = [];
+    const targetStop = idx > 0 ? this.getLastStopAt(idx - 1) : null;
+    const result = this.restoreFilesToState(targetStop);
 
-    // 从最新到目标 checkpoint（含），逆序回滚
-    const toRollback = this.checkpoints.slice(idx);
-    for (let i = toRollback.length - 1; i >= 0; i--) {
-      const cp = toRollback[i];
-      // 逆序回滚该 checkpoint 中的编辑
-      for (let j = cp.edits.length - 1; j >= 0; j--) {
-        const edit = cp.edits[j];
-        try {
-          switch (edit.type) {
-            case 'create':
-              // 文件是新建的 → 删除
-              if (!edit.existed && fs.existsSync(edit.path)) {
-                fs.unlinkSync(edit.path);
-                rolledBackFiles++;
-              } else if (edit.existed && edit.oldContent !== null) {
-                // 文件原来存在但被覆盖了 → 恢复原内容
-                fs.writeFileSync(edit.path, edit.oldContent, 'utf-8');
-                rolledBackFiles++;
-              }
-              break;
+    this.timeline.splice(idx);
+    this.timelineIndex = this.timeline.length - 1;
+    this.pendingSnapshot = null;
 
-            case 'modify':
-              // 恢复原内容
-              if (edit.oldContent !== null) {
-                fs.writeFileSync(edit.path, edit.oldContent, 'utf-8');
-                rolledBackFiles++;
-              }
-              break;
-
-            case 'delete':
-              // 文件被删除 → 恢复
-              if (edit.oldContent !== null) {
-                const dirPath = pathUtil.dirname(edit.path);
-                if (!fs.existsSync(dirPath)) {
-                  fs.mkdirSync(dirPath, { recursive: true });
-                }
-                fs.writeFileSync(edit.path, edit.oldContent, 'utf-8');
-                rolledBackFiles++;
-              }
-              break;
-          }
-        } catch (err: any) {
-          errors.push(`回滚 ${edit.path} 失败: ${err.message}`);
-        }
-      }
-    }
-
-    // 移除已回滚的 checkpoints
-    this.checkpoints.splice(idx);
-
-    return { rolledBackFiles, errors };
+    return result;
   }
 
-  /**
-   * 获取最近 N 轮的 checkpoint（用于 UI 展示）
-   */
-  getRecentCheckpoints(count: number = 10): TurnCheckpoint[] {
-    return this.checkpoints.slice(-count);
-  }
+  // ==================== 查询 ====================
 
-  /**
-   * 获取指定 checkpoint 的信息（用于 turn regenerate）
-   */
-  getCheckpoint(checkpointId: string): TurnCheckpoint | undefined {
-    return this.checkpoints.find(cp => cp.id === checkpointId);
-  }
-
-  /**
-   * 获取最新的有编辑的 checkpoint
-   */
-  getLastEditCheckpoint(): TurnCheckpoint | undefined {
-    for (let i = this.checkpoints.length - 1; i >= 0; i--) {
-      if (this.checkpoints[i].edits.length > 0) {
-        return this.checkpoints[i];
-      }
-    }
-    return undefined;
-  }
-
-  /**
-   * 获取最新 checkpoint（无论是否有编辑）
-   */
-  getLatestCheckpoint(): TurnCheckpoint | undefined {
-    return this.checkpoints.length > 0 ? this.checkpoints[this.checkpoints.length - 1] : undefined;
-  }
-
-  getCheckpointByListIndex(listIndex: number): TurnCheckpoint | undefined {
-    return this.checkpoints.find(cp => cp.listStartIndex === listIndex || cp.listStartIndex === listIndex + 1);
-  }
-
-  /**
-   * 当前 turn 是否有任何编辑
-   */
   hasEditsInCurrentTurn(): boolean {
-    return this.currentTurnEdits.length > 0;
+    return this.currentTurnTrackedPaths.size > 0;
   }
 
-  /**
-   * 获取所有 checkpoint 的变更文件总数
-   */
   getTotalEditCount(): number {
-    return this.checkpoints.reduce((acc, cp) => acc + cp.edits.length, 0);
+    return this.initialFileContents.size;
   }
 
+  get trackedFileCount(): number {
+    return this.initialFileContents.size;
+  }
+
+  getTrackedFiles(): string[] {
+    return [...this.initialFileContents.keys()];
+  }
+
+  getInitialContent(filePath: string): string | null | undefined {
+    return this.initialFileContents.get(filePath);
+  }
+
+  // ==================== 编辑摘要 ====================
+
   /**
-   * 获取指定 checkpoint 的编辑摘要（用于 UI 展示）
-   * 计算每个文件的 added/removed 行数
+   * 获取当前 turn 的编辑摘要。
+   * 关键修复：diff 基线为**上一个 turn 的快照**而非 initialFileContents，
+   * 这样只统计本轮的变更量，不会累积之前已保留的变更。
+   * 只包含 currentTurnTrackedPaths 中的文件（本轮实际编辑过的文件）。
    */
-  getEditsSummary(checkpointId?: string): EditsSummary | null {
-    const cp = checkpointId
-      ? this.checkpoints.find(c => c.id === checkpointId)
-      : this.getLatestCheckpoint();
-    if (!cp || cp.edits.length === 0) return null;
+  getEditsSummary(requestId?: string): EditsSummary | null {
+    if (this.initialFileContents.size === 0 && this.currentTurnTrackedPaths.size === 0) {
+      return null;
+    }
 
     const fs = AilyHost.get().fs;
     const pathUtil = AilyHost.get().path;
     const projectPath = AilyHost.get().project.currentProjectPath || '';
+
+    // 获取上一个 turn 的最后一个快照作为 diff 基线
+    const prevStop = this.timelineIndex > 0
+      ? this.getLastStopAt(this.timelineIndex - 1)
+      : null;
+
     let totalAdded = 0;
     let totalRemoved = 0;
-
-    // 按路径去重（同一文件多次编辑只显示一次，以第一次 oldContent 和最终内容比较）
-    const fileMap = new Map<string, FileEdit>();
-    for (const edit of cp.edits) {
-      if (!fileMap.has(edit.path)) {
-        fileMap.set(edit.path, edit);
-      }
-    }
-
     const files: EditFileSummary[] = [];
-    for (const [filePath, firstEdit] of fileMap) {
-      let added = 0;
-      let removed = 0;
-      const relativePath = projectPath ? pathUtil.relative(projectPath, filePath) : pathUtil.basename(filePath);
 
+    // 只遍历本轮实际编辑过的文件
+    const filesToCheck = this.currentTurnTrackedPaths.size > 0
+      ? this.currentTurnTrackedPaths
+      : this.initialFileContents.keys();
+
+    for (const filePath of filesToCheck) {
+      // baseline: 优先使用前一轮快照中的内容，否则使用 initialFileContents
+      const baselineContent = prevStop?.entries[filePath]?.current
+        ?? this.initialFileContents.get(filePath)
+        ?? null;
+
+      let currentContent: string | null = null;
       try {
-        switch (firstEdit.type) {
-          case 'create': {
-            if (fs.existsSync(filePath)) {
-              const content = fs.readFileSync(filePath, 'utf-8');
-              added = content.split('\n').length;
-            }
-            break;
-          }
-          case 'delete': {
-            if (firstEdit.oldContent !== null) {
-              removed = firstEdit.oldContent.split('\n').length;
-            }
-            break;
-          }
-          case 'modify': {
-            const oldLines = (firstEdit.oldContent || '').split('\n');
-            let newLines: string[] = [];
-            if (fs.existsSync(filePath)) {
-              newLines = fs.readFileSync(filePath, 'utf-8').split('\n');
-            }
-            // 简单行级差异计算
-            const oldBag = new Map<string, number>();
-            for (const line of oldLines) {
-              oldBag.set(line, (oldBag.get(line) || 0) + 1);
-            }
-            let matched = 0;
-            const tempBag = new Map(oldBag);
-            for (const line of newLines) {
-              const count = tempBag.get(line) || 0;
-              if (count > 0) {
-                tempBag.set(line, count - 1);
-                matched++;
-              }
-            }
-            removed = oldLines.length - matched;
-            added = newLines.length - matched;
-            break;
+        if (fs.existsSync(filePath)) {
+          currentContent = fs.readFileSync(filePath, 'utf-8');
+        }
+      } catch { /* ignore */ }
+
+      if (currentContent === baselineContent) continue;
+
+      const relativePath = projectPath
+        ? pathUtil.relative(projectPath, filePath)
+        : pathUtil.basename(filePath);
+
+      let added = 0, removed = 0;
+      let type: 'create' | 'modify' | 'delete';
+
+      if (baselineContent === null && currentContent !== null) {
+        type = 'create';
+        added = currentContent.split('\n').length;
+      } else if (baselineContent !== null && currentContent === null) {
+        type = 'delete';
+        removed = baselineContent.split('\n').length;
+      } else {
+        type = this.currentTurnOperations.get(filePath) || 'modify';
+        const oldLines = (baselineContent || '').split('\n');
+        const newLines = (currentContent || '').split('\n');
+        const oldBag = new Map<string, number>();
+        for (const line of oldLines) {
+          oldBag.set(line, (oldBag.get(line) || 0) + 1);
+        }
+        let matched = 0;
+        const tempBag = new Map(oldBag);
+        for (const line of newLines) {
+          const count = tempBag.get(line) || 0;
+          if (count > 0) {
+            tempBag.set(line, count - 1);
+            matched++;
           }
         }
-      } catch {
-        // 文件读取失败，跳过
+        removed = oldLines.length - matched;
+        added = newLines.length - matched;
       }
 
       totalAdded += added;
       totalRemoved += removed;
-      files.push({ path: relativePath, fullPath: filePath, type: firstEdit.type, added, removed });
+      files.push({ path: relativePath, fullPath: filePath, type, added, removed });
     }
 
+    if (files.length === 0) return null;
+
+    const latestSnapshot = this.getLatestSnapshot();
     return {
-      checkpointId: cp.id,
+      checkpointId: requestId || latestSnapshot?.requestId || 'current',
       fileCount: files.length,
       totalAdded,
       totalRemoved,
@@ -406,58 +421,341 @@ export class EditCheckpointService {
     };
   }
 
-  // ==================== 序列化 / 反序列化 ====================
+  // ==================== 持久化 — 文件系统存储 ====================
+  // 将快照数据存储到 {projectPath}/.aily_checkpoints/ 目录，
+  // state.json 只存储元数据（时间线结构、索引），
+  // 文件内容独立存储在 contents/ 子目录，避免超大 JSON blob。
+
+  private static readonly CHECKPOINT_DIR = '.aily_checkpoints';
+  private static readonly STATE_FILE = 'state.json';
+  private static readonly CONTENTS_DIR = 'contents';
+
+  /** 将 filePath 转换为安全的文件名（用于存储内容文件） */
+  private pathToKey(filePath: string): string {
+    // 将路径中的非法字符替换为 _，保留一定可读性
+    return filePath.replace(/[\\/:*?"<>|]/g, '_').replace(/_+/g, '_');
+  }
+
+  /** 内容文件路径 */
+  private contentFilePath(checkpointDir: string, key: string): string {
+    const pathUtil = AilyHost.get().path;
+    return pathUtil.join(checkpointDir, EditCheckpointService.CONTENTS_DIR, key);
+  }
+
+  /** 将一段内容写入 contents/ 目录，返回 key */
+  private writeContent(checkpointDir: string, filePath: string, content: string | null, suffix: string): string {
+    const fs = AilyHost.get().fs;
+    const pathUtil = AilyHost.get().path;
+    const contentsDir = pathUtil.join(checkpointDir, EditCheckpointService.CONTENTS_DIR);
+    if (!fs.existsSync(contentsDir)) {
+      fs.mkdirSync(contentsDir, { recursive: true });
+    }
+    const key = this.pathToKey(filePath) + suffix;
+    const fullPath = pathUtil.join(contentsDir, key);
+    if (content === null) {
+      // null 内容用特殊标记文件
+      fs.writeFileSync(fullPath, '__NULL_CONTENT__', 'utf-8');
+    } else {
+      fs.writeFileSync(fullPath, content, 'utf-8');
+    }
+    return key;
+  }
+
+  /** 从 contents/ 中读取内容 */
+  private readContent(checkpointDir: string, key: string): string | null {
+    const fs = AilyHost.get().fs;
+    const fullPath = this.contentFilePath(checkpointDir, key);
+    try {
+      if (!fs.existsSync(fullPath)) return null;
+      const raw = fs.readFileSync(fullPath, 'utf-8');
+      return raw === '__NULL_CONTENT__' ? null : raw;
+    } catch {
+      return null;
+    }
+  }
 
   /**
-   * 导出 checkpoint 数据用于持久化
-   * oldContent 较大时截断以控制存储体积
+   * 持久化到项目目录下 .aily_checkpoints/。
+   * state.json 只存储元数据引用（content key），文件内容独立存储。
    */
-  toJSON(): SerializedCheckpoints {
-    const MAX_CONTENT_SIZE = 100 * 1024; // 单文件 oldContent 最大 100KB
-    return {
-      checkpoints: this.checkpoints.map(cp => ({
-        ...cp,
-        edits: cp.edits.map(edit => ({
-          ...edit,
-          oldContent: edit.oldContent && edit.oldContent.length > MAX_CONTENT_SIZE
-            ? null  // 太大则不保存
-            : edit.oldContent,
-          _contentTruncated: edit.oldContent !== null && edit.oldContent.length > MAX_CONTENT_SIZE,
-        })),
-      })),
+  saveToDisk(projectPath: string): void {
+    const fs = AilyHost.get().fs;
+    const pathUtil = AilyHost.get().path;
+    const checkpointDir = pathUtil.join(projectPath, EditCheckpointService.CHECKPOINT_DIR);
+
+    if (!fs.existsSync(checkpointDir)) {
+      fs.mkdirSync(checkpointDir, { recursive: true });
+    }
+
+    // 1. 写入 initial file contents
+    const initialRefs: Record<string, string> = {};
+    for (const [filePath, content] of this.initialFileContents) {
+      const key = this.writeContent(checkpointDir, filePath, content, '.initial');
+      initialRefs[filePath] = key;
+    }
+
+    // 2. 写入 snapshot entries
+    const serializeStop = (stop: SnapshotStop): { stopId: string; entryRefs: Record<string, { key: string; state: FileEntryState }> } => {
+      const entryRefs: Record<string, { key: string; state: FileEntryState }> = {};
+      for (const [fp, entry] of Object.entries(stop.entries)) {
+        const key = this.writeContent(checkpointDir, fp, entry.current, `.${stop.stopId}`);
+        entryRefs[fp] = { key, state: entry.state };
+      }
+      return { stopId: stop.stopId, entryRefs };
     };
-  }
 
-  /**
-   * 从持久化数据恢复 checkpoint
-   */
-  restoreFromJSON(data: SerializedCheckpoints): void {
-    if (!data?.checkpoints || !Array.isArray(data.checkpoints)) return;
-    this.checkpoints = data.checkpoints.map(cp => ({
-      id: cp.id,
-      turnIndex: cp.turnIndex,
-      conversationStartIndex: cp.conversationStartIndex,
-      listStartIndex: cp.listStartIndex,
-      edits: (cp.edits || []).map((edit: any) => ({
-        path: edit.path,
-        type: edit.type,
-        oldContent: edit.oldContent ?? null,
-        existed: edit.existed,
-        timestamp: edit.timestamp,
-      })),
-      createdAt: cp.createdAt,
+    const timelineMeta = this.timeline.map(turn => ({
+      requestId: turn.requestId,
+      turnIndex: turn.turnIndex,
+      conversationStartIndex: turn.conversationStartIndex,
+      listStartIndex: turn.listStartIndex,
+      createdAt: turn.createdAt,
+      stops: turn.stops.map(serializeStop),
     }));
-    this.currentTurnEdits = [];
-    this.currentTurnIndex = -1;
+
+    let pendingMeta: { stopId: string; entryRefs: Record<string, { key: string; state: FileEntryState }> } | undefined;
+    if (this.pendingSnapshot) {
+      pendingMeta = serializeStop(this.pendingSnapshot);
+    }
+
+    // 3. 写 state.json（纯元数据，无文件内容）
+    const state = {
+      version: 4,
+      initialRefs,
+      timeline: timelineMeta,
+      timelineIndex: this.timelineIndex,
+      pendingSnapshot: pendingMeta,
+    };
+
+    const statePath = pathUtil.join(checkpointDir, EditCheckpointService.STATE_FILE);
+    fs.writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf-8');
   }
 
   /**
-   * 清空所有 checkpoint（新会话 / 销毁时）
+   * 从项目目录下 .aily_checkpoints/ 恢复。
    */
+  loadFromDisk(projectPath: string): boolean {
+    const fs = AilyHost.get().fs;
+    const pathUtil = AilyHost.get().path;
+    const checkpointDir = pathUtil.join(projectPath, EditCheckpointService.CHECKPOINT_DIR);
+    const statePath = pathUtil.join(checkpointDir, EditCheckpointService.STATE_FILE);
+
+    if (!fs.existsSync(statePath)) return false;
+
+    try {
+      const raw = fs.readFileSync(statePath, 'utf-8');
+      const state = JSON.parse(raw);
+      if (!state || state.version !== 4) return false;
+
+      // 恢复 initialFileContents
+      this.initialFileContents.clear();
+      for (const [filePath, key] of Object.entries(state.initialRefs || {})) {
+        this.initialFileContents.set(filePath, this.readContent(checkpointDir, key as string));
+      }
+
+      // 恢复快照条目的辅助函数
+      const deserializeStop = (meta: any): SnapshotStop => {
+        const entries: Record<string, SnapshotEntry> = {};
+        for (const [fp, ref] of Object.entries(meta.entryRefs || {})) {
+          const { key, state: entryState } = ref as { key: string; state: FileEntryState };
+          entries[fp] = {
+            resource: fp,
+            current: this.readContent(checkpointDir, key),
+            state: entryState,
+          };
+        }
+        return { stopId: meta.stopId, entries };
+      };
+
+      // 恢复 timeline
+      this.timeline = (state.timeline || []).map((turn: any) => ({
+        requestId: turn.requestId,
+        turnIndex: turn.turnIndex,
+        conversationStartIndex: turn.conversationStartIndex,
+        listStartIndex: turn.listStartIndex,
+        createdAt: turn.createdAt,
+        stops: (turn.stops || []).map(deserializeStop),
+      }));
+
+      this.timelineIndex = state.timelineIndex ?? this.timeline.length - 1;
+      this.pendingSnapshot = state.pendingSnapshot ? deserializeStop(state.pendingSnapshot) : null;
+      this.currentTurnTrackedPaths.clear();
+      this.currentTurnOperations.clear();
+      this.isInTurn = false;
+
+      return true;
+    } catch (err) {
+      console.warn('[EditCheckpoint] loadFromDisk failed:', err);
+      return false;
+    }
+  }
+
+  /**
+   * 清除项目目录下 .aily_checkpoints/ 文件夹。
+   */
+  cleanDisk(projectPath: string): void {
+    const fs = AilyHost.get().fs;
+    const pathUtil = AilyHost.get().path;
+    const checkpointDir = pathUtil.join(projectPath, EditCheckpointService.CHECKPOINT_DIR);
+
+    try {
+      if (fs.existsSync(checkpointDir)) {
+        this.removeDir(checkpointDir);
+      }
+    } catch (err) {
+      console.warn('[EditCheckpoint] cleanDisk failed:', err);
+    }
+  }
+
+  /** 递归删除目录 */
+  private removeDir(dirPath: string): void {
+    const fs = AilyHost.get().fs;
+    if (!fs.existsSync(dirPath)) return;
+    const entries = fs.readdirSync(dirPath);
+    for (const entry of entries) {
+      const fullPath = `${dirPath}/${entry}`;
+      const stat = fs.statSync(fullPath);
+      if (stat.isDirectory()) {
+        this.removeDir(fullPath);
+      } else {
+        fs.unlinkSync(fullPath);
+      }
+    }
+    fs.rmdirSync(dirPath);
+  }
+
+  /** @deprecated 兼容旧 JSON 格式 — 仅用于迁移旧数据 */
+  restoreFromJSON(data: SerializedCheckpoints): void {
+    if (!data) return;
+
+    this.initialFileContents = new Map(
+      Object.entries(data.initialFileContents || {})
+    );
+
+    this.timeline = (data.timeline || []).map((turn: any) => ({
+      requestId: turn.requestId,
+      turnIndex: turn.turnIndex,
+      conversationStartIndex: turn.conversationStartIndex,
+      listStartIndex: turn.listStartIndex,
+      stops: (turn.stops || []).map((stop: any) => ({
+        stopId: stop.stopId,
+        entries: stop.entries || {},
+      })),
+      createdAt: turn.createdAt,
+    }));
+
+    this.timelineIndex = data.timelineIndex ?? this.timeline.length - 1;
+    this.pendingSnapshot = data.pendingSnapshot || null;
+    this.currentTurnTrackedPaths.clear();
+    this.currentTurnOperations.clear();
+    this.isInTurn = false;
+  }
+
   clear(): void {
-    this.checkpoints = [];
-    this.currentTurnEdits = [];
-    this.currentTurnIndex = -1;
+    this.initialFileContents.clear();
+    this.timeline = [];
+    this.timelineIndex = -1;
+    this.pendingSnapshot = null;
+    this.currentTurnTrackedPaths.clear();
+    this.currentTurnOperations.clear();
+    this.isInTurn = false;
+  }
+
+  // ==================== 内部辅助方法 ====================
+
+  /**
+   * 对标 Copilot _ensurePendingSnapshot()：
+   * 在首次 undo 时拍摄当前磁盘状态，确保 redo 到末端时能恢复。
+   */
+  private ensurePendingSnapshot(): void {
+    if (this.pendingSnapshot) return;
+    this.pendingSnapshot = this.captureCurrentDiskState();
+  }
+
+  /** 捕获所有追踪文件的当前磁盘状态为一个 SnapshotStop */
+  private captureCurrentDiskState(): SnapshotStop {
+    const fs = AilyHost.get().fs;
+    const entries: Record<string, SnapshotEntry> = {};
+    for (const [filePath] of this.initialFileContents) {
+      let current: string | null = null;
+      try {
+        if (fs.existsSync(filePath)) {
+          current = fs.readFileSync(filePath, 'utf-8');
+        }
+      } catch { /* ignore */ }
+      entries[filePath] = { resource: filePath, current, state: 'pending' };
+    }
+    return { stopId: `pending_${Date.now()}`, entries };
+  }
+
+  /** 获取指定时间线索引位置或之前最近的快照点 */
+  private getLastStopAt(index: number): SnapshotStop | null {
+    for (let i = index; i >= 0; i--) {
+      const turn = this.timeline[i];
+      if (turn && turn.stops.length > 0) {
+        return turn.stops[turn.stops.length - 1];
+      }
+    }
+    return null;
+  }
+
+  /** 恢复所有追踪文件到指定快照状态（null = 恢复到初始状态） */
+  private restoreFilesToState(targetStop: SnapshotStop | null): RollbackResult {
+    const fs = AilyHost.get().fs;
+    const pathUtil = AilyHost.get().path;
+    let rolledBackFiles = 0;
+    const errors: string[] = [];
+
+    for (const [filePath, initialContent] of this.initialFileContents) {
+      const targetContent = targetStop?.entries[filePath]?.current ?? initialContent;
+
+      try {
+        const currentExists = fs.existsSync(filePath);
+        const currentContent = currentExists ? fs.readFileSync(filePath, 'utf-8') : null;
+
+        if (currentContent === targetContent) continue;
+
+        if (targetContent === null) {
+          if (currentExists) {
+            fs.unlinkSync(filePath);
+            rolledBackFiles++;
+          }
+        } else {
+          const dirPath = pathUtil.dirname(filePath);
+          if (!fs.existsSync(dirPath)) {
+            fs.mkdirSync(dirPath, { recursive: true });
+          }
+          fs.writeFileSync(filePath, targetContent, 'utf-8');
+          rolledBackFiles++;
+        }
+      } catch (err: any) {
+        errors.push(`恢复 ${filePath} 失败: ${err.message}`);
+      }
+    }
+
+    return { rolledBackFiles, errors };
+  }
+
+  /** 恢复单个文件到目标内容 */
+  private restoreOneFile(filePath: string, targetContent: string | null): RollbackResult {
+    const fs = AilyHost.get().fs;
+    const pathUtil = AilyHost.get().path;
+    try {
+      if (targetContent === null) {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      } else {
+        const dirPath = pathUtil.dirname(filePath);
+        if (!fs.existsSync(dirPath)) {
+          fs.mkdirSync(dirPath, { recursive: true });
+        }
+        fs.writeFileSync(filePath, targetContent, 'utf-8');
+      }
+      return { rolledBackFiles: 1, errors: [] };
+    } catch (err: any) {
+      return { rolledBackFiles: 0, errors: [`恢复 ${filePath} 失败: ${err.message}`] };
+    }
   }
 }
 
@@ -471,6 +769,7 @@ export interface EditFileSummary {
   type: 'create' | 'modify' | 'delete';
   added: number;
   removed: number;
+  state?: FileEntryState;
 }
 
 export interface EditsSummary {
@@ -482,5 +781,8 @@ export interface EditsSummary {
 }
 
 export interface SerializedCheckpoints {
-  checkpoints: any[];
+  initialFileContents?: Record<string, string | null>;
+  timeline?: any[];
+  timelineIndex?: number;
+  pendingSnapshot?: SnapshotStop;
 }

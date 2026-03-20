@@ -41,13 +41,13 @@ export const DEFERRED_TOOL_GROUPS: DeferredToolGroup[] = [
     brief: '搜索开发板和库、获取硬件分类、查询开发板参数',
     tools: ['search_boards_libraries', 'get_hardware_categories', 'get_board_parameters']
   },
-  {
-    name: 'ABS 工具',
-    // brief: 'ABS 文件同步、版本控制、ABS 语法参考、库块定义分析',
-    // tools: ['sync_abs_file', 'abs_version_control', 'get_abs_syntax', 'analyze_library_blocks']
-    brief: '版本控制',
-    tools: ['abs_version_control']
-  },
+//   {
+//     name: 'ABS 工具',
+//     // brief: 'ABS 文件同步、版本控制、ABS 语法参考、库块定义分析',
+//     // tools: ['sync_abs_file', 'abs_version_control', 'get_abs_syntax', 'analyze_library_blocks']
+//     brief: '版本控制',
+//     tools: ['abs_version_control']
+//   },
   {
     name: '接线图工具',
     brief: '生成/验证/保存接线图、组件目录、引脚映射',
@@ -2125,40 +2125,40 @@ Query and return specific content (for detailed info)
             required: ['operation']
         }
     },
-    {
-        name: "abs_version_control",
-        description: `🕐 ABS 版本控制工具 - 管理 Blockly 代码的版本历史。
+//     {
+//         name: "abs_version_control",
+//         description: `🕐 ABS 版本控制工具 - 管理 Blockly 代码的版本历史。
 
-**操作类型：**
-1. \`list\` - 列出所有版本历史
-2. \`get\` - 获取指定版本的内容
-3. \`rollback\` - 回滚到指定版本
-4. \`save\` - 手动保存当前版本（带描述）
+// **操作类型：**
+// 1. \`list\` - 列出所有版本历史
+// 2. \`get\` - 获取指定版本的内容
+// 3. \`rollback\` - 回滚到指定版本
+// 4. \`save\` - 手动保存当前版本（带描述）
 
-**使用场景：**
-- 修改代码前先保存版本，方便回滚
-- 查看历史版本对比差异
-- 恢复到之前的代码状态`,
-        input_schema: {
-            type: 'object',
-            properties: {
-                operation: {
-                    type: 'string',
-                    enum: ['list', 'get', 'rollback', 'save'],
-                    description: '操作类型：list=列出版本，get=获取内容，rollback=回滚，save=保存新版本'
-                },
-                versionId: {
-                    type: 'string',
-                    description: '版本 ID（get 和 rollback 操作时必需）'
-                },
-                description: {
-                    type: 'string',
-                    description: '版本描述（save 操作时使用）'
-                }
-            },
-            required: ['operation']
-        }
-    },
+// **使用场景：**
+// - 修改代码前先保存版本，方便回滚
+// - 查看历史版本对比差异
+// - 恢复到之前的代码状态`,
+//         input_schema: {
+//             type: 'object',
+//             properties: {
+//                 operation: {
+//                     type: 'string',
+//                     enum: ['list', 'get', 'rollback', 'save'],
+//                     description: '操作类型：list=列出版本，get=获取内容，rollback=回滚，save=保存新版本'
+//                 },
+//                 versionId: {
+//                     type: 'string',
+//                     description: '版本 ID（get 和 rollback 操作时必需）'
+//                 },
+//                 description: {
+//                     type: 'string',
+//                     description: '版本描述（save 操作时使用）'
+//                 }
+//             },
+//             required: ['operation']
+//         }
+//     },
     // {
     //     name: "variable_manager_tool",
     //     description: `变量管理工具。创建、删除、重命名工作区中的变量。支持不同类型的变量和作用域管理。`,

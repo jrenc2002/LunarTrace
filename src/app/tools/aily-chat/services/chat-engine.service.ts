@@ -901,7 +901,10 @@ Do not create non-existent boards and libraries.
       case 'retry': this.retryLastAction(); break;
       case 'regenerate': this.regenerateTurn(checkpointId); break;
       case 'undoEdits': this.undoLastEdits(); break;
+      case 'redoEdits': this.redoEdits(); break;
       case 'keepEdits': this.onKeepEdits(customEvent.detail); break;
+      case 'acceptFile': this.onAcceptFile(customEvent.detail?.filePath); break;
+      case 'rejectFile': this.onRejectFile(customEvent.detail?.filePath); break;
       case 'restoreCheckpoint': this.restoreToCheckpoint(customEvent.detail.listIndex); break;
       case 'newChat': this.newChat(); break;
       case 'dismiss': break;
@@ -924,26 +927,24 @@ Do not create non-existent boards and libraries.
   }
 
   /**
-   * 回滚/还原后重新同步 ABS 到 Blockly 工作区
-   * 先尝试 importFromAbs（读 .abs 解析加载），失败则 fallback 到 reloadAbiJson（读 .abi 直接加载）
+   * 回滚/还原后重新同步 ABS 到 Blockly 工作区。
+   * 使用 forceImportFromAbs 绕过 isSyncing 互斥锁，
+   * 确保 undo/redo 写盘后能立即重新加载。
    */
   private async reloadAbsWorkspace(): Promise<void> {
-    // 确保 absAutoSyncService 已初始化项目路径
-    const projectPath = this.getCurrentProjectPath();
+    const projectPath = this.getCurrentProjectPath()
+      || AilyHost.get().project.currentProjectPath
+      || AilyHost.get().project.projectRootPath;
     if (projectPath) {
       this.absAutoSyncService.initialize(projectPath);
     }
     try {
-      const imported = await this.absAutoSyncService.importFromAbs();
+      const imported = await this.absAutoSyncService.forceImportFromAbs();
       if (!imported) {
-        // ABS 导入失败（文件不存在或解析失败），fallback 到 ABI 直接加载
-        AilyHost.get().editor?.reloadAbiJson?.();
+        console.warn('[reloadAbsWorkspace] ABS 强制导入失败（文件不存在或解析错误），projectPath:', projectPath);
       }
     } catch (err) {
-      console.warn('[reloadAbsWorkspace] ABS 导入失败，尝试 ABI reload:', err);
-      try {
-        AilyHost.get().editor?.reloadAbiJson?.();
-      } catch {}
+      console.warn('[reloadAbsWorkspace] ABS 导入异常:', err);
     }
   }
 
@@ -956,21 +957,18 @@ Do not create non-existent boards and libraries.
   }
 
   /**
-   * 撤销最近一轮的文件变更（不截断对话历史，反馈待下轮注入）
+   * 撤销最近一轮的文件变更（Undo，不截断对话历史，支持 Redo）
    */
   async undoLastEdits(): Promise<void> {
     if (this.isWaiting) { this.message.warning('正在处理中，请稍候...'); return; }
 
-    const lastCp = this.editCheckpointService.getLastEditCheckpoint();
-    if (!lastCp || lastCp.edits.length === 0) {
+    if (!this.editCheckpointService.canUndo) {
       this.message.info('没有可撤销的文件变更');
       return;
     }
 
-    // 仅回滚文件，保留 checkpoint 记录（不影响"还原检查点"功能）
-    const { rolledBackFiles, errors } = this.editCheckpointService.revertFilesOnly(lastCp.id);
+    const { rolledBackFiles, errors } = this.editCheckpointService.undo();
 
-    // 保存反馈状态，待下轮发送时注入上下文
     this.pendingEditFeedback = `[用户撤销了上一轮的 ${rolledBackFiles} 个文件变更，文件已恢复到变更前的状态。后续操作请基于当前文件内容进行。]`;
 
     if (errors.length > 0) {
@@ -979,20 +977,64 @@ Do not create non-existent boards and libraries.
       this.msg.appendMessage('aily', `\n> ✅ 已撤销 ${rolledBackFiles} 个文件变更\n\n`);
     }
 
-    // 回滚后重新同步 ABS 到工作区
+    await this.reloadAbsWorkspace();
+  }
+
+  /**
+   * 重做文件变更（Redo，恢复被撤销的文件状态）
+   */
+  async redoEdits(): Promise<void> {
+    if (this.isWaiting) { this.message.warning('正在处理中，请稍候...'); return; }
+
+    if (!this.editCheckpointService.canRedo) {
+      this.message.info('没有可重做的文件变更');
+      return;
+    }
+
+    const { rolledBackFiles, errors } = this.editCheckpointService.redo();
+
+    this.pendingEditFeedback = `[用户重新应用了 ${rolledBackFiles} 个文件变更。]`;
+
+    if (errors.length > 0) {
+      this.msg.appendMessage('aily', `\n> ⚠️ 重做了 ${rolledBackFiles} 个文件变更，但有 ${errors.length} 个错误\n\n`);
+    } else {
+      this.msg.appendMessage('aily', `\n> ✅ 已重做 ${rolledBackFiles} 个文件变更\n\n`);
+    }
+
+    // 重做后重新推送摘要到面板
+    this.editCheckpointService.publishCurrentSummary();
+    await this.reloadAbsWorkspace();
+  }
+
+  /**
+   * 接受单个文件的 AI 编辑
+   */
+  private onAcceptFile(filePath: string): void {
+    if (!filePath) return;
+    this.editCheckpointService.acceptFile(filePath);
+    this.editCheckpointService.publishCurrentSummary();
+  }
+
+  /**
+   * 拒绝单个文件的 AI 编辑（恢复到初始内容）
+   */
+  private async onRejectFile(filePath: string): Promise<void> {
+    if (!filePath) return;
+    this.editCheckpointService.rejectFile(filePath);
+    this.editCheckpointService.publishCurrentSummary();
     await this.reloadAbsWorkspace();
   }
 
   async restoreToCheckpoint(listIndex: number): Promise<void> {
     if (this.isWaiting) { this.message.warning('正在处理中，请稍候...'); return; }
 
-    const targetCp = this.editCheckpointService.getCheckpointByListIndex(listIndex);
-    if (!targetCp) {
+    const target = this.editCheckpointService.getSnapshotByListIndex(listIndex);
+    if (!target) {
       this.message.info('未找到该消息对应的检查点');
       return;
     }
 
-    const { rolledBackFiles, errors } = this.editCheckpointService.rollbackToCheckpoint(targetCp.id);
+    const { rolledBackFiles, errors } = this.editCheckpointService.truncateFromSnapshot(target.requestId);
     if (errors.length > 0) {
       console.warn('[restoreToCheckpoint] 回滚文件部分失败:', errors);
     }
@@ -1000,10 +1042,9 @@ Do not create non-existent boards and libraries.
       this.msg.appendMessage('aily', `\n> ✅ 已还原检查点，回滚了 ${rolledBackFiles} 个文件变更\n\n`);
     }
 
-    // 回滚后重新同步 ABS 到工作区
     await this.reloadAbsWorkspace();
 
-    const convCutIndex = targetCp.conversationStartIndex;
+    const convCutIndex = target.conversationStartIndex;
     if (convCutIndex >= 0 && convCutIndex < this.conversationMessages.length) {
       this.conversationMessages.splice(convCutIndex);
     }
@@ -1025,20 +1066,19 @@ Do not create non-existent boards and libraries.
     if (this.isWaiting) { this.message.warning('正在处理中，请稍候...'); return; }
     if (!this.sessionId) { this.message.warning('会话不存在，请开始新对话'); return; }
 
-    // 1. 找到目标 checkpoint
-    const targetCp = checkpointId
-      ? this.editCheckpointService.getCheckpoint(checkpointId)
-      : this.editCheckpointService.getLatestCheckpoint();
+    // 1. 找到目标快照
+    const target = checkpointId
+      ? this.editCheckpointService.getSnapshotByRequestId(checkpointId)
+      : this.editCheckpointService.getLatestSnapshot();
 
-    if (!targetCp) {
-      // 没有 checkpoint，降级为普通重试
+    if (!target) {
       await this.send('user', '请重试上次的操作。', false);
       return;
     }
 
-    // 2. 回滚文件变更
-    if (targetCp.edits.length > 0) {
-      const { rolledBackFiles, errors } = this.editCheckpointService.rollbackToCheckpoint(targetCp.id);
+    // 2. 回滚文件变更并截断时间线
+    if (target.stops.length > 0) {
+      const { rolledBackFiles, errors } = this.editCheckpointService.truncateFromSnapshot(target.requestId);
       if (errors.length > 0) {
         console.warn('[Regenerate] 回滚文件部分失败:', errors);
       }
@@ -1046,14 +1086,13 @@ Do not create non-existent boards and libraries.
     }
 
     // 3. 截断 conversationMessages（回到用户消息发送时的位置）
-    const convCutIndex = targetCp.conversationStartIndex;
+    const convCutIndex = target.conversationStartIndex;
     if (convCutIndex >= 0 && convCutIndex < this.conversationMessages.length) {
-      // 保留 user 消息（convCutIndex 指向 user 消息），截断其后的 assistant/tool 消息
       this.conversationMessages.splice(convCutIndex + 1);
     }
 
     // 4. 截断 UI list（回到 assistant 回复起始位置）
-    const listCutIndex = targetCp.listStartIndex;
+    const listCutIndex = target.listStartIndex;
     if (listCutIndex >= 0 && listCutIndex < this.list.length) {
       this.list.splice(listCutIndex);
     }

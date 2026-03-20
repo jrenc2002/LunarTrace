@@ -3,13 +3,17 @@
  * 
  * 实现 Blockly 工作区与 ABS 文件的同步：
  * - 会话开始时自动导出
- * - AI 修改时保存版本历史
+ * - AI 修改时同步到磁盘
+ * 
+ * 注：版本历史功能已迁移到 EditCheckpointService，
+ * 本服务不再维护独立的 .abi_history 目录。
  */
 
 import { Injectable, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { AilyHost } from '../core/host';
 import { convertAbsToAbi, convertAbiToAbsWithLineMap } from '../tools/abiAbsConverter';
+import { loadProjectBlockDefinitions } from '../tools/absParser';
 
 // =============================================================================
 // 类型定义
@@ -44,10 +48,6 @@ export interface AutoSyncConfig {
   enabled: boolean;
   /** 是否在会话开始时自动导出 */
   exportOnSessionStart: boolean;
-  /** 是否启用版本历史 */
-  enableVersionHistory: boolean;
-  /** 最大保留版本数 */
-  maxVersions: number;
 }
 
 // =============================================================================
@@ -63,8 +63,6 @@ export class AbsAutoSyncService implements OnDestroy {
   private config: AutoSyncConfig = {
     enabled: true,
     exportOnSessionStart: true,
-    enableVersionHistory: true,
-    maxVersions: 50
   };
   
   /** 订阅管理 */
@@ -170,10 +168,7 @@ export class AbsAutoSyncService implements OnDestroy {
       AilyHost.get().fs.writeFileSync(absFilePath, absContent);
       console.log('[AbsAutoSync] Write completed for:', absFilePath);
       
-      // 保存版本历史
-      if (saveVersion && this.config.enableVersionHistory) {
-        await this.saveVersion(absContent, '自动保存');
-      }
+      // 版本历史已迁移到 EditCheckpointService，不再单独保存
       
       return absContent;
     } catch (error) {
@@ -195,28 +190,7 @@ export class AbsAutoSyncService implements OnDestroy {
     this.isSyncing = true;
     
     try {
-      const absFilePath = this.getAbsFilePath();
-      
-      if (!AilyHost.get().fs.existsSync(absFilePath)) {
-        console.warn('[AbsAutoSync] ABS file does not exist');
-        return false;
-      }
-      
-      // 读取 ABS 文件
-      const absContent = AilyHost.get().fs.readFileSync(absFilePath);
-      
-      // 转换为 ABI JSON
-      const result = convertAbsToAbi(absContent);
-      
-      if (!result.success) {
-        console.error('[AbsAutoSync] ABS parse failed:', result.errors);
-        return false;
-      }
-      
-      // 应用到工作区
-      await this.applyToWorkspace(result.abiJson);
-      
-      return true;
+      return await this._doImportFromAbs();
     } catch (error) {
       console.error('[AbsAutoSync] Import failed:', error);
       return false;
@@ -225,136 +199,86 @@ export class AbsAutoSyncService implements OnDestroy {
     }
   }
 
-  // ===========================================================================
-  // 版本控制
-  // ===========================================================================
-
   /**
-   * 保存版本
+   * 强制从 ABS 文件重新导入到工作区——绕过 isSyncing 互斥锁。
+   * 仅用于 undo/redo 后需要立即重新加载工作区的场景。
    */
-  async saveVersion(absContent: string, description: string): Promise<AbsVersion | null> {
-    if (!this.config.enableVersionHistory || !this.currentProjectPath) {
-      return null;
-    }
-    
-    try {
-      const historyDir = this.getHistoryDir();
-      
-      // 确保历史目录存在
-      if (!AilyHost.get().fs.existsSync(historyDir)) {
-        AilyHost.get().fs.mkdirSync(historyDir, { recursive: true });
-      }
-      
-      // 生成版本信息
-      const timestamp = new Date();
-      const id = this.formatTimestamp(timestamp);
-      const filename = `${id}.abs`;
-      
-      // 统计信息
-      const stats = this.getAbsStats(absContent);
-      
-      const version: AbsVersion = {
-        id,
-        timestamp,
-        description,
-        filename,
-        blockCount: stats.blockCount,
-        variableCount: stats.variableCount
-      };
-      
-      // 保存版本文件
-      const versionFilePath = `${historyDir}/${filename}`;
-      AilyHost.get().fs.writeFileSync(versionFilePath, absContent);
-      
-      // 更新 manifest
-      await this.updateManifest(version);
-      
-      console.log('[AbsAutoSync] Saved version:', id);
-      
-      return version;
-    } catch (error) {
-      console.error('[AbsAutoSync] Failed to save version:', error);
-      return null;
-    }
-  }
-
-  /**
-   * 获取版本列表
-   */
-  getVersionList(): AbsVersion[] {
-    try {
-      const manifest = this.loadManifest();
-      return manifest?.versions || [];
-    } catch (error) {
-      console.error('[AbsAutoSync] Failed to get version list:', error);
-      return [];
-    }
-  }
-
-  /**
-   * 回滚到指定版本
-   */
-  async rollbackToVersion(versionId: string): Promise<boolean> {
-    try {
-      const historyDir = this.getHistoryDir();
-      const versionFilePath = `${historyDir}/${versionId}.abs`;
-      
-      if (!AilyHost.get().fs.existsSync(versionFilePath)) {
-        console.error('[AbsAutoSync] Version file not found:', versionId);
-        return false;
-      }
-      
-      // 保存当前版本（回滚前的状态）
-      const currentAbs = await this.exportToAbs(false);
-      if (currentAbs) {
-        await this.saveVersion(currentAbs, `回滚前备份 (回滚到 ${versionId})`);
-      }
-      
-      // 读取目标版本
-      const absContent = AilyHost.get().fs.readFileSync(versionFilePath);
-      
-      // 写入 ABS 文件
-      const absFilePath = this.getAbsFilePath();
-      AilyHost.get().fs.writeFileSync(absFilePath, absContent);
-      
-      // 导入到工作区
-      return await this.importFromAbs();
-    } catch (error) {
-      console.error('[AbsAutoSync] Rollback failed:', error);
+  async forceImportFromAbs(): Promise<boolean> {
+    if (!this.currentProjectPath) {
       return false;
     }
-  }
 
-  /**
-   * 获取指定版本的内容
-   */
-  getVersionContent(versionId: string): string | null {
+    // 重置锁，确保不会被前一次同步阻塞
+    this.isSyncing = true;
+
     try {
-      const historyDir = this.getHistoryDir();
-      const versionFilePath = `${historyDir}/${versionId}.abs`;
-      
-      if (!AilyHost.get().fs.existsSync(versionFilePath)) {
-        return null;
-      }
-      
-      return AilyHost.get().fs.readFileSync(versionFilePath);
+      return await this._doImportFromAbs();
     } catch (error) {
-      console.error('[AbsAutoSync] Failed to get version content:', error);
-      return null;
+      console.error('[AbsAutoSync] Force import failed:', error);
+      return false;
+    } finally {
+      this.isSyncing = false;
     }
   }
 
-  /**
-   * 比较两个版本
-   */
-  compareVersions(versionId1: string, versionId2: string): { 
-    content1: string | null; 
-    content2: string | null;
-  } {
-    return {
-      content1: this.getVersionContent(versionId1),
-      content2: this.getVersionContent(versionId2)
-    };
+  /** 内部实际执行 ABS → 工作区 的导入 */
+  private async _doImportFromAbs(): Promise<boolean> {
+    const absFilePath = this.getAbsFilePath();
+
+    if (!AilyHost.get().fs.existsSync(absFilePath)) {
+      console.warn('[AbsAutoSync] ABS file does not exist:', absFilePath);
+      return false;
+    }
+
+    // 加载项目块定义（确保库块可正确解析）
+    if (this.currentProjectPath) {
+      loadProjectBlockDefinitions(this.currentProjectPath);
+    }
+
+    // 读取 ABS 文件
+    const absContent = AilyHost.get().fs.readFileSync(absFilePath, 'utf-8');
+
+    // 转换为 ABI JSON
+    const result = convertAbsToAbi(absContent);
+
+    if (!result.success) {
+      console.error('[AbsAutoSync] ABS parse failed:', result.errors);
+      return false;
+    }
+
+    // 应用到工作区
+    await this.applyToWorkspace(result.abiJson);
+
+    return true;
+  }
+
+  // ===========================================================================
+  // 版本控制（已废弃 — 功能迁移到 EditCheckpointService）
+  // ===========================================================================
+
+  /** @deprecated 版本历史功能已迁移到 EditCheckpointService */
+  async saveVersion(_absContent: string, _description: string): Promise<AbsVersion | null> {
+    return null;
+  }
+
+  /** @deprecated 版本历史功能已迁移到 EditCheckpointService */
+  getVersionList(): AbsVersion[] {
+    return [];
+  }
+
+  /** @deprecated 版本历史功能已迁移到 EditCheckpointService */
+  async rollbackToVersion(_versionId: string): Promise<boolean> {
+    return false;
+  }
+
+  /** @deprecated 版本历史功能已迁移到 EditCheckpointService */
+  getVersionContent(_versionId: string): string | null {
+    return null;
+  }
+
+  /** @deprecated 版本历史功能已迁移到 EditCheckpointService */
+  compareVersions(_versionId1: string, _versionId2: string): { content1: string | null; content2: string | null } {
+    return { content1: null, content2: null };
   }
 
   // ===========================================================================
@@ -441,107 +365,6 @@ export class AbsAutoSyncService implements OnDestroy {
    */
   private getAbsFilePath(): string {
     return `${this.currentProjectPath}/project.abs`;
-  }
-
-  /**
-   * 获取历史目录路径
-   */
-  private getHistoryDir(): string {
-    return `${this.currentProjectPath}/.abi_history`;
-  }
-
-  /**
-   * 获取 manifest 文件路径
-   */
-  private getManifestPath(): string {
-    return `${this.getHistoryDir()}/manifest.json`;
-  }
-
-  /**
-   * 加载 manifest
-   */
-  private loadManifest(): VersionManifest | null {
-    try {
-      const manifestPath = this.getManifestPath();
-      if (!AilyHost.get().fs.existsSync(manifestPath)) {
-        return null;
-      }
-      
-      const content = AilyHost.get().fs.readFileSync(manifestPath);
-      return JSON.parse(content);
-    } catch (error) {
-      console.error('[AbsAutoSync] Failed to load manifest:', error);
-      return null;
-    }
-  }
-
-  /**
-   * 更新 manifest
-   */
-  private async updateManifest(newVersion: AbsVersion): Promise<void> {
-    let manifest = this.loadManifest() || {
-      currentVersion: '',
-      versions: [],
-      maxVersions: this.config.maxVersions
-    };
-    
-    // 添加新版本
-    manifest.versions.unshift(newVersion);
-    manifest.currentVersion = newVersion.id;
-    
-    // 清理旧版本
-    if (manifest.versions.length > manifest.maxVersions) {
-      const toRemove = manifest.versions.splice(manifest.maxVersions);
-      
-      // 删除旧版本文件
-      for (const version of toRemove) {
-        try {
-          const filePath = `${this.getHistoryDir()}/${version.filename}`;
-          if (AilyHost.get().fs.existsSync(filePath)) {
-            AilyHost.get().fs.unlinkSync(filePath);
-          }
-        } catch (e) {
-          // 忽略删除失败
-        }
-      }
-    }
-    
-    // 保存 manifest
-    const manifestPath = this.getManifestPath();
-    AilyHost.get().fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-  }
-
-  /**
-   * 格式化时间戳
-   */
-  private formatTimestamp(date: Date): string {
-    return date.toISOString()
-      .replace(/[:.]/g, '-')
-      .replace('T', '_')
-      .slice(0, 19);
-  }
-
-  /**
-   * 获取 ABS 统计信息
-   */
-  private getAbsStats(absContent: string): { blockCount: number; variableCount: number } {
-    const lines = absContent.split('\n');
-    let blockCount = 0;
-    let variableCount = 0;
-    
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('@var ')) {
-        variableCount++;
-      } else if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('@')) {
-        // 简单统计块调用（非注释、非指令的行）
-        if (trimmed.match(/^[a-z_][a-z0-9_]*(\(|$)/i)) {
-          blockCount++;
-        }
-      }
-    }
-    
-    return { blockCount, variableCount };
   }
 
   /**
