@@ -276,6 +276,22 @@ export class EditCheckpointService {
     );
   }
 
+  getTurnStartListIndexByAnyListIndex(listIndex: number): number | null {
+    let matched: TurnSnapshot | undefined;
+
+    for (let i = this.timeline.length - 1; i >= 0; i--) {
+      const snapshot = this.timeline[i];
+      // listStartIndex points to the aily placeholder; user message is at listStartIndex - 1
+      const userMsgIndex = snapshot.listStartIndex - 1;
+      if (userMsgIndex <= listIndex) {
+        matched = snapshot;
+        break;
+      }
+    }
+
+    return matched ? matched.listStartIndex - 1 : null;
+  }
+
   getLatestSnapshot(): TurnSnapshot | undefined {
     return this.timeline.length > 0 ? this.timeline[this.timeline.length - 1] : undefined;
   }
