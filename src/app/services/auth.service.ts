@@ -60,6 +60,7 @@ export class AuthService {
   // 用户登录状态
   private isLoggedInSubject = new BehaviorSubject<boolean>(false);
   public isLoggedIn$ = this.isLoggedInSubject.asObservable();
+  get isLoggedIn(): boolean { return this.isLoggedInSubject.value; }
 
   // 用户信息
   private userInfoSubject = new BehaviorSubject<any>(null);

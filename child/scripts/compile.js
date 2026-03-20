@@ -9,6 +9,27 @@ const logger = {
     error: (...args) => console.error(...args)
 };
 
+function formatFatalError(error) {
+    if (!error) return 'Unknown error';
+    if (error instanceof Error) {
+        return error.stack || error.message;
+    }
+    return String(error);
+}
+
+function exitWithFatalError(error) {
+    logger.error(`[ERROR] ${formatFatalError(error)}`);
+    process.exit(1);
+}
+
+process.on('uncaughtException', (error) => {
+    exitWithFatalError(error);
+});
+
+process.on('unhandledRejection', (reason) => {
+    exitWithFatalError(reason);
+});
+
 async function main() {
     const configPath = process.argv[2];
     if (!configPath) {
@@ -103,13 +124,21 @@ async function main() {
             stdio: 'inherit'
         });
 
-        child.on('close', (code) => {
-            if (code !== 0) {
-                process.exit(code);
-            } else {
-                logger.log('编译完成');
-                process.exit(0);
+        child.on('close', (code, signal) => {
+            if (signal) {
+                logger.error(`[ERROR] 编译进程被信号终止: ${signal}`);
+                process.exit(1);
+                return;
             }
+
+            if (code !== 0) {
+                logger.error(`[ERROR] 编译进程异常退出，退出码: ${code}`);
+                process.exit(code || 1);
+                return;
+            }
+
+            logger.log('编译完成');
+            process.exit(0);
         });
 
     } catch (error) {
@@ -119,6 +148,5 @@ async function main() {
 }
 
 main().catch(e => {
-    logger.error(e);
-    process.exit(1);
+    exitWithFatalError(e);
 });

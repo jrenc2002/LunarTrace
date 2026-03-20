@@ -1,42 +1,12 @@
-<nz-tabset
-  [(nzSelectedIndex)]="activeTabIndex"
-  nzType="editable-card"
-  [nzSize]="'small'"
-  [nzAnimated]="false"
-  [nzHideAdd]="true"
-  (nzClose)="closeTab($event)"
-  [nzDestroyInactiveTabPane]="false"
-  class="editor-tabs"
-  [class.single-tab]="tabs.length === 1"
->
-  @for (tab of tabs; track tab.key; let i = $index) {
-    <nz-tab [nzTitle]="tab.title" [nzForceRender]="true" [nzClosable]="tab.closable">
-      <div
-        class="tab-content tab-layer"
-        [class.blockly-tab]="tab.key === 'blockly'"
-        [class.graph-tab]="tab.key === 'graph'"
-        [style.opacity]="activeTabIndex === i ? 1 : 0"
-        [style.z-index]="activeTabIndex === i ? 1 : 0"
-        [style.pointer-events]="activeTabIndex === i ? 'auto' : 'none'"
-      >
-        @if (tab.key === 'blockly') {
-          @if (devmode) {
-            <blockly-main [devmode]="devmode"></blockly-main>
-            <div class="lib-mangager-btn ccenter" (click)="openProjectManager()">
-              {{ "LIB_MANAGER.TITLE" | translate }}
-            </div>
-          }
-          @if (developerMode) {
-            <app-dev-tool></app-dev-tool>
-          }
-        }
-        @if (tab.key === 'graph') {
-          <app-graph-editor></app-graph-editor>
-        }
-      </div>
-    </nz-tab>
-  }
-</nz-tabset>
+@if (devmode) {
+<blockly-main [devmode]="devmode"></blockly-main>
+<div class="lib-mangager-btn ccenter" (click)="openProjectManager()">
+  {{ "LIB_MANAGER.TITLE" | translate }}
+</div>
+}
+@if (developerMode) {
+<app-dev-tool></app-dev-tool>
+}
 
 @if (showLibraryManager) {
   <app-lib-manager (close)="showLibraryManager = false"></app-lib-manager>

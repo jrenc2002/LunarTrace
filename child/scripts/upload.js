@@ -16,6 +16,27 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 // 动态加载 serialport 模块
 let SerialPort = null;
 
+function formatFatalError(error) {
+    if (!error) return 'Unknown error';
+    if (error instanceof Error) {
+        return error.stack || error.message;
+    }
+    return String(error);
+}
+
+function exitWithFatalError(error) {
+    logger.error(`[ERROR] ${formatFatalError(error)}`);
+    process.exit(1);
+}
+
+process.on('uncaughtException', (error) => {
+    exitWithFatalError(error);
+});
+
+process.on('unhandledRejection', (reason) => {
+    exitWithFatalError(reason);
+});
+
 function loadSerialPort() {
     if (SerialPort) return SerialPort;
     
@@ -300,11 +321,12 @@ async function main() {
         // 11. 将占位符替换为最终串口，生成最终参数
         logger.log('使用串口:', finalSerialPort);
         const args = templateArgs.map(a => a.replace(SERIAL_PLACEHOLDER, finalSerialPort));
+        const shellCommand = wrapInQuotesIfNeeded(command);
 
-        logger.log(`Executing: ${command} ${args.join(' ')}`);
+        logger.log(`Executing: ${shellCommand} ${args.join(' ')}`);
 
         // 12. 执行上传命令
-        const child = spawn(command, args, {
+        const child = spawn(shellCommand, args, {
             cwd: buildPath,
             shell: true,
             stdio: 'inherit'
@@ -404,7 +426,6 @@ async function processUploadParams(uploadParam, buildPath, toolsPath, sdkPath, b
             }
 
             if (findRes) {
-                // 检查参数是否已经在引号内，如果是则不再添加引号
                 const paramHasQuotes = param.startsWith('"') || param.includes('"');
                 const replacement = paramHasQuotes ? findRes : `"${findRes}"`;
                 paramList[i] = param.replace(`\$\{\'${fileName}\'\}`, replacement);
@@ -429,7 +450,7 @@ function parseArgs(str) {
         const char = str[i];
         if (char === '"') {
             inQuote = !inQuote;
-            current += char; // 保留引号，因为使用 shell: true 时需要引号来保护带空格的参数
+            current += char;
         } else if (char === ' ' && !inQuote) {
             if (current) {
                 args.push(current);
@@ -441,6 +462,14 @@ function parseArgs(str) {
     }
     if (current) args.push(current);
     return args;
+}
+
+function wrapInQuotesIfNeeded(value) {
+    if (!value || value.startsWith('"') || !/\s/.test(value)) {
+        return value;
+    }
+
+    return `"${value}"`;
 }
 
 // 递归查找文件

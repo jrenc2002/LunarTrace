@@ -13,6 +13,7 @@ import { ChatService } from '../../tools/aily-chat/public-api';
 import { ConnectionGraphService } from '../../services/connection-graph.service';
 import { BackgroundAgentService } from '../../services/background-agent.service';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
+import { AuthService } from '../../services/auth.service';
 import { ImageViewerComponent } from '../image-viewer/image-viewer.component';
 import { MermaidComponent } from '../../tools/aily-chat/components/aily-mermaid-viewer/mermaid/mermaid.component';
 import mermaid from 'mermaid';
@@ -44,8 +45,18 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
     private chatService: ChatService,
     private connectionGraphService: ConnectionGraphService,
     private backgroundAgent: BackgroundAgentService,
-    private translate: TranslateService
+    private translate: TranslateService,
+    private authService: AuthService
   ) { }
+
+  private requireLogin(): boolean {
+    if (!this.authService.isLoggedIn) {
+      this.message.warning(this.translate.instant('FLOAT_SIDER.LOGIN_REQUIRED'));
+      this.uiService.openTool('aily-chat');
+      return false;
+    }
+    return true;
+  }
 
   ngOnInit() {
     // 监听路由变化
@@ -81,6 +92,7 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
   }
 
   showPinmap() {
+    if (!this.requireLogin()) return;
     let boardPackageData = JSON.parse(this.electronService.readFile(this.boardPackagePath + '/package.json'));
 
     // 如果 pinmap 被禁用，直接显示 webp 图片
@@ -103,8 +115,9 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
       //   height: 600
       // });
       this.uiService.openWindow({
-        path: `iframe?url=${encodeURIComponent('https://tool.aily.pro/component-viewer?type=json&theme=dark')}`,
-        // path: `iframe?url=${encodeURIComponent('http://localhost:3051/component-viewer?type=json')}`,
+        title: this.translate.instant('FLOAT_SIDER.PINMAP'),
+        path: `iframe?url=${encodeURIComponent('https://tool.aily.pro/component-viewer?type=json&theme=dark&lang=' + this.translate.currentLang)}`,
+        // path: `iframe?url=${encodeURIComponent('http://localhost:4201/component-viewer?type=json&theme=dark&lang=' + this.translate.currentLang)}`,
         data: this.electronService.readFile(pinmapJsonPath),
         width: 800,
         height: 600
@@ -149,6 +162,7 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
 
   /** 点击显示框架图：读取项目目录下 arch.md 并用 mermaid 全屏预览 */
   async showArch(): Promise<void> {
+    if (!this.requireLogin()) return;
     if (!this.electronService.isElectron) {
       this.message.warning(this.translate.instant('FLOAT_SIDER.ARCH_ELECTRON_ONLY'));
       return;
@@ -232,23 +246,22 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
   async showCircuit() {
     this.message.warning('Coming Soon');
     return;
+    if (!this.requireLogin()) return;
 
     if (!this.electronService.isElectron || !this.boardPackagePath) {
       this.message.warning(this.translate.instant('FLOAT_SIDER.NO_PINMAP'));
       return;
     }
 
-    let windowUrl = 'https://tool.aily.pro/connection-graph?type=json&theme=dark';
-    // let windowUrl = 'http://localhost:4201/connection-graph?type=json&theme=dark';
+    let windowUrl = 'https://tool.aily.pro/connection-graph?type=json&theme=dark&lang=' + this.translate.currentLang;
+    // let windowUrl = 'http://localhost:4201/connection-graph?type=json&theme=dark&lang=' + this.translate.currentLang;
 
     this.uiService.openWindow({
+      title: this.translate.instant('FLOAT_SIDER.CIRCUIT'),
       path: `iframe?url=${encodeURIComponent(windowUrl)}`,
       data: null,
       width: 900,
       height: 700,
     });
-
-    // 直接切换到 blockly-editor 的连线图 tab
-    // this.uiService.actionSubject.next({ action: 'switch', type: 'editor-tab', data: 'graph' });
   }
 }

@@ -386,7 +386,8 @@
         "ARCH_EMPTY": "No se encontró diagrama mermaid en arch.md",
         "ARCH_RENDER_FAILED": "Error al renderizar el diagrama de arquitectura",
         "GENERATE_ARCH_PROMPT": "Generar diagrama de arquitectura del proyecto",
-        "ARCH_AI_BUSY": "La IA está en una conversación, inténtelo más tarde"
+        "ARCH_AI_BUSY": "La IA está en una conversación, inténtelo más tarde",
+        "LOGIN_REQUIRED": "Por favor, inicie sesión primero para usar esta función"
     },
     "SERIAL": {
         "SELECT_PORT_FIRST": "Por favor seleccione un puerto serial primero",

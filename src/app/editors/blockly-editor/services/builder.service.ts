@@ -248,6 +248,15 @@ export class _BuilderService {
                 this.logService.update({ "detail": output.data, "state": "doing" });
               }
             }
+            if (output.type === 'error') {
+              const processError = output.error || '预编译进程启动失败';
+              this.preprocessFullError += processError + '\n';
+              if (!this.preprocessError) {
+                this.preprocessError = processError;
+              }
+              return;
+            }
+
             if (output.error) {
               // 收集错误信息，不单独发送
               this.preprocessFullError += output.error + '\n';
@@ -256,9 +265,14 @@ export class _BuilderService {
               }
             }
             // 检查进程退出码
-            if (output.type === 'close' && output.code !== 0) {
+            if (output.type === 'close' && ((output.code ?? 0) !== 0 || output.signal)) {
               if (!this.preprocessError) {
-                this.preprocessError = `预编译进程异常退出，退出码: ${output.code}`;
+                this.preprocessError = output.signal
+                  ? `预编译进程被信号终止: ${output.signal}`
+                  : `预编译进程异常退出，退出码: ${output.code}`;
+              }
+              if (!this.preprocessFullError) {
+                this.preprocessFullError = this.preprocessError + '\n';
               }
             }
           },
@@ -529,6 +543,15 @@ export class _BuilderService {
               this.logService.update({ "detail": output.data, "state": "doing" });
             }
           }
+          if (output.type === 'error') {
+            const processError = output.error || '预编译进程启动失败';
+            this.preprocessFullError += processError + '\n';
+            if (!this.preprocessError) {
+              this.preprocessError = processError;
+            }
+            return;
+          }
+
           if (output.error) {
             // 收集错误信息，不单独发送
             this.preprocessFullError += output.error + '\n';
@@ -537,9 +560,14 @@ export class _BuilderService {
             }
           }
           // 检查进程退出码
-          if (output.type === 'close' && output.code !== 0) {
+          if (output.type === 'close' && ((output.code ?? 0) !== 0 || output.signal)) {
             if (!this.preprocessError) {
-              this.preprocessError = `预编译进程异常退出，退出码: ${output.code}`;
+              this.preprocessError = output.signal
+                ? `预编译进程被信号终止: ${output.signal}`
+                : `预编译进程异常退出，退出码: ${output.code}`;
+            }
+            if (!this.preprocessFullError) {
+              this.preprocessFullError = this.preprocessError + '\n';
             }
           }
         },
@@ -861,6 +889,8 @@ export class _BuilderService {
           let fullStdErr = '';
           let outputComplete = false;
           let lastLogLines: string[] = [];
+          let processExitCode: number | null = null;
+          let processSignal: string | null = null;
 
           this.buildStartTime = Date.now();
 
@@ -892,12 +922,34 @@ export class _BuilderService {
                 this.streamId = output.streamId;
                 console.log('捕获到 streamId:', this.streamId);
               }
-              
-              if (output.type === 'close' && output.code !== 0) {
-                this.isErrored = true;
+
+              if (output.type === 'close') {
+                processExitCode = output.code ?? (output.signal ? 1 : 0);
+                processSignal = output.signal || null;
+
+                if (processExitCode !== 0 || processSignal) {
+                  this.isErrored = true;
+                  const processErrorMessage = processSignal
+                    ? `编译进程被信号终止: ${processSignal}`
+                    : `编译进程异常退出，退出码: ${processExitCode}`;
+                  lastStdErr = lastStdErr || processErrorMessage;
+                  if (!fullStdErr) {
+                    fullStdErr = processErrorMessage;
+                  }
+                }
                 return;
               }
 
+              if (output.type === 'error') {
+                this.isErrored = true;
+                const processErrorMessage = output.error || '编译进程启动失败';
+                lastStdErr = lastStdErr || processErrorMessage;
+                if (!fullStdErr) {
+                  fullStdErr = processErrorMessage;
+                }
+                return;
+              }
+              
               if (output.data) {
                 const data = output.data;
                 if (data.includes('\r\n') || data.includes('\n') || data.includes('\r')) {
@@ -1026,6 +1078,17 @@ export class _BuilderService {
               // 计算编译耗时（统一计算，避免重复）
               const buildEndTime = Date.now();
               const buildDuration = ((buildEndTime - this.buildStartTime) / 1000).toFixed(2);
+
+              if (!this.cancelled && !this.isErrored && ((processExitCode !== null && processExitCode !== 0) || processSignal)) {
+                this.isErrored = true;
+                const processErrorMessage = processSignal
+                  ? `编译进程被信号终止: ${processSignal}`
+                  : `编译进程异常退出，退出码: ${processExitCode}`;
+                lastStdErr = lastStdErr || processErrorMessage;
+                if (!fullStdErr) {
+                  fullStdErr = processErrorMessage;
+                }
+              }
 
               // 如果进度已达到高值且没有错误，也认为编译成功
               if (!this.buildCompleted && !this.isErrored && !this.cancelled && lastProgress >= 95) {

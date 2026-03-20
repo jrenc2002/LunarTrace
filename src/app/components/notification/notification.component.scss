@@ -32,6 +32,12 @@
             font-size: 35px;
         }
 
+        .custom {
+            position: absolute;
+            font-size: 22px;
+            color: #5c5c5c;
+        }
+
         .fa-spinner-third {
             font-size: 59.5px;
         }
@@ -64,7 +70,7 @@
 
     .text-box {
         margin-left: 10px;
-        flex:1;
+        flex: 1;
         width: calc(100% - 115px);
 
         >div:nth-child(2) {
@@ -96,6 +102,7 @@
         width: 30px;
         height: 100%;
         font-size: 20px;
+
         :hover {
             color: rgb(116, 192, 228);
         }
