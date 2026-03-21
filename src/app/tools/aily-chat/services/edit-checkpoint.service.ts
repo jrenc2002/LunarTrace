@@ -99,9 +99,8 @@ export class EditCheckpointService {
 
   publishCurrentSummary(): void {
     const summary = this.getEditsSummary();
-    if (summary) {
-      this.summarySubject.next(summary);
-    }
+    // 始终发射（含 null），确保无变更时面板能正确关闭
+    this.summarySubject.next(summary);
   }
 
   dismissSummary(): void {
@@ -355,6 +354,16 @@ export class EditCheckpointService {
     return this.initialFileContents.size;
   }
 
+  /**
+   * 是否有未保留的文件变更（用户尚未点击"保留"）。
+   * 用于在切换会话 / 新建会话时提示用户。
+   */
+  hasUnsavedEdits(): boolean {
+    if (this.initialFileContents.size === 0) return false;
+    // keptTimelineIndex < timelineIndex 说明有新的变更未被保留
+    return this.keptTimelineIndex < this.timelineIndex;
+  }
+
   getTrackedFiles(): string[] {
     return [...this.initialFileContents.keys()];
   }
@@ -373,6 +382,12 @@ export class EditCheckpointService {
    */
   getEditsSummary(requestId?: string): EditsSummary | null {
     if (this.initialFileContents.size === 0 && this.currentTurnTrackedPaths.size === 0) {
+      return null;
+    }
+
+    // 所有变更已保留且当前 turn 无新编辑 — 无需展示摘要
+    // 避免加载已保留会话后因磁盘被其他 session 修改而产生幻影 diff
+    if (this.keptTimelineIndex >= this.timelineIndex && this.currentTurnTrackedPaths.size === 0) {
       return null;
     }
 

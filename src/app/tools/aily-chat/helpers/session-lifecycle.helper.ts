@@ -35,6 +35,8 @@ export class SessionLifecycleHelper {
       // checkpoint 数据独立存储到 .aily_checkpoints/{sessionId}/ 目录
       if (prjPath && this.engine.editCheckpointService?.getTotalEditCount() > 0) {
         try {
+          // 提交当前 turn 的快照（确保 stops 完整），防止 stop() 后未提交导致基线错误
+          this.engine.editCheckpointService.commitCurrentTurn();
           this.engine.editCheckpointService.saveToDisk(prjPath, this.engine.sessionId);
         } catch (err) {
           console.warn('[SessionLifecycle] checkpoint saveToDisk failed:', err);
@@ -321,7 +323,8 @@ export class SessionLifecycleHelper {
         this.engine.subagentSessionService.importSessions(sessionData.subagentHistories);
       }
 
-      // 恢复文件变更 checkpoint — 优先从 .aily_checkpoints/{sessionId}/ 目录加载
+      // 恢复文件变更 checkpoint — 先清除旧状态，再从磁盘加载新会话的 checkpoint
+      this.engine.editCheckpointService?.clear();
       const cpProjectPath = sessionData.metadata?.projectPath;
       const cpSessionId = this.engine.sessionId;
       if (cpProjectPath && cpSessionId) {
@@ -334,14 +337,18 @@ export class SessionLifecycleHelper {
         this.engine.editCheckpointService?.restoreFromJSON(sessionData.editCheckpoints);
       }
 
-      // 恢复后刷新编辑摘要面板
-      if (this.engine.editCheckpointService?.getTotalEditCount() > 0) {
+      // 恢复后刷新编辑摘要面板 — 仅当存在未保留的变更时才显示
+      if (this.engine.editCheckpointService?.hasUnsavedEdits()) {
         this.engine.editCheckpointService.publishCurrentSummary();
       } else {
         this.engine.editCheckpointService?.dismissSummary();
       }
 
       this.engine.scrollManager.scrollToBottom('auto');
+    } else {
+      // 新会话无历史数据，确保清除旧 checkpoint 状态
+      this.engine.editCheckpointService?.clear();
+      this.engine.editCheckpointService?.dismissSummary();
     }
   }
 

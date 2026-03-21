@@ -29,7 +29,7 @@ import { ScrollManagerService } from './scroll-manager.service';
 import { ResourceManagerService } from './resource-manager.service';
 import { MenuManagerService } from './menu-manager.service';
 
-import { ChatMessage, Tool, ToolCallState } from '../core/chat-types';
+import { ChatMessage, Tool, ToolCallState, ResourceItem } from '../core/chat-types';
 import { AilyHost } from '../core/host';
 import { ToolRegistry } from '../core/tool-registry';
 import { createSecurityContext } from './security.service';
@@ -773,6 +773,9 @@ Do not create non-existent boards and libraries.
       );
     }
 
+    // stop 时提交当前 turn 的快照，确保 checkpoint 数据完整
+    this.editCheckpointService.commitCurrentTurn();
+
     if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
       this.list[this.list.length - 1].state = 'done';
     }
@@ -1069,6 +1072,23 @@ Do not create non-existent boards and libraries.
     this.isCompleted = false;
     this.isCancelled = false;
     this.editCheckpointService.dismissSummary();
+  }
+
+  /**
+   * 编辑并重新发送 — 回滚到指定消息的检查点 + 用新内容重新发送
+   */
+  async editAndResendFromTurn(listIndex: number, newText: string, resources: ResourceItem[]): Promise<void> {
+    if (this.isWaiting) { this.message.warning('正在处理中，请稍候...'); return; }
+    await this.restoreToCheckpoint(listIndex);
+
+    // 临时设置 resourceManager 的 items，send 会消费它们
+    this.resourceManager.items = resources;
+    await this.send('user', newText, false);
+    this.resourceManager.mergePathsTo(this.sessionAllowedPaths);
+    this.resourceManager.items = [];
+
+    this.scrollManager.autoScrollEnabled = true;
+    this.scrollManager.scrollToBottom();
   }
 
   /**
