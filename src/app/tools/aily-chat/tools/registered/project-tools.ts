@@ -271,7 +271,8 @@ class BuildProjectTool implements IAilyTool {
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
     if (!ctx.host?.builder) return { is_error: true, content: '编译服务不可用' };
-    return buildProjectHandler(ctx.host.builder as any, args);
+    const projectPath = ctx.host.project?.currentProjectPath || '';
+    return buildProjectHandler(ctx.host.builder as any, args, projectPath);
   }
 
   getStartText() { return '正在编译项目...'; }

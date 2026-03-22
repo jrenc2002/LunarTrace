@@ -66,6 +66,13 @@ export class EditCheckpointService {
   private timelineIndex: number = -1;
 
   /**
+   * 用户"保留"操作后的时间线索引位置。
+   * undo 不会回退到此索引之前；getEditsSummary 以此为 diff 基线下限。
+   * -1 表示未保留过。
+   */
+  private keptTimelineIndex: number = -1;
+
+  /**
    * Copilot-style pendingSnapshot：
    * 在首次 undo 时自动拍摄当前磁盘状态，确保 redo 到最末端时能恢复。
    * 新 turn 开始时清除（新操作取代 redo 历史）。
@@ -92,13 +99,25 @@ export class EditCheckpointService {
 
   publishCurrentSummary(): void {
     const summary = this.getEditsSummary();
-    if (summary) {
-      this.summarySubject.next(summary);
-    }
+    // 始终发射（含 null），确保无变更时面板能正确关闭
+    this.summarySubject.next(summary);
   }
 
   dismissSummary(): void {
     this.summarySubject.next(null);
+  }
+
+  // ==================== 保留（Accept All as Baseline） ====================
+
+  /**
+   * 用户"保留"当前所有变更 — 将当前状态设为新基线。
+   * - undo/redo 不再回退到此时间点之前
+   * - getEditsSummary 以此状态为 diff 基线下限，不再显示已保留的变更
+   * - restoreToCheckpoint（还原检查点）不受此限制，可跨保留边界回滚
+   */
+  acceptAllAsBaseline(): void {
+    this.keptTimelineIndex = this.timelineIndex;
+    this.pendingSnapshot = null;
   }
 
   // ==================== Turn 管理 ====================
@@ -177,7 +196,7 @@ export class EditCheckpointService {
   // ==================== Undo / Redo (对标 Copilot undoInteraction / redoInteraction) ====================
 
   get canUndo(): boolean {
-    return this.timelineIndex >= 0;
+    return this.timelineIndex > this.keptTimelineIndex;
   }
 
   get canRedo(): boolean {
@@ -301,6 +320,7 @@ export class EditCheckpointService {
   /**
    * 回滚到目标快照之前的状态，并截断目标及之后的时间线。
    * 同时清除 pendingSnapshot（截断操作不可 redo）。
+   * 截断后将 keptTimelineIndex 设为 timeline.length - 1（还原点成为新起点）。
    */
   truncateFromSnapshot(requestId: string): RollbackResult {
     const idx = this.timeline.findIndex(s => s.requestId === requestId);
@@ -314,6 +334,8 @@ export class EditCheckpointService {
     this.timeline.splice(idx);
     this.timelineIndex = this.timeline.length - 1;
     this.pendingSnapshot = null;
+    // 还原检查点后，剩余的时间线成为新基线
+    this.keptTimelineIndex = this.timeline.length - 1;
 
     return result;
   }
@@ -332,6 +354,16 @@ export class EditCheckpointService {
     return this.initialFileContents.size;
   }
 
+  /**
+   * 是否有未保留的文件变更（用户尚未点击"保留"）。
+   * 用于在切换会话 / 新建会话时提示用户。
+   */
+  hasUnsavedEdits(): boolean {
+    if (this.initialFileContents.size === 0) return false;
+    // keptTimelineIndex < timelineIndex 说明有新的变更未被保留
+    return this.keptTimelineIndex < this.timelineIndex;
+  }
+
   getTrackedFiles(): string[] {
     return [...this.initialFileContents.keys()];
   }
@@ -344,8 +376,8 @@ export class EditCheckpointService {
 
   /**
    * 获取当前 turn 的编辑摘要。
-   * 关键修复：diff 基线为**上一个 turn 的快照**而非 initialFileContents，
-   * 这样只统计本轮的变更量，不会累积之前已保留的变更。
+   * diff 基线 = max(keptTimelineIndex, timelineIndex - 1)，
+   * 确保已保留的变更不会出现在摘要中。
    * 只包含 currentTurnTrackedPaths 中的文件（本轮实际编辑过的文件）。
    */
   getEditsSummary(requestId?: string): EditsSummary | null {
@@ -353,13 +385,24 @@ export class EditCheckpointService {
       return null;
     }
 
+    // 所有变更已保留且当前 turn 无新编辑 — 无需展示摘要
+    // 避免加载已保留会话后因磁盘被其他 session 修改而产生幻影 diff
+    if (this.keptTimelineIndex >= this.timelineIndex && this.currentTurnTrackedPaths.size === 0) {
+      return null;
+    }
+
     const fs = AilyHost.get().fs;
     const pathUtil = AilyHost.get().path;
     const projectPath = AilyHost.get().project.currentProjectPath || '';
 
-    // 获取上一个 turn 的最后一个快照作为 diff 基线
-    const prevStop = this.timelineIndex > 0
-      ? this.getLastStopAt(this.timelineIndex - 1)
+    // diff 基线索引：取 keptTimelineIndex 和 timelineIndex-1 的较大值
+    // 保证已保留的变更不再显示
+    const baselineIndex = Math.max(
+      this.keptTimelineIndex,
+      this.timelineIndex > 0 ? this.timelineIndex - 1 : -1
+    );
+    const prevStop = baselineIndex >= 0
+      ? this.getLastStopAt(baselineIndex)
       : null;
 
     let totalAdded = 0;
@@ -491,13 +534,15 @@ export class EditCheckpointService {
   }
 
   /**
-   * 持久化到项目目录下 .aily_checkpoints/。
+   * 持久化到项目目录下 .aily_checkpoints/{sessionId}/。
    * state.json 只存储元数据引用（content key），文件内容独立存储。
+   * 按 chatSessionId 隔离存储。
    */
-  saveToDisk(projectPath: string): void {
+  saveToDisk(projectPath: string, sessionId: string): void {
+    if (!sessionId) return;
     const fs = AilyHost.get().fs;
     const pathUtil = AilyHost.get().path;
-    const checkpointDir = pathUtil.join(projectPath, EditCheckpointService.CHECKPOINT_DIR);
+    const checkpointDir = pathUtil.join(projectPath, EditCheckpointService.CHECKPOINT_DIR, sessionId);
 
     if (!fs.existsSync(checkpointDir)) {
       fs.mkdirSync(checkpointDir, { recursive: true });
@@ -536,10 +581,12 @@ export class EditCheckpointService {
 
     // 3. 写 state.json（纯元数据，无文件内容）
     const state = {
-      version: 4,
+      version: 5,
+      sessionId,
       initialRefs,
       timeline: timelineMeta,
       timelineIndex: this.timelineIndex,
+      keptTimelineIndex: this.keptTimelineIndex,
       pendingSnapshot: pendingMeta,
     };
 
@@ -548,20 +595,26 @@ export class EditCheckpointService {
   }
 
   /**
-   * 从项目目录下 .aily_checkpoints/ 恢复。
+   * 从项目目录下 .aily_checkpoints/{sessionId}/ 恢复。
    */
-  loadFromDisk(projectPath: string): boolean {
+  loadFromDisk(projectPath: string, sessionId: string): boolean {
+    if (!sessionId) return false;
     const fs = AilyHost.get().fs;
     const pathUtil = AilyHost.get().path;
-    const checkpointDir = pathUtil.join(projectPath, EditCheckpointService.CHECKPOINT_DIR);
-    const statePath = pathUtil.join(checkpointDir, EditCheckpointService.STATE_FILE);
-
-    if (!fs.existsSync(statePath)) return false;
+    // 优先尝试 v5 按 sessionId 分目录，回退到 v4 扁平结构
+    let checkpointDir = pathUtil.join(projectPath, EditCheckpointService.CHECKPOINT_DIR, sessionId);
+    let statePath = pathUtil.join(checkpointDir, EditCheckpointService.STATE_FILE);
+    if (!fs.existsSync(statePath)) {
+      // 回退: v4 扁平结构（旧数据迁移）
+      checkpointDir = pathUtil.join(projectPath, EditCheckpointService.CHECKPOINT_DIR);
+      statePath = pathUtil.join(checkpointDir, EditCheckpointService.STATE_FILE);
+      if (!fs.existsSync(statePath)) return false;
+    }
 
     try {
       const raw = fs.readFileSync(statePath, 'utf-8');
       const state = JSON.parse(raw);
-      if (!state || state.version !== 4) return false;
+      if (!state || (state.version !== 5 && state.version !== 4)) return false;
 
       // 恢复 initialFileContents
       this.initialFileContents.clear();
@@ -594,6 +647,7 @@ export class EditCheckpointService {
       }));
 
       this.timelineIndex = state.timelineIndex ?? this.timeline.length - 1;
+      this.keptTimelineIndex = state.keptTimelineIndex ?? -1;
       this.pendingSnapshot = state.pendingSnapshot ? deserializeStop(state.pendingSnapshot) : null;
       this.currentTurnTrackedPaths.clear();
       this.currentTurnOperations.clear();
@@ -607,19 +661,50 @@ export class EditCheckpointService {
   }
 
   /**
-   * 清除项目目录下 .aily_checkpoints/ 文件夹。
+   * 清除指定会话在项目目录下的 checkpoint 文件。
+   * 如果 sessionId 为空，清除整个 .aily_checkpoints/ 目录（兼容旧数据）。
    */
-  cleanDisk(projectPath: string): void {
+  cleanDisk(projectPath: string, sessionId?: string): void {
     const fs = AilyHost.get().fs;
     const pathUtil = AilyHost.get().path;
-    const checkpointDir = pathUtil.join(projectPath, EditCheckpointService.CHECKPOINT_DIR);
+    const dir = sessionId
+      ? pathUtil.join(projectPath, EditCheckpointService.CHECKPOINT_DIR, sessionId)
+      : pathUtil.join(projectPath, EditCheckpointService.CHECKPOINT_DIR);
 
     try {
-      if (fs.existsSync(checkpointDir)) {
-        this.removeDir(checkpointDir);
+      if (fs.existsSync(dir)) {
+        this.removeDir(dir);
       }
     } catch (err) {
       console.warn('[EditCheckpoint] cleanDisk failed:', err);
+    }
+  }
+
+  /**
+   * 静态方法：删除指定会话的 checkpoint 目录。
+   * 供 ChatHistoryService 在删除会话时调用，无需依赖服务实例。
+   */
+  static cleanSessionCheckpoints(projectPath: string, sessionId: string): void {
+    if (!projectPath || !sessionId) return;
+    const fs = AilyHost.get().fs;
+    const pathUtil = AilyHost.get().path;
+    const dir = pathUtil.join(projectPath, EditCheckpointService.CHECKPOINT_DIR, sessionId);
+    try {
+      if (fs.existsSync(dir)) {
+        const removeDir = (dirPath: string) => {
+          if (!fs.existsSync(dirPath)) return;
+          const entries = fs.readdirSync(dirPath);
+          for (const entry of entries) {
+            const fullPath = `${dirPath}/${entry}`;
+            const stat = fs.statSync(fullPath);
+            if (stat.isDirectory()) { removeDir(fullPath); } else { fs.unlinkSync(fullPath); }
+          }
+          fs.rmdirSync(dirPath);
+        };
+        removeDir(dir);
+      }
+    } catch (err) {
+      console.warn('[EditCheckpoint] cleanSessionCheckpoints failed:', err);
     }
   }
 
@@ -661,6 +746,7 @@ export class EditCheckpointService {
     }));
 
     this.timelineIndex = data.timelineIndex ?? this.timeline.length - 1;
+    this.keptTimelineIndex = -1;
     this.pendingSnapshot = data.pendingSnapshot || null;
     this.currentTurnTrackedPaths.clear();
     this.currentTurnOperations.clear();
@@ -671,6 +757,7 @@ export class EditCheckpointService {
     this.initialFileContents.clear();
     this.timeline = [];
     this.timelineIndex = -1;
+    this.keptTimelineIndex = -1;
     this.pendingSnapshot = null;
     this.currentTurnTrackedPaths.clear();
     this.currentTurnOperations.clear();

@@ -20,6 +20,7 @@
 
 import { Injectable, OnDestroy } from '@angular/core';
 import { AilyHost } from '../core/host';
+import { EditCheckpointService } from './edit-checkpoint.service';
 
 // ===== 类型定义 =====
 
@@ -508,11 +509,16 @@ export class ChatHistoryService implements OnDestroy {
   // =========================================================================
 
   /**
-   * 删除会话（索引 + 数据文件 + 缓存）
+   * 删除会话（索引 + 数据文件 + checkpoint 文件 + 缓存）
    */
   deleteSession(sessionId: string): void {
     this.ensureIndexLoaded();
     const entry = this.index.find(e => e.sessionId === sessionId);
+
+    // 删除 checkpoint 文件（.aily_checkpoints/{sessionId}/）
+    if (entry?.projectPath) {
+      EditCheckpointService.cleanSessionCheckpoints(entry.projectPath, sessionId);
+    }
 
     // 删除数据文件
     if (entry) {

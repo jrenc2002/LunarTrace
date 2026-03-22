@@ -57,7 +57,15 @@
             [sessionId]="sessionId"
             [msgIndex]="$index"
             [activeCheckpointAnchorIndex]="activeCheckpointAnchorIndex"
-            (checkpointHoverChange)="onCheckpointHoverChange($event)">
+            [currentMode]="currentMode"
+            [currentModelName]="currentModelName"
+            [isWaiting]="isWaiting"
+            (checkpointHoverChange)="onCheckpointHoverChange($event)"
+            (editAndResend)="onEditAndResend($event)"
+            (editModeToggle)="onEditModeToggle($event)"
+            (editModelToggle)="onEditModelToggle($event)"
+            (editAddFile)="onEditAddFile($index)"
+            (editAddFolder)="onEditAddFolder($index)">
           </aily-x-dialog>
           }
       </div>
