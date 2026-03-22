@@ -23,7 +23,7 @@ import { CommonModule } from '@angular/common';
   `,
   styles: [`
     .ac-error {
-      border-radius: 5px; padding: 5px 10px; margin: 4px 0;
+      border-radius: 5px; padding: 5px 10px; margin: 0;
       background-color: #3a3a3a; color: #ccc;
       overflow: hidden; display: flex; flex-direction: column;
     }
