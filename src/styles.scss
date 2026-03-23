@@ -148,6 +148,10 @@ nz-sider.nz-resizable-resizing {
   transition: none;
 }
 
+nz-sider {
+  transition: none !important;
+}
+
 .blocklyWidgetDiv {
   .blocklyHtmlInput {
     color: #333;
