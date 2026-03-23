@@ -33,21 +33,21 @@ export const DEFERRED_TOOL_GROUPS: DeferredToolGroup[] = [
   },
   {
     name: '网络工具',
-    brief: '网页/API 请求(fetch)、网络搜索(web_search)',
-    tools: ['fetch', 'web_search']
+    brief: '网页/API 请求(fetch)、网络搜索(web_search)、仓库克隆(clone_repository)',
+    tools: ['fetch', 'web_search', 'clone_repository']
   },
   {
     name: '硬件/库搜索',
     brief: '搜索开发板和库、获取硬件分类、查询开发板参数',
     tools: ['search_boards_libraries', 'get_hardware_categories', 'get_board_parameters']
   },
-  {
-    name: 'ABS 工具',
-    // brief: 'ABS 文件同步、版本控制、ABS 语法参考、库块定义分析',
-    // tools: ['sync_abs_file', 'abs_version_control', 'get_abs_syntax', 'analyze_library_blocks']
-    brief: '版本控制',
-    tools: ['abs_version_control']
-  },
+//   {
+//     name: 'ABS 工具',
+//     // brief: 'ABS 文件同步、版本控制、ABS 语法参考、库块定义分析',
+//     // tools: ['sync_abs_file', 'abs_version_control', 'get_abs_syntax', 'analyze_library_blocks']
+//     brief: '版本控制',
+//     tools: ['abs_version_control']
+//   },
   {
     name: '接线图工具',
     brief: '生成/验证/保存接线图、组件目录、引脚映射',
@@ -1242,6 +1242,47 @@ Query and return specific content (for detailed info)
         agents: ["mainAgent", "schematicAgent"]
     },
     {
+        name: 'clone_repository',
+        description: `克隆/下载远程 Git 仓库到本地。通过平台 zip 下载 API 获取整个仓库代码并解压，无需本地安装 git。
+
+支持平台：GitHub、Gitee、GitLab、Bitbucket
+
+使用场景：
+- 用户提供了一个仓库 URL，需要获取其完整源码
+- 需要参考某个开源项目的代码结构
+- 下载示例项目或模板项目
+
+注意：
+- 仓库 zip 大小限制 50MB
+- 默认尝试 main 分支，失败后自动回退到 master
+- 支持 sparse_paths 只下载指定子目录`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                url: {
+                    type: 'string',
+                    description: '仓库 URL，如 https://github.com/owner/repo'
+                },
+                branch: {
+                    type: 'string',
+                    description: '分支名称（默认 main，失败自动回退 master）',
+                    default: 'main'
+                },
+                target_dir: {
+                    type: 'string',
+                    description: '目标目录路径（相对项目根或绝对路径，默认为项目根下以仓库名命名的目录）'
+                },
+                sparse_paths: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: '仅下载指定子目录（稀疏检出），如 ["src", "docs"]'
+                }
+            },
+            required: ['url']
+        },
+        agents: ["mainAgent"]
+    },
+    {
         name: "web_search",
         description: `搜索网络以获取最新信息。使用 DuckDuckGo 搜索引擎，返回搜索结果列表（标题、摘要、链接）。
 适用场景：
@@ -2084,40 +2125,40 @@ Query and return specific content (for detailed info)
             required: ['operation']
         }
     },
-    {
-        name: "abs_version_control",
-        description: `🕐 ABS 版本控制工具 - 管理 Blockly 代码的版本历史。
+//     {
+//         name: "abs_version_control",
+//         description: `🕐 ABS 版本控制工具 - 管理 Blockly 代码的版本历史。
 
-**操作类型：**
-1. \`list\` - 列出所有版本历史
-2. \`get\` - 获取指定版本的内容
-3. \`rollback\` - 回滚到指定版本
-4. \`save\` - 手动保存当前版本（带描述）
+// **操作类型：**
+// 1. \`list\` - 列出所有版本历史
+// 2. \`get\` - 获取指定版本的内容
+// 3. \`rollback\` - 回滚到指定版本
+// 4. \`save\` - 手动保存当前版本（带描述）
 
-**使用场景：**
-- 修改代码前先保存版本，方便回滚
-- 查看历史版本对比差异
-- 恢复到之前的代码状态`,
-        input_schema: {
-            type: 'object',
-            properties: {
-                operation: {
-                    type: 'string',
-                    enum: ['list', 'get', 'rollback', 'save'],
-                    description: '操作类型：list=列出版本，get=获取内容，rollback=回滚，save=保存新版本'
-                },
-                versionId: {
-                    type: 'string',
-                    description: '版本 ID（get 和 rollback 操作时必需）'
-                },
-                description: {
-                    type: 'string',
-                    description: '版本描述（save 操作时使用）'
-                }
-            },
-            required: ['operation']
-        }
-    },
+// **使用场景：**
+// - 修改代码前先保存版本，方便回滚
+// - 查看历史版本对比差异
+// - 恢复到之前的代码状态`,
+//         input_schema: {
+//             type: 'object',
+//             properties: {
+//                 operation: {
+//                     type: 'string',
+//                     enum: ['list', 'get', 'rollback', 'save'],
+//                     description: '操作类型：list=列出版本，get=获取内容，rollback=回滚，save=保存新版本'
+//                 },
+//                 versionId: {
+//                     type: 'string',
+//                     description: '版本 ID（get 和 rollback 操作时必需）'
+//                 },
+//                 description: {
+//                     type: 'string',
+//                     description: '版本描述（save 操作时使用）'
+//                 }
+//             },
+//             required: ['operation']
+//         }
+//     },
     // {
     //     name: "variable_manager_tool",
     //     description: `变量管理工具。创建、删除、重命名工作区中的变量。支持不同类型的变量和作用域管理。`,
@@ -2798,13 +2839,20 @@ IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的
     // =============================================================================
     {
         name: 'build_project',
-        description: `编译当前项目，检测代码是否能正常编译通过。用于代码编写完成后验证语法和链接是否正确。编译耗时较长（可能数十秒到数分钟），请仅在需要验证时调用。`,
+        description: `编译当前项目，检测代码是否能正常编译通过。用于代码编写完成后验证语法和链接是否正确。编译耗时较长（可能数十秒到数分钟），请仅在需要验证时调用。
+
+如果编译出现异常（如缓存损坏、切换开发板后残留旧缓存），可设置 clear_cache=true 在编译前清除缓存。`,
         input_schema: {
             type: 'object',
             properties: {
                 preprocess_only: {
                     type: 'boolean',
                     description: '是否仅做预编译检查（更快但不生成完整产物，且为异步操作不会返回编译结果）',
+                    default: false
+                },
+                clear_cache: {
+                    type: 'boolean',
+                    description: '编译前是否清除编译缓存（解决缓存损坏或切换开发板后的残留问题）',
                     default: false
                 }
             },

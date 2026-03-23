@@ -1,4 +1,4 @@
-import { Component, ElementRef, ViewChild, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { Component, ElementRef, ViewChild, ViewChildren, QueryList, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { FormsModule } from '@angular/forms';
 import { XDialogComponent } from './components/x-dialog/x-dialog.component';
@@ -55,10 +55,13 @@ import { ScrollManagerService } from './services/scroll-manager.service';
 import { ResourceManagerService } from './services/resource-manager.service';
 import { MenuManagerService } from './services/menu-manager.service';
 import { ChatEngineService } from './services/chat-engine.service';
+import { EditCheckpointService } from './services/edit-checkpoint.service';
+import { UnsavedEditsDialogComponent } from './components/unsaved-edits-dialog/unsaved-edits-dialog.component';
 
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { AuthService } from '../../services/auth.service';
 import { FloatingTodoComponent } from './components/floating-todo/floating-todo.component';
+import { AilyEditsViewerComponent } from './components/aily-edits-viewer/aily-edits-viewer.component';
 import { TodoUpdateService } from './services/todoUpdate.service';
 import { ArduinoLintService } from './services/arduino-lint.service';
 import { BlocklyService } from '../../editors/blockly-editor/services/blockly.service';
@@ -94,13 +97,14 @@ export { ToolCallState };
     NzToolTipModule,
     MenuComponent,
     FloatingTodoComponent,
+    AilyEditsViewerComponent,
     TranslateModule,
     LoginComponent,
     AilyChatSettingsComponent
   ],
   templateUrl: './aily-chat.component.html',
   styleUrl: './aily-chat.component.scss',
-  providers: [ScrollManagerService, ResourceManagerService, MenuManagerService, ChatEngineService],
+  providers: [ScrollManagerService, ResourceManagerService, MenuManagerService, EditCheckpointService, ChatEngineService],
 })
 export class AilyChatComponent implements OnDestroy {
   options = {
@@ -112,6 +116,7 @@ export class AilyChatComponent implements OnDestroy {
   @ViewChild('chatContainer') chatContainer: ElementRef;
   @ViewChild('chatList') chatList: ElementRef;
   @ViewChild('chatTextarea') chatTextarea: ElementRef;
+  @ViewChildren(XDialogComponent) xDialogComponents: QueryList<XDialogComponent>;
 
   // ==================== Engine 状态代理（模板绑定） ====================
 
@@ -153,6 +158,7 @@ export class AilyChatComponent implements OnDestroy {
 
   bottomHeight = 180;
   showSettings = false;
+  activeCheckpointAnchorIndex: number | null = null;
 
   constructor(
     private uiService: UiService,
@@ -233,6 +239,58 @@ export class AilyChatComponent implements OnDestroy {
 
     // 初始化引擎（订阅、路径等）
     this.engine.init(this.chatTextarea);
+  }
+
+  onCheckpointHoverChange(anchorIndex: number | null): void {
+    this.activeCheckpointAnchorIndex = anchorIndex;
+  }
+
+  // ===== 编辑消息事件处理 =====
+
+  async onEditAndResend(event: { msgIndex: number; newText: string; resources: any[] }): Promise<void> {
+    await this.engine.editAndResendFromTurn(event.msgIndex, event.newText, event.resources);
+  }
+
+  onEditModeToggle(event: { event: MouseEvent; type: string }): void {
+    this.menuManager.toggleModeMenu(event.event);
+  }
+
+  onEditModelToggle(event: { event: MouseEvent; type: string }): void {
+    this.menuManager.toggleModelMenu(event.event, this.ModelList.length);
+  }
+
+  async onEditAddFile(msgIndex: number): Promise<void> {
+    const options = {
+      title: '选择文件',
+      properties: ['multiSelections'],
+      filters: [{ name: '所有文件', extensions: ['*'] }]
+    };
+    const result = await AilyHost.get().dialog.selectFiles(options);
+    if (!result.canceled && result.filePaths?.length > 0) {
+      const dialog = this.xDialogComponents?.find(d => d.msgIndex === msgIndex);
+      if (dialog) {
+        result.filePaths.forEach(path => {
+          const fileName = path.split(/[/\\]/).pop() || path;
+          dialog.addEditResource({ type: 'file', path, name: fileName });
+        });
+      }
+    }
+  }
+
+  async onEditAddFolder(msgIndex: number): Promise<void> {
+    const options = {
+      title: '选择文件夹',
+      properties: ['openDirectory']
+    };
+    const result = await AilyHost.get().dialog.selectFiles(options);
+    if (!result.canceled && result.filePaths?.length > 0) {
+      const dialog = this.xDialogComponents?.find(d => d.msgIndex === msgIndex);
+      if (dialog) {
+        const selectedPath = result.filePaths[0];
+        const folderName = selectedPath.split(/[/\\]/).pop() || selectedPath;
+        dialog.addEditResource({ type: 'folder', path: selectedPath, name: folderName });
+      }
+    }
   }
 
   ngAfterViewInit(): void {
@@ -336,7 +394,17 @@ export class AilyChatComponent implements OnDestroy {
   }
 
   menuClick(e) {
-    this.menuManager.switchToSession(e.sessionId, this.chatService.currentSessionId, {
+    if (this.engine.editCheckpointService.hasUnsavedEdits()) {
+      this.confirmUnsavedEditsBeforeSwitch(() => {
+        this.doSwitchSession(e.sessionId);
+      });
+      return;
+    }
+    this.doSwitchSession(e.sessionId);
+  }
+
+  private doSwitchSession(sessionId: string) {
+    this.menuManager.switchToSession(sessionId, this.chatService.currentSessionId, {
       onSaveCurrentSession: () => this.engine.saveCurrentSession(),
       onGetHistory: () => this.engine.getHistory(),
       onSetCompleted: () => { this.engine.isCompleted = true; },
@@ -381,7 +449,61 @@ export class AilyChatComponent implements OnDestroy {
     this.showSettings = false;
   }
 
-  newChat() { this.engine.newChat(); }
+  newChat() {
+    if (this.engine.editCheckpointService.hasUnsavedEdits()) {
+      this.confirmUnsavedEditsBeforeSwitch(() => {
+        this.engine.newChat();
+      });
+      return;
+    }
+    this.engine.newChat();
+  }
+
+  /**
+   * 切换会话/新建会话前，提示用户处理未保留的文件变更。
+   * - 保留：acceptAllAsBaseline + 保存会话 + 继续
+   * - 放弃：撤销所有变更到初始状态 + 继续
+   * - 取消（关闭弹窗）：中止操作
+   */
+  private confirmUnsavedEditsBeforeSwitch(onConfirm: () => void): void {
+    const summary = this.engine.editCheckpointService.getEditsSummary();
+    if (!summary || summary.fileCount === 0) {
+      // 无实际文件变更差异 — 自动标记为已保留并继续
+      this.engine.editCheckpointService.acceptAllAsBaseline();
+      this.engine.editCheckpointService.dismissSummary();
+      onConfirm();
+      return;
+    }
+
+    const modalRef = this.modal.create({
+      nzTitle: null,
+      nzFooter: null,
+      nzClosable: false,
+      nzBodyStyle: { padding: '0' },
+      nzWidth: 340,
+      nzContent: UnsavedEditsDialogComponent,
+      nzData: { fileCount: summary.fileCount },
+    });
+
+    modalRef.afterClose.subscribe((action: string | null) => {
+      if (action === 'keep') {
+        // 保留变更：accept as baseline + save
+        this.engine.editCheckpointService.acceptAllAsBaseline();
+        this.engine.editCheckpointService.dismissSummary();
+        this.engine.saveCurrentSession();
+        onConfirm();
+      } else if (action === 'discard') {
+        // 放弃变更：undo all back to initial state
+        while (this.engine.editCheckpointService.canUndo) {
+          this.engine.editCheckpointService.undo();
+        }
+        this.engine.editCheckpointService.dismissSummary();
+        this.engine.saveCurrentSession();
+        onConfirm();
+      }
+      // null = 取消（关闭弹窗），不做任何操作
+    });
+  }
 
   // ==================== 模板辅助 ====================
 

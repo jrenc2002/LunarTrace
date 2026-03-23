@@ -101,6 +101,16 @@ export class SubagentSessionService implements OnDestroy {
   private abortedToolIds = new Set<string>();
   /** 工具 fetch 服务 */
   private fetchToolService: FetchToolService;
+  /**
+   * Per-agent 串行化队列：确保同一 agentName 的调用严格顺序执行。
+   *
+   * 参考 Copilot 模型：subagent 本质上是一个 tool，父 loop await 完成后才继续。
+   * 由于我们的 subagent 从 SSE 事件中 fire-and-forget 调用，无法在调用侧 await，
+   * 因此在 SubagentSessionService 内部通过 Promise chain 实现等效的串行化保证：
+   * - 同一 agent 的多次调用排队执行，不会并发修改 session.messages
+   * - 不同 agent 之间互不影响，可并行执行
+   */
+  private agentQueues = new Map<string, Promise<any>>();
 
   constructor(
     private http: HttpClient,
@@ -139,7 +149,7 @@ export class SubagentSessionService implements OnDestroy {
    */
   async executeSubagentToolCall(
     request: SubagentToolCallRequest,
-    timeout: number = 120000,
+    timeout?: number,
   ): Promise<string> {
     const { tool_id, tool_name, agent_name } = request;
 
@@ -157,42 +167,13 @@ export class SubagentSessionService implements OnDestroy {
 
     const task = args['task'] || args['content'] || JSON.stringify(args);
     const context = args['context'] || '';
+    const userContent = context
+      ? `上下文信息:\n${context}\n\n任务:\n${task}`
+      : task;
 
-    // console.log(`[SubagentSession] 执行 subagent 工具: ${tool_name}, agent: ${agent_name}, task: ${task.substring(0, 100)}...`);
-
-    // 1. 获取或创建 subagent 会话
-    const session = await this.getOrCreateSession(agent_name);
-
-    // 标记为执行中
-    session.running = true;
-    this.emitProgress('started', agent_name, tool_id, `正在执行 ${agent_name}...`);
-
-    try {
-      // 2. 构建用户消息
-      const userContent = context
-        ? `上下文信息:\n${context}\n\n任务:\n${task}`
-        : task;
-
-      // 3. 直连 subagent 执行并收集回复
-      const result = await this.chatWithSubagent(
-        session,
-        userContent,
-        tool_id,
-        timeout,
-      );
-
-      this.emitProgress('completed', agent_name, tool_id, `${agent_name} 执行完成`);
-      // console.log(`[SubagentSession] ${agent_name} 执行完成, 结果长度: ${result.length}`);
-
-      return result;
-    } catch (error: any) {
-      const errMsg = error.message || `${agent_name} 执行失败`;
-      this.emitProgress('error', agent_name, tool_id, errMsg);
-      console.error(`[SubagentSession] ${agent_name} 执行失败:`, error);
-      throw error;
-    } finally {
-      session.running = false;
-    }
+    // 通过 per-agent 队列串行化执行（未指定 timeout 则使用配置值）
+    const effectiveTimeout = timeout ?? this.ailyChatConfigService.subagentTimeout;
+    return this.enqueueAgentWork(agent_name, tool_id, userContent, effectiveTimeout);
   }
 
   /**
@@ -224,16 +205,62 @@ export class SubagentSessionService implements OnDestroy {
   async directChat(
     agentName: string,
     userText: string,
-    timeout: number = 120000,
+    timeout?: number,
   ): Promise<string> {
     const toolId = `direct_${agentName}_${Date.now()}`;
 
+    // 通过 per-agent 队列串行化执行（未指定 timeout 则使用配置值）
+    const effectiveTimeout = timeout ?? this.ailyChatConfigService.subagentTimeout;
+    return this.enqueueAgentWork(agentName, toolId, userText, effectiveTimeout);
+  }
+
+  // =========================================================================
+  // Per-agent 串行化队列
+  // =========================================================================
+
+  /**
+   * 将一次 agent 调用排入该 agent 的串行化队列。
+   *
+   * 保证同一 agentName 的调用严格顺序执行：
+   * - 上一次调用完成（成功/失败）后，下一次才开始
+   * - 不同 agentName 互不阻塞，可并行
+   * - session.running 真正作为互斥标记生效
+   */
+  private enqueueAgentWork(
+    agentName: string,
+    toolId: string,
+    userContent: string,
+    timeout: number,
+  ): Promise<string> {
+    const prevWork = this.agentQueues.get(agentName) || Promise.resolve();
+
+    const currentWork = prevWork.then(() =>
+      this.doAgentWork(agentName, toolId, userContent, timeout)
+    );
+
+    // 更新队列（catch 防止上一个的 reject 阻塞后续入队）
+    this.agentQueues.set(agentName, currentWork.catch(() => {}));
+
+    return currentWork;
+  }
+
+  /**
+   * 实际执行一次 agent 调用（串行化保证只有一个同时在跑）
+   */
+  private async doAgentWork(
+    agentName: string,
+    toolId: string,
+    userContent: string,
+    timeout: number,
+  ): Promise<string> {
     const session = await this.getOrCreateSession(agentName);
+
+    // session.running 此时一定是 false（队列串行化保证）
     session.running = true;
     this.emitProgress('started', agentName, toolId, `正在执行 ${agentName}...`);
 
     try {
-      const result = await this.chatWithSubagent(session, userText, toolId, timeout);
+      const result = await this.chatWithSubagent(session, userContent, toolId, timeout);
       this.emitProgress('completed', agentName, toolId, `${agentName} 执行完成`);
       return result;
     } catch (error: any) {
@@ -272,8 +299,12 @@ export class SubagentSessionService implements OnDestroy {
     }
     this.activeSubscriptions.clear();
 
+    // 清空所有 agent 队列（排队中的调用不再执行）
+    this.agentQueues.clear();
+
     // 关闭服务端会话
     for (const [_, session] of this.sessions) {
+      session.running = false;
       this.closeServerSession(session.sessionId);
     }
     this.sessions.clear();
@@ -288,10 +319,12 @@ export class SubagentSessionService implements OnDestroy {
   cleanupAgent(agentName: string): void {
     const session = this.sessions.get(agentName);
     if (session) {
+      session.running = false;
       this.closeServerSession(session.sessionId);
       this.sessions.delete(agentName);
-      // console.log(`[SubagentSession] 已清理 ${agentName} 的会话`);
     }
+    // 清除该 agent 的串行化队列
+    this.agentQueues.delete(agentName);
   }
 
   // =========================================================================

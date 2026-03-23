@@ -74,7 +74,7 @@
 
   .todo-panel-content {
     background: var(--vscode-sideBar-background, #252526);
-    max-height: 270px; /* 为header留出30px，限制内容最大高度 */
+    max-height: 180px; /* 为header留出30px，限制内容最大高度 */
     overflow-y: auto; /* 内容超出时显示滚动条 */
 
     /* 滚动条样式 */

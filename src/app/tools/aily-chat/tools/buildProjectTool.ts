@@ -5,6 +5,8 @@ import { setLastBuildErrors, clearLastBuildErrors } from './getErrorsTool';
 interface BuildProjectInput {
     /** 是否仅做预编译检查（更快，但不生成完整产物） */
     preprocess_only?: boolean;
+    /** 编译前是否清除编译缓存 */
+    clear_cache?: boolean;
 }
 
 /** 清除 ANSI 转义码和 [ERROR] 等标签 */
@@ -74,11 +76,21 @@ function extractCompileErrors(fullStdErr: string): string {
  */
 export async function buildProjectTool(
     builderService: BuilderService,
-    input: BuildProjectInput
+    input: BuildProjectInput,
+    projectPath?: string
 ): Promise<ToolUseResult> {
-    const { preprocess_only = false } = input;
+    const { preprocess_only = false, clear_cache = false } = input;
 
     try {
+        // 清除编译缓存
+        if (clear_cache && projectPath) {
+            try {
+                await builderService.clearCache(projectPath);
+            } catch (e) {
+                console.warn('清除编译缓存失败:', e);
+            }
+        }
+
         if (preprocess_only) {
             builderService.triggerPreprocess('llm_tool_call');
             return {

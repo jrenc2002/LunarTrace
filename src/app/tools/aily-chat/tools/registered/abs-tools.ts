@@ -52,32 +52,32 @@ class SyncAbsFileTool implements IAilyTool {
 // abs_version_control
 // ============================
 
-class AbsVersionControlTool implements IAilyTool {
-  readonly name = 'abs_version_control';
-  readonly schema = findLegacySchema('abs_version_control');
-  readonly environment = 'gui' as const;
+// class AbsVersionControlTool implements IAilyTool {
+//   readonly name = 'abs_version_control';
+//   readonly schema = findLegacySchema('abs_version_control');
+//   readonly environment = 'gui' as const;
 
-  async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
-    if (!ctx.host?.absSync) return { is_error: true, content: 'ABS 同步服务不可用' };
-    return absVersionControlHandler(args, ctx.host.absSync);
-  }
+//   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
+//     if (!ctx.host?.absSync) return { is_error: true, content: 'ABS 同步服务不可用' };
+//     return absVersionControlHandler(args, ctx.host.absSync);
+//   }
 
-  getStartText(args: any): string {
-    const action = args?.action || 'unknown';
-    const texts: Record<string, string> = {
-      snapshot: '创建 ABS 快照...',
-      list: '列出历史快照...',
-      restore: '恢复 ABS 快照...',
-      diff: '对比 ABS 快照...',
-    };
-    return texts[action] || `ABS 版本控制: ${action}`;
-  }
+//   getStartText(args: any): string {
+//     const action = args?.action || 'unknown';
+//     const texts: Record<string, string> = {
+//       snapshot: '创建 ABS 快照...',
+//       list: '列出历史快照...',
+//       restore: '恢复 ABS 快照...',
+//       diff: '对比 ABS 快照...',
+//     };
+//     return texts[action] || `ABS 版本控制: ${action}`;
+//   }
 
-  getResultText(args: any, result?: ToolUseResult): string {
-    if (result?.is_error) return 'ABS 版本控制操作失败';
-    return 'ABS 版本控制操作成功';
-  }
-}
+//   getResultText(args: any, result?: ToolUseResult): string {
+//     if (result?.is_error) return 'ABS 版本控制操作失败';
+//     return 'ABS 版本控制操作成功';
+//   }
+// }
 
 // ============================
 // get_abs_syntax
@@ -219,7 +219,7 @@ class ReloadAbiJsonTool implements IAilyTool {
 // ============================
 
 ToolRegistry.register(new SyncAbsFileTool());
-ToolRegistry.register(new AbsVersionControlTool());
+// ToolRegistry.register(new AbsVersionControlTool());
 ToolRegistry.register(new GetAbsSyntaxTool());
 ToolRegistry.register(new EditAbiFileTool());
 ToolRegistry.register(new ReloadAbiJsonTool());

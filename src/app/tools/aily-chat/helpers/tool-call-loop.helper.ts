@@ -207,6 +207,16 @@ export class ToolCallLoopHelper {
         this.engine.conversationMessages, budget.maxContextTokens, budget.currentTokens,
         this.engine.sessionId, this.getCurrentLLMConfig(), this.engine.currentModel?.model || undefined
       );
+
+      // 提交当前 turn 的 checkpoint
+      this.engine.editCheckpointService.commitCurrentTurn();
+
+      // 如果本轮有文件变更，通过服务推送摘要到面板
+      if (this.engine.editCheckpointService.hasEditsInCurrentTurn()) {
+        const summary = this.engine.editCheckpointService.getEditsSummary();
+        this.engine.editCheckpointService.publishSummary(summary);
+      }
+
       if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
         this.engine.list[this.engine.list.length - 1].state = 'done';
       }

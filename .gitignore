@@ -17,6 +17,8 @@ yarn.lock
 /child/aily-builder
 /child/7zz
 /child/7za.exe
+/child/rg
+/child/rg.exe
 
 # IDEs and editors
 .idea/
@@ -53,4 +55,4 @@ child/aily-builder*
 
 aily-todos/*.json
 docs/performance-optimization.md
-child/rg.exe
+/child/rg.exe

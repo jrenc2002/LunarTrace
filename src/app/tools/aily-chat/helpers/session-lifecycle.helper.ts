@@ -32,6 +32,17 @@ export class SessionLifecycleHelper {
       // 导出 subagent 会话数据（Plan C 压缩：保留最近 3 轮对话）
       const subagentHistories = this.engine.subagentSessionService.exportSessions(3);
 
+      // checkpoint 数据独立存储到 .aily_checkpoints/{sessionId}/ 目录
+      if (prjPath && this.engine.editCheckpointService?.getTotalEditCount() > 0) {
+        try {
+          // 提交当前 turn 的快照（确保 stops 完整），防止 stop() 后未提交导致基线错误
+          this.engine.editCheckpointService.commitCurrentTurn();
+          this.engine.editCheckpointService.saveToDisk(prjPath, this.engine.sessionId);
+        } catch (err) {
+          console.warn('[SessionLifecycle] checkpoint saveToDisk failed:', err);
+        }
+      }
+
       this.engine.chatHistoryService.saveSession(
         this.engine.sessionId, this.engine.list, this.engine.conversationMessages || [],
         {
@@ -257,6 +268,9 @@ export class SessionLifecycleHelper {
     this.engine.scrollManager.autoScrollEnabled = true;
     this.engine.isCompleted = false;
     this.engine.isCancelled = true;
+    this.engine.editCheckpointService.clear();
+    this.engine.editCheckpointService.dismissSummary();
+    // 旧会话的 checkpoint 文件保留在磁盘（随会话历史删除时清除）
     if (this.engine.messageSubscription) { this.engine.messageSubscription.unsubscribe(); this.engine.messageSubscription = null; }
     this.engine.activeToolExecutions = 0;
     this.engine.sseStreamCompleted = false;
@@ -309,7 +323,32 @@ export class SessionLifecycleHelper {
         this.engine.subagentSessionService.importSessions(sessionData.subagentHistories);
       }
 
+      // 恢复文件变更 checkpoint — 先清除旧状态，再从磁盘加载新会话的 checkpoint
+      this.engine.editCheckpointService?.clear();
+      const cpProjectPath = sessionData.metadata?.projectPath;
+      const cpSessionId = this.engine.sessionId;
+      if (cpProjectPath && cpSessionId) {
+        const loaded = this.engine.editCheckpointService?.loadFromDisk(cpProjectPath, cpSessionId);
+        if (!loaded && sessionData.editCheckpoints) {
+          // 兼容旧 JSON 格式
+          this.engine.editCheckpointService?.restoreFromJSON(sessionData.editCheckpoints);
+        }
+      } else if (sessionData.editCheckpoints) {
+        this.engine.editCheckpointService?.restoreFromJSON(sessionData.editCheckpoints);
+      }
+
+      // 恢复后刷新编辑摘要面板 — 仅当存在未保留的变更时才显示
+      if (this.engine.editCheckpointService?.hasUnsavedEdits()) {
+        this.engine.editCheckpointService.publishCurrentSummary();
+      } else {
+        this.engine.editCheckpointService?.dismissSummary();
+      }
+
       this.engine.scrollManager.scrollToBottom('auto');
+    } else {
+      // 新会话无历史数据，确保清除旧 checkpoint 状态
+      this.engine.editCheckpointService?.clear();
+      this.engine.editCheckpointService?.dismissSummary();
     }
   }
 

@@ -52,7 +52,20 @@
             [role]="item.role"
             [content]="item.content"
             [doing]="item.state === 'doing'"
-            [source]="item.source">
+            [source]="item.source"
+            [isLastAily]="$last && item.role === 'aily'"
+            [sessionId]="sessionId"
+            [msgIndex]="$index"
+            [activeCheckpointAnchorIndex]="activeCheckpointAnchorIndex"
+            [currentMode]="currentMode"
+            [currentModelName]="currentModelName"
+            [isWaiting]="isWaiting"
+            (checkpointHoverChange)="onCheckpointHoverChange($event)"
+            (editAndResend)="onEditAndResend($event)"
+            (editModeToggle)="onEditModeToggle($event)"
+            (editModelToggle)="onEditModelToggle($event)"
+            (editAddFile)="onEditAddFile($index)"
+            (editAddFolder)="onEditAddFolder($index)">
           </aily-x-dialog>
           }
       </div>
@@ -66,6 +79,8 @@
       </div>
       }
     </div>
+    <!-- 文件变更面板（sender上方） -->
+    <app-aily-edits-viewer></app-aily-edits-viewer>
     <!-- 发送部分 -->
     <div class="sender" nz-resizable [style.height.px]="bottomHeight" [nzMaxHeight]="600" [nzMinHeight]="180"
       (nzResize)="onContentResize($event)">

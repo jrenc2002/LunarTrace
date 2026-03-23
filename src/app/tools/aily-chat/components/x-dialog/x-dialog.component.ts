@@ -2,6 +2,8 @@ import {
   Component,
   Input,
   OnChanges,
+  Output,
+  EventEmitter,
   signal,
   SimpleChanges,
   ViewChild,
@@ -9,16 +11,21 @@ import {
   AfterViewChecked,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { XMarkdownComponent } from 'ngx-x-markdown';
 import type { StreamingOption, ComponentMap } from 'ngx-x-markdown';
 import { AilyChatCodeComponent } from './aily-chat-code.component';
+import { ChatAPI } from '../../core/api-endpoints';
+import { AilyHost } from '../../core/host';
+import { EditCheckpointService } from '../../services/edit-checkpoint.service';
+import { ResourceItem } from '../../core/chat-types';
 
 @Component({
   selector: 'aily-x-dialog',
   templateUrl: './x-dialog.component.html',
   styleUrls: ['./x-dialog.component.scss'],
   standalone: true,
-  imports: [CommonModule, XMarkdownComponent],
+  imports: [CommonModule, FormsModule, XMarkdownComponent],
 })
 export class XDialogComponent implements OnChanges, AfterViewChecked {
   @Input() role = 'user';
@@ -26,6 +33,22 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   @Input() doing = false;
   /** 消息来源：mainAgent 为主Agent，其他值为子Agent名称 */
   @Input() source: string = 'mainAgent';
+  /** 是否为最后一条 aily 消息（显示操作按钮） */
+  @Input() isLastAily = false;
+  /** 当前会话 ID */
+  @Input() sessionId = '';
+  @Input() msgIndex = -1;
+  @Input() activeCheckpointAnchorIndex: number | null = null;
+  @Input() currentMode = 'agent';
+  @Input() currentModelName = '';
+  @Input() isWaiting = false;
+
+  @Output() checkpointHoverChange = new EventEmitter<number | null>();
+  @Output() editAndResend = new EventEmitter<{ msgIndex: number; newText: string; resources: ResourceItem[] }>();
+  @Output() editModeToggle = new EventEmitter<{ event: MouseEvent; type: 'mode' }>();
+  @Output() editModelToggle = new EventEmitter<{ event: MouseEvent; type: 'model' }>();
+  @Output() editAddFile = new EventEmitter<void>();
+  @Output() editAddFolder = new EventEmitter<void>();
 
   @ViewChild('subagentBody') subagentBodyRef?: ElementRef<HTMLElement>;
 
@@ -55,6 +78,279 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   streamContent = signal('');
   streamingConfig = signal<StreamingOption>({ hasNextChunk: false, enableAnimation: false });
   readonly componentMap: ComponentMap = { code: AilyChatCodeComponent };
+
+  /** 是否显示操作栏（鼠标悬停时） */
+  showActions = false;
+  /** 反馈状态 */
+  feedbackState: 'helpful' | 'unhelpful' | null = null;
+
+  // ===== 编辑模式 =====
+  isEditing = false;
+  editText = '';
+  editResources: ResourceItem[] = [];
+  showEditAddList = false;
+
+  constructor(private editCheckpointService: EditCheckpointService) {}
+
+  /** 是否可显示操作栏（非 doing 的最后一条 aily 消息） */
+  get canShowActions(): boolean {
+    return this.isLastAily && !this.doing && this.role === 'aily' && !this.isSubagent;
+  }
+
+  get canShowLimitActions(): boolean {
+    return this.role !== 'user' && !this.doing && this.msgIndex > 0;
+  }
+
+  get canShowCheckpointAction(): boolean {
+    return !this.doing && this.msgIndex > 0;
+  }
+
+  get canRenderCheckpointAnchor(): boolean {
+    return this.role === 'user' && this.msgIndex >= 0;
+  }
+
+  get showCheckpointAnchor(): boolean {
+    return this.canRenderCheckpointAnchor && this.activeCheckpointAnchorIndex === this.msgIndex;
+  }
+
+  /** 是否可编辑用户消息（非 doing 的 user 消息） */
+  get canEditUserMessage(): boolean {
+    return this.role === 'user' && !this.doing && !this.isWaiting;
+  }
+
+  onDialogMouseEnter(): void {
+    this.showActions = true;
+    const anchorListIndex = this.editCheckpointService.getTurnStartListIndexByAnyListIndex(this.msgIndex);
+    this.checkpointHoverChange.emit(anchorListIndex);
+  }
+
+  onDialogMouseLeave(): void {
+    this.showActions = false;
+    this.checkpointHoverChange.emit(null);
+  }
+
+  onRegenerate(): void {
+    document.dispatchEvent(new CustomEvent('aily-task-action', {
+      bubbles: true, detail: { action: 'regenerate' }
+    }));
+  }
+
+  onRestoreCheckpoint(): void {
+    if (this.msgIndex < 0) return;
+    document.dispatchEvent(new CustomEvent('aily-task-action', {
+      bubbles: true, detail: { action: 'restoreCheckpoint', listIndex: this.msgIndex }
+    }));
+  }
+
+  onCopyContent(): void {
+    const raw = this.content || '';
+    const text = this.extractCopyText(raw);
+    navigator.clipboard.writeText(text).catch(() => {});
+  }
+
+  onFeedback(feedback: 'helpful' | 'unhelpful'): void {
+    if (this.feedbackState === feedback || !this.sessionId) return;
+    this.feedbackState = feedback;
+    AilyHost.get().auth.getToken!().then(token => {
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      fetch(`${ChatAPI.conversationFeedback}/${this.sessionId}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ feedback }),
+      }).catch(() => {});
+    }).catch(() => {});
+  }
+
+  // ===== 编辑模式操作 =====
+
+  /** 点击用户消息进入编辑模式 */
+  onUserMessageClick(): void {
+    if (!this.canEditUserMessage || this.isEditing) return;
+    const { text, resources } = this.parseUserContent(this.content || '');
+    this.editText = text;
+    this.editResources = resources;
+    this.showEditAddList = false;
+    this.isEditing = true;
+  }
+
+  onCancelEdit(): void {
+    this.isEditing = false;
+    this.editText = '';
+    this.editResources = [];
+    this.showEditAddList = false;
+  }
+
+  onSubmitEdit(): void {
+    const trimmed = this.editText.trim();
+    if (!trimmed) return;
+    this.isEditing = false;
+    this.editAndResend.emit({
+      msgIndex: this.msgIndex,
+      newText: trimmed,
+      resources: [...this.editResources],
+    });
+    this.editText = '';
+    this.editResources = [];
+    this.showEditAddList = false;
+  }
+
+  onEditKeyDown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.onCancelEdit();
+    } else if (event.key === 'Enter' && !event.ctrlKey && !event.shiftKey) {
+      event.preventDefault();
+      this.onSubmitEdit();
+    } else if (event.key === 'Enter' && event.ctrlKey) {
+      // Ctrl+Enter 换行
+      const textarea = event.target as HTMLTextAreaElement;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      this.editText = this.editText.substring(0, start) + '\n' + this.editText.substring(end);
+      setTimeout(() => { textarea.selectionStart = textarea.selectionEnd = start + 1; }, 0);
+      event.preventDefault();
+    }
+  }
+
+  onEditRemoveResource(index: number): void {
+    if (index >= 0 && index < this.editResources.length) {
+      this.editResources.splice(index, 1);
+    }
+  }
+
+  onEditToggleAddList(): void {
+    this.showEditAddList = !this.showEditAddList;
+  }
+
+  /** 从父组件接收添加的文件资源 */
+  addEditResource(item: ResourceItem): void {
+    const exists = this.editResources.some(r =>
+      r.type === item.type && (r.path === item.path || r.url === item.url)
+    );
+    if (!exists) {
+      this.editResources.push(item);
+    }
+  }
+
+  /** 从消息 content 中解析出纯文本和 resources */
+  private parseUserContent(content: string): { text: string; resources: ResourceItem[] } {
+    const resources: ResourceItem[] = [];
+    let text = content;
+
+    const attachMatch = content.match(/<(?:attachments|context)>\n?([\s\S]*?)\n?<\/(?:attachments|context)>/);
+    if (attachMatch) {
+      const inner = attachMatch[1].trim();
+      text = content.replace(attachMatch[0], '').trim();
+
+      // 解析参考文件
+      const fileSection = inner.match(/参考文件:\n((?:- .+\n?)+)/);
+      if (fileSection) {
+        const lines = fileSection[1].trim().split('\n');
+        for (const line of lines) {
+          const path = line.replace(/^- /, '').trim();
+          if (path) {
+            const name = path.split(/[/\\]/).pop() || path;
+            resources.push({ type: 'file', path, name });
+          }
+        }
+      }
+
+      // 解析参考文件夹
+      const folderSection = inner.match(/参考文件夹:\n((?:- .+\n?)+)/);
+      if (folderSection) {
+        const lines = folderSection[1].trim().split('\n');
+        for (const line of lines) {
+          const path = line.replace(/^- /, '').trim();
+          if (path) {
+            const name = path.split(/[/\\]/).pop() || path;
+            resources.push({ type: 'folder', path, name });
+          }
+        }
+      }
+
+      // 解析参考URL
+      const urlSection = inner.match(/参考URL:\n((?:- .+\n?)+)/);
+      if (urlSection) {
+        const lines = urlSection[1].trim().split('\n');
+        for (const line of lines) {
+          const url = line.replace(/^- /, '').trim();
+          if (url) {
+            try {
+              const urlObj = new URL(url);
+              resources.push({ type: 'url', url, name: urlObj.hostname + urlObj.pathname });
+            } catch { /* skip invalid */ }
+          }
+        }
+      }
+    }
+
+    return { text, resources };
+  }
+
+  private extractCopyText(content: string): string {
+    const parts: string[] = [];
+    const toolMap = new Map<string, ToolCallEntry>();
+
+    for (const line of content.split('\n')) {
+      const json = tryJsonParse(line.trim());
+      if (!json) continue;
+      if (json.type === 'tool_call_request' && json.tool_id) {
+        if (!toolMap.has(json.tool_id)) {
+          toolMap.set(json.tool_id, { state: 'doing', text: buildToolText(json.tool_name, json.tool_args) });
+        }
+      }
+      if (json.type === 'ToolCallExecutionEvent' && Array.isArray(json.content)) {
+        for (const item of json.content) {
+          const callId: string = item.call_id || item.id;
+          if (callId && toolMap.has(callId)) {
+            toolMap.get(callId)!.state = item.is_error ? 'error' : 'done';
+          }
+        }
+      }
+    }
+
+    let i = 0;
+    let buf = '';
+    let inThink = false;
+
+    while (i < content.length) {
+      if (!inThink && content.startsWith('<think>', i)) {
+        inThink = true; buf = ''; i += 7; continue;
+      }
+      if (inThink && content.startsWith('</think>', i)) {
+        inThink = false;
+        if (buf.trim()) parts.push('> [思考]\n> ' + buf.trim().split('\n').join('\n> '));
+        buf = ''; i += 8; continue;
+      }
+      if (inThink) { buf += content[i]; i++; continue; }
+
+      const lineEnd = content.indexOf('\n', i);
+      const line = lineEnd === -1 ? content.slice(i) : content.slice(i, lineEnd);
+      i = lineEnd === -1 ? content.length : lineEnd + 1;
+
+      const json = tryJsonParse(line.trim());
+      if (json) {
+        if (json.type === 'tool_call_request' && json.tool_id) {
+          const entry = toolMap.get(json.tool_id);
+          if (entry) {
+            const icon = entry.state === 'done' ? '✓' : entry.state === 'error' ? '✗' : '⋯';
+            parts.push(`${icon} ${entry.text}`);
+          }
+        }
+        continue;
+      }
+
+      const stripped = line.replace(/<(?:attachments|context)>[\s\S]*?<\/(?:attachments|context)>/g, '').trim();
+      if (stripped) parts.push(line);
+    }
+
+    if (inThink && buf.trim()) {
+      parts.push('> [思考]\n> ' + buf.trim().split('\n').join('\n> '));
+    }
+
+    return parts.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
 
   private lastRaw = '';
 

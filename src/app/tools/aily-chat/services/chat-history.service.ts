@@ -20,6 +20,7 @@
 
 import { Injectable, OnDestroy } from '@angular/core';
 import { AilyHost } from '../core/host';
+import { EditCheckpointService } from './edit-checkpoint.service';
 
 // ===== 类型定义 =====
 
@@ -56,6 +57,8 @@ export interface SessionData {
   metadata: SessionMetadata;
   /** Subagent 对话历史（可选，方案 C 压缩后持久化） */
   subagentHistories?: Record<string, SubagentHistoryEntry>;
+  /** 文件变更 checkpoint（可选，用于跨会话回滚） */
+  editCheckpoints?: any;
 }
 
 export interface ChatListItem {
@@ -173,6 +176,7 @@ export class ChatHistoryService implements OnDestroy {
     conversationMessages: any[],
     metadata: Partial<SessionMetadata> & { sessionId: string },
     subagentHistories?: Record<string, SubagentHistoryEntry>,
+    editCheckpoints?: any,
   ): void {
     if (!sessionId || (chatList.length === 0 && conversationMessages.length === 0)) {
       return;
@@ -203,6 +207,9 @@ export class ChatHistoryService implements OnDestroy {
     };
     if (subagentHistories && Object.keys(subagentHistories).length > 0) {
       sessionData.subagentHistories = subagentHistories;
+    }
+    if (editCheckpoints) {
+      sessionData.editCheckpoints = editCheckpoints;
     }
 
     // 更新内存缓存
@@ -502,11 +509,16 @@ export class ChatHistoryService implements OnDestroy {
   // =========================================================================
 
   /**
-   * 删除会话（索引 + 数据文件 + 缓存）
+   * 删除会话（索引 + 数据文件 + checkpoint 文件 + 缓存）
    */
   deleteSession(sessionId: string): void {
     this.ensureIndexLoaded();
     const entry = this.index.find(e => e.sessionId === sessionId);
+
+    // 删除 checkpoint 文件（.aily_checkpoints/{sessionId}/）
+    if (entry?.projectPath) {
+      EditCheckpointService.cleanSessionCheckpoints(entry.projectPath, sessionId);
+    }
 
     // 删除数据文件
     if (entry) {

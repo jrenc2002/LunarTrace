@@ -80,6 +80,8 @@ export interface AilyChatConfig {
     apiKeys?: ApiKeyConfig[];
     /** 模型配置列表 */
     models?: ModelConfigOption[];
+    /** Subagent 单次调用总超时（ms），默认 300000（5分钟） */
+    subagentTimeout?: number;
     /** 自定义上下文窗口大小（tokens，0 表示自动检测） */
     contextWindowSize?: number;
     /** 工具结果压缩阈值比例 (0-1，占上下文窗口的百分比，默认 0.5) */
@@ -287,6 +289,18 @@ export class AilyChatConfigService {
 
     set maxCount(value: number) {
         this.config.maxCount = value;
+    }
+
+    /**
+     * 获取 subagent 单次调用总超时（ms）
+     * 默认 300000（5分钟），覆盖整个多轮工具调用循环
+     */
+    get subagentTimeout(): number {
+        return this.config.subagentTimeout ?? 300000;
+    }
+
+    set subagentTimeout(value: number) {
+        this.config.subagentTimeout = value;
     }
 
     // ==================== 上下文预算配置 ====================
