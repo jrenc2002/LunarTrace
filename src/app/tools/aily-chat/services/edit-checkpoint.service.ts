@@ -99,6 +99,9 @@ export class EditCheckpointService {
   /** 是否在活跃 turn 中 */
   private isInTurn = false;
 
+  /** 自动保存模式 — 启用后 turn 内不推送摘要面板 */
+  autoSaveEdits = false;
+
   // ---- UI 信号 ----
 
   private summarySubject = new BehaviorSubject<EditsSummary | null>(null);
@@ -109,6 +112,8 @@ export class EditCheckpointService {
   }
 
   publishCurrentSummary(): void {
+    // 自动保存模式下，turn 进行中不弹出面板
+    if (this.autoSaveEdits && this.isInTurn) return;
     const summary = this.getEditsSummary();
     // 始终发射（含 null），确保无变更时面板能正确关闭
     this.summarySubject.next(summary);

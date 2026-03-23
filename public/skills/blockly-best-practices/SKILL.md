@@ -6,7 +6,7 @@ metadata:
   author: aily-team
   scope: global
   agents: mainAgent
-  auto-activate: true
+  auto-activate: false
   tags: blockly,coding-standards,abs,workflow
 ---
 

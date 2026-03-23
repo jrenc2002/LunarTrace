@@ -653,6 +653,8 @@ Do not create non-existent boards and libraries.
         this.abortController = new AbortController();
         // Turn 开始前自动导出 ABS，确保磁盘态与图形工作区同步
         this.absAutoSyncService.exportToAbs().catch(() => {});
+        // 同步自动保存配置
+        this.editCheckpointService.autoSaveEdits = this.ailyChatConfigService.autoSaveEdits;
         // 启动新 turn 的 checkpoint（记录 conversationMessages 和 list 的当前位置）
         this.editCheckpointService.startTurn(
           0,
@@ -1160,6 +1162,8 @@ Do not create non-existent boards and libraries.
 
     // Turn 开始前自动导出 ABS，确保磁盘态与图形工作区同步
     this.absAutoSyncService.exportToAbs().catch(() => {});
+    // 同步自动保存配置
+    this.editCheckpointService.autoSaveEdits = this.ailyChatConfigService.autoSaveEdits;
     // 创建新的 checkpoint
     this.editCheckpointService.startTurn(
       0,

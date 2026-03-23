@@ -194,7 +194,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
       const buffer = require("fs").readFileSync(path);
       return buffer.toString('base64');
     },
-    readDirSync: (path) => require("fs").readdirSync(path, { withFileTypes: true }),
+    readDirSync: (path) => {
+      const entries = require("fs").readdirSync(path, { withFileTypes: true });
+      return entries.map(e => ({ name: e.name, _isDirectory: e.isDirectory(), _isFile: e.isFile() }));
+    },
     readdirSync: (path) => require("fs").readdirSync(path),
     writeFileSync: (path, data) => require("fs").writeFileSync(path, data),
     writeBase64File: (path, base64Data) => {
@@ -204,7 +207,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     mkdirSync: (path) => require("fs").mkdirSync(path, { recursive: true }),
     copySync: (src, dest) => require("fs").cpSync(src, dest, { recursive: true }),
     existsSync: (path) => require("fs").existsSync(path),
-    statSync: (path) => require("fs").statSync(path),
+    statSync: (path) => {
+      const s = require("fs").statSync(path);
+      return { size: s.size, mtime: s.mtime.toISOString(), birthtime: s.birthtime.toISOString(), _isDirectory: s.isDirectory(), _isFile: s.isFile() };
+    },
     isDirectory: (path) => require("fs").statSync(path).isDirectory(),
     unlinkSync: (path, cb) => require("fs").unlinkSync(path, cb),
     rmdirSync: (path) => require("fs").rmdirSync(path, { recursive: true, force: true }),
