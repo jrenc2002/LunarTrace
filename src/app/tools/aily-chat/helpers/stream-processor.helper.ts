@@ -29,23 +29,26 @@ export class StreamProcessorHelper {
   constructor(private engine: ChatEngineService) {}
 
   /**
-   * Copilot 式 skills 注入：每个 turn 开始时（toolCallingIteration === 0）将活跃 skills
-   * 作为独立 user 消息持久化到 conversationMessages 中。
+   * Copilot 式 skills 注入：将活跃 skills 作为独立 user 消息持久化到 conversationMessages。
    *
-   * 在 tool-calling loop 的后续迭代中，该消息自然存在于消息数组中，不需要重复注入。
-   * 压缩时，compressToolResults() 会清理旧 skills user 消息中的 <rules> 内容。
+   * 通过检查消息数组中是否已存在 skills 消息来决定是否注入，而非依赖迭代计数。
+   * 这样即使压缩丢弃了 skills 消息，下次 API 调用时会自动重新注入。
    *
-   * 参考 Copilot 的 CustomInstructions 组件以 priority 750 渲染到 UserMessage 的模式：
-   * 每个 turn 生成一次，后续 tool loop 迭代自然继承。
+   * 参考 Copilot 的 CustomInstructions 组件以 priority 750 渲染到 UserMessage 的模式。
    */
   private injectSkillsMessage(): void {
-    if (this.engine.toolCallingIteration > 0) return;
     if (this.engine.currentMode !== 'agent') return;
     const messageSource = this.engine.currentMessageSource || 'mainAgent';
     if (messageSource !== 'mainAgent') return;
 
     const skillsContent = SkillRegistry.getActiveSkillsContent(messageSource);
     if (!skillsContent) return;
+
+    // 检查是否已存在 skills 消息（压缩可能已将其移除）
+    const hasSkillsMessage = this.engine.conversationMessages.some(
+      msg => msg.role === 'user' && msg.content?.includes('<rules>') && msg.content?.includes('</rules>')
+    );
+    if (hasSkillsMessage) return;
 
     this.engine.conversationMessages.push({ role: 'user', content: skillsContent });
   }
