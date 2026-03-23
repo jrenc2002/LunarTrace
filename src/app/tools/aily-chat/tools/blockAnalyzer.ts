@@ -1199,7 +1199,7 @@ export class BlockAnalyzer {
         }
         
         try {
-          const entries = electronAPI.fs.readdirSync(searchPath, { withFileTypes: true });
+          const entries = electronAPI.fs.readDirSync(searchPath);
           
           // 收集所有目录名进行智能匹配
           const directories = entries

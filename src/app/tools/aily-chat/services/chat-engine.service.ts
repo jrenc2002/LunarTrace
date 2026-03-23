@@ -652,7 +652,7 @@ Do not create non-existent boards and libraries.
         // 创建新的 AbortController 用于本轮工具执行中止
         this.abortController = new AbortController();
         // Turn 开始前自动导出 ABS，确保磁盘态与图形工作区同步
-        this.absAutoSyncService.exportToAbs().catch(() => {});
+        this.ensureAbsExport();
         // 同步自动保存配置
         this.editCheckpointService.autoSaveEdits = this.ailyChatConfigService.autoSaveEdits;
         // 启动新 turn 的 checkpoint（记录 conversationMessages 和 list 的当前位置）
@@ -808,6 +808,21 @@ Do not create non-existent boards and libraries.
 
     // 停止后应用延迟切换
     this.applyPendingSwitch();
+  }
+
+  /**
+   * 确保 absAutoSyncService 已初始化并执行导出
+   */
+  private ensureAbsExport(): void {
+    const projectPath = this.getCurrentProjectPath()
+      || AilyHost.get().project.currentProjectPath
+      || AilyHost.get().project.projectRootPath;
+    if (projectPath) {
+      this.absAutoSyncService.initialize(projectPath);
+    }
+    this.absAutoSyncService.exportToAbs().catch(err => {
+      console.warn('[ChatEngine] ABS 自动导出失败:', err);
+    });
   }
 
   // ==================== 模式 / 模型切换 ====================
@@ -1161,7 +1176,7 @@ Do not create non-existent boards and libraries.
     this.msg.appendMessage('aily', '[thinking...]');
 
     // Turn 开始前自动导出 ABS，确保磁盘态与图形工作区同步
-    this.absAutoSyncService.exportToAbs().catch(() => {});
+    this.ensureAbsExport();
     // 同步自动保存配置
     this.editCheckpointService.autoSaveEdits = this.ailyChatConfigService.autoSaveEdits;
     // 创建新的 checkpoint

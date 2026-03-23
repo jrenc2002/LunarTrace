@@ -18,7 +18,7 @@ import {
 } from '../services/http-error-handler.service';
 import {
   BLOCK_TOOLS, BLOCKLY_TOOL_NAMES,
-  BLOCKLY_RULES_TEXT, ASK_MODE_ROLE_TEXT,
+  ASK_MODE_ROLE_TEXT,
 } from '../services/stream-constants';
 import { searchDeferredTools, getDeferredToolsListing } from '../tools/tools';
 import { SkillRegistry } from '../core/skill-registry';
@@ -27,6 +27,28 @@ import { loadSkillHandler } from '../tools/loadSkillTool';
 
 export class StreamProcessorHelper {
   constructor(private engine: ChatEngineService) {}
+
+  /**
+   * Copilot 式 skills 注入：每个 turn 开始时（toolCallingIteration === 0）将活跃 skills
+   * 作为独立 user 消息持久化到 conversationMessages 中。
+   *
+   * 在 tool-calling loop 的后续迭代中，该消息自然存在于消息数组中，不需要重复注入。
+   * 压缩时，compressToolResults() 会清理旧 skills user 消息中的 <rules> 内容。
+   *
+   * 参考 Copilot 的 CustomInstructions 组件以 priority 750 渲染到 UserMessage 的模式：
+   * 每个 turn 生成一次，后续 tool loop 迭代自然继承。
+   */
+  private injectSkillsMessage(): void {
+    if (this.engine.toolCallingIteration > 0) return;
+    if (this.engine.currentMode !== 'agent') return;
+    const messageSource = this.engine.currentMessageSource || 'mainAgent';
+    if (messageSource !== 'mainAgent') return;
+
+    const skillsContent = SkillRegistry.getActiveSkillsContent(messageSource);
+    if (!skillsContent) return;
+
+    this.engine.conversationMessages.push({ role: 'user', content: skillsContent });
+  }
 
   /** 获取指定 agent 在 aily config 中被禁用的工具名称集合 */
   private _getAgentExcludedTools(agentName: string): Set<string> {
@@ -50,6 +72,9 @@ export class StreamProcessorHelper {
     if (this.engine.messageSubscription) { this.engine.messageSubscription.unsubscribe(); this.engine.messageSubscription = null; }
     this.engine.pendingUserInput = false;
     this.engine.streamCompleted = false;
+
+    // 每个 turn 开始时注入 skills 消息（仅 toolCallingIteration === 0 时生效）
+    if (statelessMode) this.injectSkillsMessage();
 
     const source$ = statelessMode
       ? this.engine.chatService.chatRequest(
@@ -377,13 +402,10 @@ export class StreamProcessorHelper {
             }
 
             let toolContent = '';
-            const agentInfoTip = isSubagent
-              ? '<info>如果子任务已完成，请返回结果给主Agent</info>'
-              : '<info>如果想结束对话，转交给用户，可以使用[to_xxx]，这里的xxx为user</info>';
 
-            // 会话级注入：首次注入完整列表，后续每轮重新注入活跃 skills 内容
-            // 参考 Copilot 的"每轮重新组装"模式：skill 内容用 <rules> 包裹，
-            // 压缩时被清理，下轮通过 getActiveSkillsContent() 重新生成。
+            // 会话级注入：首次注入延迟工具列表 + skills 索引 + memory（一次性上下文）
+            // Skills 内容已通过 getMessagesWithSkillsInjection() 作为独立 user 消息瞬态注入，
+            // 不再嵌入到 tool result 中。参考 Copilot 的 CustomInstructions 独立渲染模式。
             const shouldInjectRules = !this.engine.rulesInjectedThisSession;
 
             if (toolResult?.content && this.engine.chatService.currentMode === 'agent') {
@@ -391,30 +413,22 @@ export class StreamProcessorHelper {
               const needsRules = !isSubagent && isBlocklyTool && (toolResult?.is_error || resultState === 'warn');
 
               if (!isSubagent && (needsRules || shouldInjectRules || toolResult?.metadata?.newProject)) {
-                // 首次注入时包含完整的延迟工具列表和 skills 索引
                 const isFirstInjection = !this.engine.rulesInjectedThisSession;
                 this.engine.rulesInjectedThisSession = true;
 
-                const activeSkillsContent = SkillRegistry.getActiveSkillsContent(messageSource);
                 const memorySnippet = getMemoryPromptSnippet();
 
                 if (isFirstInjection) {
-                  // 首次：完整注入（活跃 skills + 延迟工具列表 + skills 索引）
+                  // 首次：注入延迟工具列表 + skills 索引 + memory（skills 内容已通过独立消息注入）
                   const deferredListing = getDeferredToolsListing(messageSource, this._getAgentExcludedTools(messageSource));
                   const skillsListing = SkillRegistry.getSkillsListing(messageSource);
-                  toolContent += `\n${activeSkillsContent}\n${deferredListing}\n${skillsListing}\n${memorySnippet}\n<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
+                  toolContent += `\n${deferredListing}\n${skillsListing}\n${memorySnippet}\n<toolResult>${toolResult?.content}</toolResult>`;
                 } else {
-                  // 后续错误/新项目触发：只重新注入活跃 skills
-                  toolContent += `\n${activeSkillsContent}\n${memorySnippet}\n<toolResult>${toolResult?.content}</toolResult>\n${agentInfoTip}`;
+                  // 后续错误/新项目触发：重新注入 memory
+                  toolContent += `\n${memorySnippet}\n<toolResult>${toolResult?.content}</toolResult>`;
                 }
               } else if (!isSubagent) {
-                // 非首次、非错误触发：检查是否有活跃 skills 需要持久注入
-                const activeSkillsContent = SkillRegistry.getActiveSkillsContent(messageSource);
-                if (activeSkillsContent) {
-                  toolContent += `\n${activeSkillsContent}\n<toolResult>${toolResult?.content}</toolResult>${reminder}`;
-                } else {
-                  toolContent += `<toolResult>${toolResult?.content}</toolResult>${reminder}`;
-                }
+                toolContent += `<toolResult>${toolResult?.content}</toolResult>${reminder}`;
               } else {
                 toolContent += `<toolResult>${toolResult?.content}</toolResult>${reminder}`;
               }
@@ -424,7 +438,7 @@ export class StreamProcessorHelper {
                 const deferredListing = getDeferredToolsListing(messageSource, this._getAgentExcludedTools(messageSource));
                 const skillsListing = SkillRegistry.getSkillsListing(messageSource);
                 const memorySnippet = getMemoryPromptSnippet();
-                toolContent = `\n<rules>${ASK_MODE_ROLE_TEXT}</rules>\n${deferredListing}\n${skillsListing}\n${memorySnippet}\n<toolResult>${toolResult?.content || '工具执行完成，无返回内容'}</toolResult>\n${agentInfoTip}`;
+                toolContent = `\n<rules>${ASK_MODE_ROLE_TEXT}</rules>\n${deferredListing}\n${skillsListing}\n${memorySnippet}\n<toolResult>${toolResult?.content || '工具执行完成，无返回内容'}</toolResult>`;
               } else {
                 toolContent = `<toolResult>${toolResult?.content || '工具执行完成，无返回内容'}</toolResult>`;
               }

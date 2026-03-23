@@ -6,7 +6,7 @@
  * 工作流程（激活）：
  * 1. 在 skills 索引中搜索匹配的 skill
  * 2. 在 SkillRegistry 中标记为激活
- * 3. 激活后的 skill 内容会通过 getActiveSkillsContent() 持久注入到每轮请求中
+ * 3. 激活后的 skill 内容通过 getMessagesWithSkillsInjection() 作为独立 user 消息瞬态注入
  * 4. 返回激活确认和 skill 摘要
  *
  * 工作流程（卸载）：
@@ -101,7 +101,7 @@ export async function loadSkillHandler(
   return {
     is_error: false,
     content: [
-      `已激活 ${activated.length} 个技能（内容将持久注入到后续请求中）：`,
+      `已激活 ${activated.length} 个技能（内容将作为独立消息注入到后续请求中）：`,
       ...summaries,
       '',
       `当前活跃技能: ${activeList.join(', ')}`,

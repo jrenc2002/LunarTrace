@@ -725,9 +725,18 @@ export class ContextBudgetService {
         continue;
       }
 
-      // user / system 消息保持原样（保留完整用户意图链）
+      // user / system 消息：清理 skills 注入的 <rules> 标签（压缩后下轮 turn 会重新注入）
+      // 普通用户文本无 <rules> 标签，不受影响
       if (msg.role === 'user' || msg.role === 'system') {
-        result.push(msg);
+        const content = msg.content || '';
+        if (msg.role === 'user' && content.includes('<rules>')) {
+          const cleaned = content.replace(/<rules>[\s\S]*?<\/rules>/g, '').trim();
+          // 如果整条消息只有 <rules> 内容（skills 注入消息），压缩后变为空，可以丢弃
+          if (!cleaned) continue;
+          result.push({ ...msg, content: cleaned });
+        } else {
+          result.push(msg);
+        }
         continue;
       }
 
