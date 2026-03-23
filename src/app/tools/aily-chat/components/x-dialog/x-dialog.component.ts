@@ -48,6 +48,9 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   subagentExpanded = false;
   private shouldScrollSubagent = false;
   private prevDoing = false;
+  /** 子Agent 正文区：用户未主动上滚时跟随流式到底部 */
+  private subagentStickToBottom = true;
+  private readonly subagentScrollBottomThresholdPx = 48;
 
   streamContent = signal('');
   streamingConfig = signal<StreamingOption>({ hasNextChunk: false, enableAnimation: false });
@@ -68,6 +71,9 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
     if (this.isSubagent && changes['doing']) {
       if (this.doing) {
         this.subagentExpanded = true;
+        if (changes['doing'].previousValue !== true) {
+          this.subagentStickToBottom = true;
+        }
       } else if (this.prevDoing && !this.doing) {
         // 从doing→done：自动折叠
         this.subagentExpanded = false;
@@ -110,10 +116,23 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
     this.streamContent.set(content);
   }
 
+  onSubagentBodyScroll(event: Event): void {
+    const el = event.target as HTMLElement | null;
+    if (!el) return;
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    this.subagentStickToBottom = dist <= this.subagentScrollBottomThresholdPx;
+  }
+
   ngAfterViewChecked(): void {
     if ((this.shouldScrollSubagent || this.doing) && this.subagentBodyRef?.nativeElement) {
       const el = this.subagentBodyRef.nativeElement;
-      el.scrollTop = el.scrollHeight;
+      const distBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      const nearBottom = distBottom <= this.subagentScrollBottomThresholdPx;
+      const allowScroll =
+        this.subagentStickToBottom && (nearBottom || this.shouldScrollSubagent);
+      if (allowScroll) {
+        el.scrollTop = el.scrollHeight;
+      }
       this.shouldScrollSubagent = false;
     }
   }

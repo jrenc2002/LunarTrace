@@ -30,7 +30,7 @@ import { getClosingTagsForOpenBlocks } from '../../../services/content-sanitizer
         <i class="fa-light fa-chevron-down ac-think-arrow"></i>
       </div>
       @if (thinkExpanded) {
-        <div class="ac-think-body" #thinkBody>
+        <div class="ac-think-body" #thinkBody (scroll)="onThinkBodyScroll($event)">
           @if (thinkContent) {
             <x-markdown
               [content]="markdownContent()"
@@ -169,10 +169,18 @@ export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges {
   streamingConfig = signal<StreamingOption>({ hasNextChunk: false, enableAnimation: false });
   readonly componentMap: ComponentMap = { code: AilyChatCodeComponent };
   private shouldScrollThink = false;
+  /** 用户未主动上滚时跟随流式到底部 */
+  private thinkStickToBottom = true;
+  private readonly thinkScrollBottomThresholdPx = 48;
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['data']) {
       if (!this.data) return;
+      const prevData = changes['data'].previousValue as { isComplete?: boolean } | null | undefined;
+      const prevStreaming = prevData && prevData.isComplete === false;
+      if (this.data.isComplete === false && !prevStreaming) {
+        this.thinkStickToBottom = true;
+      }
       let raw = this.data.content || '';
       if (this.data.encoded) {
         try {
@@ -193,10 +201,19 @@ export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges {
     }
   }
 
+  onThinkBodyScroll(event: Event): void {
+    const el = event.target as HTMLElement | null;
+    if (!el) return;
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    this.thinkStickToBottom = dist <= this.thinkScrollBottomThresholdPx;
+  }
+
   ngAfterViewChecked(): void {
     if (this.shouldScrollThink && this.thinkBodyRef?.nativeElement) {
       const el = this.thinkBodyRef.nativeElement;
-      el.scrollTop = el.scrollHeight;
+      if (this.thinkStickToBottom) {
+        el.scrollTop = el.scrollHeight;
+      }
       this.shouldScrollThink = false;
     }
   }
