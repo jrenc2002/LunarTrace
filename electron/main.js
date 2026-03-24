@@ -1,7 +1,7 @@
 const path = require("path");
 const os = require("os");
 const fs = require("fs");
-const windowStateKeeper = require('electron-window-state');
+const WinState = require('electron-win-state').default;
 const { app, BrowserWindow, ipcMain, dialog, screen, shell, net } = require("electron");
 
 const { isWin32, isDarwin, isLinux } = require("./platform");
@@ -762,7 +762,9 @@ function initFastestServersAsync() {
 // 环境变量加载
 function loadEnv() {
   // 将child目录添加到环境变量PATH中
-  const childPath = path.join(__dirname, "..", "child");
+  const childPath = serve
+    ? path.join(__dirname, "..", "child")
+    : path.join(process.resourcesPath, "child");
   const nodePath = path.join(childPath, isDarwin ? "node/bin" : "node");
 
   // 只保留PowerShell路径，移除其他系统PATH
@@ -1018,17 +1020,17 @@ function updateMainWindowWithPendingData() {
 }
 
 function createWindow() {
-  const mainWindowState = windowStateKeeper({
+  const winState = new WinState({
     defaultWidth: 1200,
     defaultHeight: 780,
-    path: path.join(process.env.AILY_APPDATA_PATH),
+    electronStoreOptions: {
+      name: 'window-state',
+      cwd: process.env.AILY_APPDATA_PATH,
+    },
   })
 
   mainWindow = new BrowserWindow({
-    x: mainWindowState.x,
-    y: mainWindowState.y,
-    width: mainWindowState.width,
-    height: mainWindowState.height,
+    ...winState.winOptions,
     show: false,
     minWidth: 800,
     minHeight: 600,
@@ -1036,7 +1038,7 @@ function createWindow() {
     titleBarStyle: isDarwin ? 'hiddenInset' : 'default',
     alwaysOnTop: false,
     autoHideMenuBar: true,
-    icon: path.join(__dirname, "../public/icon.ico"),
+    icon: serve ? path.join(__dirname, "../public/icon.ico") : path.join(process.resourcesPath, "icon.ico"),
     webPreferences: {
       nodeIntegration: true,
       webSecurity: false,
@@ -1046,12 +1048,7 @@ function createWindow() {
     },
   });
 
-  mainWindow.setBounds({
-    height: mainWindowState.height,
-    width: mainWindowState.width,
-  });
-
-  mainWindowState.manage(mainWindow);
+  winState.manage(mainWindow);
 
   // mainWindow.setMenu(null);
 
@@ -1612,7 +1609,7 @@ ipcMain.handle("open-new-instance", async (event, data) => {
     // 启动新实例
     const { spawn } = require('child_process');
     const execPath = process.execPath;
-    const appPath = __dirname;
+    const appPath = app.getAppPath();
 
     // 构建完整的启动参数
     const spawnArgs = [appPath, ...args];

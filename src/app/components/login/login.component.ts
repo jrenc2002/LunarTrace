@@ -38,7 +38,6 @@ export class LoginComponent implements OnDestroy {
 
   @ViewChild(AltchaComponent) altchaComponent!: AltchaComponent;
 
-  showWeChatLogin = false;
   showPhoneLogin = true;
 
   isWaiting = false;
@@ -105,8 +104,24 @@ export class LoginComponent implements OnDestroy {
     // this.modal.close({ result: 'cancel' });
   }
 
+  get showWeChatLogin(): boolean {
+    return this.getCurrentRegionKey() === 'cn';
+  }
+
+  private getCurrentRegionKey(): string {
+    return (this.configService.data?.region || 'cn').toLowerCase();
+  }
+
   mode = '';
   select(mode) {
+    if (mode === 'wechat' && !this.showWeChatLogin) {
+      this.cleanupWeChatLogin();
+      if (this.mode === 'wechat') {
+        this.mode = '';
+      }
+      return;
+    }
+
     this.mode = mode;
     // 当选择微信登录时，若已勾选协议则初始化二维码
     if (mode === 'wechat') {
@@ -126,6 +141,11 @@ export class LoginComponent implements OnDestroy {
    * 初始化微信扫码登录
    */
   initWeChatLogin() {
+    if (!this.showWeChatLogin) {
+      this.cleanupWeChatLogin();
+      return;
+    }
+
     this.wechatStatus = 'loading';
     this.wechatQrcodeUrl = null;
     this.wechatTicket = null;
@@ -286,6 +306,11 @@ export class LoginComponent implements OnDestroy {
    * 刷新微信二维码
    */
   refreshWeChatQrcode() {
+    if (!this.showWeChatLogin) {
+      this.cleanupWeChatLogin();
+      return;
+    }
+
     if (!this.agreedToTerms) {
       this.message.warning(this.translate.instant('LOGIN.AGREEMENT_REQUIRED'));
       return;

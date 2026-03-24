@@ -18,6 +18,7 @@ import { ElectronService } from '../../../../services/electron.service';
 import { BlocklyService } from '../../services/blockly.service';
 import { PlatformService } from '../../../../services/platform.service';
 import { WorkflowService } from '../../../../services/workflow.service';
+import { CrossPlatformCmdService } from '../../../../services/cross-platform-cmd.service';
 
 @Component({
   selector: 'app-lib-manager',
@@ -57,6 +58,7 @@ export class LibManagerComponent {
     private translate: TranslateService,
     private modal: NzModalService,
     private cmdService: CmdService,
+    private crossPlatformCmdService: CrossPlatformCmdService,
     private electronService: ElectronService,
     private platformService: PlatformService,
     private workflowService: WorkflowService
@@ -317,6 +319,39 @@ export class LibManagerComponent {
     this.electronService.openNewInStance('/main/playground/s/' + packageName.replace('@aily-project/', ''))
   }
 
+  private getImportedLibraryBasePath() {
+    return this.electronService.pathJoin(this.projectService.currentProjectPath, 'local-libraries');
+  }
+
+  private resolveImportedLibraryPath(packageName: string) {
+    return this.electronService.pathJoin(this.getImportedLibraryBasePath(), ...packageName.split('/'));
+  }
+
+  private async copyLibraryToProject(folderPath: string) {
+    const packageJsonPath = this.electronService.pathJoin(folderPath, 'package.json');
+    const packageJson = JSON.parse(this.electronService.readFile(packageJsonPath));
+    const packageName = packageJson?.name;
+
+    if (!packageName) {
+      throw new Error('package.json 缺少 name 字段');
+    }
+
+    const importedLibraryPath = this.resolveImportedLibraryPath(packageName);
+    const importedLibraryParentPath = this.electronService.pathJoin(importedLibraryPath, '..');
+
+    await this.crossPlatformCmdService.createDirectory(importedLibraryParentPath, true);
+
+    if (folderPath !== importedLibraryPath && this.electronService.exists(importedLibraryPath)) {
+      await this.crossPlatformCmdService.removeItem(importedLibraryPath, true, true);
+    }
+
+    if (folderPath !== importedLibraryPath) {
+      await this.crossPlatformCmdService.copyItem(folderPath, importedLibraryPath, true, true);
+    }
+
+    return importedLibraryPath;
+  }
+
   async importLib() {
     try {
       // 弹出文件夹选择对话框
@@ -332,9 +367,9 @@ export class LibManagerComponent {
       // console.log('选择的文件夹路径：', folderPath);
 
       // 检查选择的路径下是否有package.json、block.json、generator.js文件
-      const hasPackageJson = await this.electronService.exists(folderPath + '/package.json');
-      const hasBlockJson = await this.electronService.exists(folderPath + '/block.json');
-      const hasGeneratorJs = await this.electronService.exists(folderPath + '/generator.js');
+      const hasPackageJson = await this.electronService.exists(this.electronService.pathJoin(folderPath, 'package.json'));
+      const hasBlockJson = await this.electronService.exists(this.electronService.pathJoin(folderPath, 'block.json'));
+      const hasGeneratorJs = await this.electronService.exists(this.electronService.pathJoin(folderPath, 'generator.js'));
 
       if (!hasPackageJson || !hasBlockJson || !hasGeneratorJs) {
         this.message.error(`${this.translate.instant('LIB_MANAGER.IMPORT_FAILED')}: 该路径下不是aily blockly库`);
@@ -347,11 +382,18 @@ export class LibManagerComponent {
       let packageList_old = await this.npmService.getAllInstalledLibraries(this.projectService.currentProjectPath);
       // console.log('导入前已安装的库列表：', packageList_old);
 
+      // 先复制库到当前项目目录下，再从项目内的副本执行安装
+      const importedLibraryPath = await this.copyLibraryToProject(folderPath);
+
       // 使用 npm install 安装本地库
-      await this.cmdService.runAsync(`npm install "${folderPath}"`, this.projectService.currentProjectPath);
+      const { code } = await this.cmdService.runAsync(`npm install "${importedLibraryPath}"`, this.projectService.currentProjectPath);
+
+      if (code !== 0) {
+        throw new Error('安装导入库失败');
+      }
 
       // 重新检查已安装的库
-      await this.checkInstalled();
+      this.libraryList = await this.checkInstalled();
 
       this.message.success(`${this.translate.instant('LIB_MANAGER.IMPORTED')}`);
 

@@ -18,10 +18,12 @@
             <i class="fa-brands fa-microsoft"></i>
             Microsoft
         </div> -->
+            @if (showWeChatLogin) {
             <div class="item ccenter" (click)="select('wechat')" [ngClass]="{'wechat-active':mode=='wechat'}">
                 <div class="icon ccenter"><i class="fa-brands fa-weixin"></i></div>
                 WeChat
             </div>
+            }
             <!-- <div class="item ccenter" (click)="select('phone')" [ngClass]="{'active':mode=='phone'}">
                 <div class="icon ccenter"><i class="fa-light fa-mobile"></i></div>
                 {{ 'LOGIN.PHONE' | translate }}

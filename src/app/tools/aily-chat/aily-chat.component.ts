@@ -195,7 +195,7 @@ export class AilyChatComponent implements OnDestroy {
     public scrollManager: ScrollManagerService,
     public resourceManager: ResourceManagerService,
     public menuManager: MenuManagerService,
-  ) {}
+  ) { }
 
   ngOnInit() {
     // 初始化宿主环境适配器
@@ -547,5 +547,10 @@ export class AilyChatComponent implements OnDestroy {
     return cpp !== '' ? cpp + '/node_modules/@aily-project' : '';
   }
 
-  demandEdit() {}
+  demandEdit() { }
+
+
+  openUrl(url: string = 'https://aily.pro/doc/ai-usage-guide') {
+    this.electronService.openUrl(url);
+  }
 }

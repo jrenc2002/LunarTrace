@@ -1,7 +1,7 @@
 {
   "name": "aily-blockly",
   "productName": "aily blockly",
-  "version": "0.9.32",
+  "version": "0.9.33",
   "author": "coloz",
   "description": "aily blockly dev",
   "main": "electron/main.js",
@@ -14,7 +14,14 @@
     ],
     "appId": "blockly.aily.pro",
     "forceCodeSigning": false,
-    "asar": false,
+    "asar": true,
+    "asarUnpack": [
+      "electron/preload.js",
+      "electron/node_modules/**/*.node",
+      "electron/node_modules/@lydell/**",
+      "electron/node_modules/@serialport/**",
+      "electron/node_modules/serialport/**"
+    ],
     "protocols": [
       {
         "name": "Aily Blockly OAuth",
@@ -28,24 +35,29 @@
     },
     "files": [
       "!**/*",
-      "package.json"
+      "package.json",
+      {
+        "from": "electron",
+        "to": "electron",
+        "filter": ["**/*", "!package-lock.json", "!.gitignore"]
+      },
+      {
+        "from": "electron/node_modules",
+        "to": "electron/node_modules"
+      },
+      {
+        "from": "dist/aily-blockly/browser",
+        "to": "renderer"
+      }
     ],
     "extraResources": [
       {
-        "from": "dist/aily-blockly/browser",
-        "to": "app/renderer"
-      },
-      {
-        "from": "electron",
-        "to": "app/electron"
-      },
-      {
         "from": "child/scripts",
-        "to": "app/child/scripts"
+        "to": "child/scripts"
       },
       {
         "from": "public/icon.ico",
-        "to": "app/icon.ico"
+        "to": "icon.ico"
       },
       {
         "from": "electron/app-update.yml",
@@ -70,7 +82,7 @@
       "extraResources": [
         {
           "from": "child/windows",
-          "to": "app/child"
+          "to": "child"
         }
       ]
     },
@@ -88,7 +100,7 @@
       "extraResources": [
         {
           "from": "child/macos",
-          "to": "app/child"
+          "to": "child"
         }
       ]
     },

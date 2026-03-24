@@ -233,6 +233,10 @@ nz-resize-handle {
     text-align: center;
     padding-right: 10px;
   }
+
+  .link {
+    margin-top: 5px;
+  }
 }
 
 
@@ -381,7 +385,7 @@ nz-resize-handle {
       margin-top: 5px;
       margin-bottom: 5px;
     }
-  
+
     pre {
       padding: 0;
       margin: 0;
@@ -399,7 +403,7 @@ nz-resize-handle {
       scrollbar-width: thin !important;
       scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 
-      > svg {
+      >svg {
         user-select: none;
       }
     }
@@ -408,7 +412,12 @@ nz-resize-handle {
       white-space: pre-wrap;
     }
 
-    pre, code, kbd, samp, label, span {
+    pre,
+    code,
+    kbd,
+    samp,
+    label,
+    span {
       font-family: "MiSans Regular", "FiraCode Regular";
     }
   }
