@@ -347,8 +347,14 @@ export class SessionLifecycleHelper {
       }
 
       // 恢复后刷新编辑摘要面板 — 仅当存在未保留的变更时才显示
+      // 自动保存模式下直接保留，不弹面板
       if (this.engine.editCheckpointService?.hasUnsavedEdits()) {
-        this.engine.editCheckpointService.publishCurrentSummary();
+        if (this.engine.ailyChatConfigService.autoSaveEdits) {
+          this.engine.editCheckpointService.acceptAllAsBaseline();
+          this.engine.editCheckpointService.dismissSummary();
+        } else {
+          this.engine.editCheckpointService.publishCurrentSummary();
+        }
       } else {
         this.engine.editCheckpointService?.dismissSummary();
       }
