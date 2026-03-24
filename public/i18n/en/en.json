@@ -654,5 +654,20 @@
         "INSTALLING_NEW_BOARD": "Installing new board...",
         "UPDATING_PROJECT_CONFIG": "Updating project configuration...",
         "BOARD_SWITCH_FAILED": "Board switch failed: "
+    },
+    "NOTIFICATION": {
+        "STOP": "Stop",
+        "VIEW_DETAIL": "View Details",
+        "AI_PROCESS": "AI Process"
+    },
+    "LOG": {
+        "TOOLTIP": "Click to copy to clipboard, double-click to send to AI assistant",
+        "COPIED_TO_CLIPBOARD": "Log content copied to clipboard",
+        "SENT_TO_AI": "Log content sent to AI assistant",
+        "NO_DATA_TO_EXPORT": "No log data to export",
+        "EXPORT_TITLE": "Export Log Data",
+        "TEXT_FILE": "Text Files",
+        "ALL_FILES": "All Files",
+        "EXPORT_SUCCESS": "Log data exported to "
     }
 }

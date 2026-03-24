@@ -9,7 +9,7 @@
           [ngClass]="{'error': logList[row.index].state === 'error', 'warn': logList[row.index].state === 'warn', 'info': logList[row.index].state === 'info'}"
           (click)="handleClick(logList[row.index], $event)"
           (dblclick)="handleDoubleClick(logList[row.index], $event)"
-          title="单击复制到剪切板，双击复制到AI助手"
+          [title]="'LOG.TOOLTIP' | translate"
           [style.transform]="'translateY(' + row.start + 'px)'"
         >
           <div class="date">{{ logList[row.index].timestamp | date:'HH:mm:ss' }}</div>

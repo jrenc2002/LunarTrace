@@ -589,5 +589,20 @@
         "INSTALLING_NEW_BOARD": "正在安裝新開發板...",
         "UPDATING_PROJECT_CONFIG": "正在更新專案配置...",
         "BOARD_SWITCH_FAILED": "開發板切換失敗: "
+    },
+    "NOTIFICATION": {
+        "STOP": "終止",
+        "VIEW_DETAIL": "查看詳情",
+        "AI_PROCESS": "AI處理"
+    },
+    "LOG": {
+        "TOOLTIP": "單擊複製到剪貼簿，雙擊複製到AI助手",
+        "COPIED_TO_CLIPBOARD": "日誌內容已複製到剪貼簿",
+        "SENT_TO_AI": "日誌內容已發送到AI助手",
+        "NO_DATA_TO_EXPORT": "沒有日誌資料可以匯出",
+        "EXPORT_TITLE": "匯出日誌資料",
+        "TEXT_FILE": "文字檔案",
+        "ALL_FILES": "所有檔案",
+        "EXPORT_SUCCESS": "日誌資料已成功匯出到"
     }
 }

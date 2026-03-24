@@ -589,5 +589,20 @@
         "INSTALLING_NEW_BOARD": "Neues Board wird installiert...",
         "UPDATING_PROJECT_CONFIG": "Projektkonfiguration wird aktualisiert...",
         "BOARD_SWITCH_FAILED": "Board-Wechsel fehlgeschlagen: "
+    },
+    "NOTIFICATION": {
+        "STOP": "Stoppen",
+        "VIEW_DETAIL": "Details anzeigen",
+        "AI_PROCESS": "AI-Verarbeitung"
+    },
+    "LOG": {
+        "TOOLTIP": "Klicken zum Kopieren, Doppelklick zum Senden an AI-Assistent",
+        "COPIED_TO_CLIPBOARD": "Protokollinhalt in die Zwischenablage kopiert",
+        "SENT_TO_AI": "Protokollinhalt an AI-Assistent gesendet",
+        "NO_DATA_TO_EXPORT": "Keine Protokolldaten zum Exportieren",
+        "EXPORT_TITLE": "Protokolldaten exportieren",
+        "TEXT_FILE": "Textdateien",
+        "ALL_FILES": "Alle Dateien",
+        "EXPORT_SUCCESS": "Protokolldaten erfolgreich exportiert nach "
     }
 }

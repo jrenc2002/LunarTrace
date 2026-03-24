@@ -9,10 +9,11 @@ import { ProjectService } from '../../services/project.service';
 import { ElectronService } from '../../services/electron.service';
 import { stripAnsi } from 'fancy-ansi';
 import { Subscription } from 'rxjs';
+import { TranslateModule, TranslateService } from '@ngx-translate/core';
 
 @Component({
   selector: 'app-log',
-  imports: [CommonModule, AnsiPipe],
+  imports: [CommonModule, AnsiPipe, TranslateModule],
   templateUrl: './log.component.html',
   styleUrl: './log.component.scss',
 })
@@ -47,7 +48,8 @@ export class LogComponent implements OnInit, AfterViewInit, OnDestroy {
     private uiService: UiService,
     private projectService: ProjectService,
     private electronService: ElectronService,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private translate: TranslateService
   ) {
     // 当虚拟行元素变化时，动态测量每个元素的实际高度
     effect(() => {
@@ -122,7 +124,7 @@ export class LogComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // 处理点击事件，区分单击和双击
   handleClick(item: any, event: MouseEvent) {
-    console.log('单击事件:', item);
+    console.log('click event:', item);
 
     this.clickTimeout = setTimeout(() => {
       if (!this.preventSingleClick) {
@@ -156,7 +158,7 @@ export class LogComponent implements OnInit, AfterViewInit, OnDestroy {
     try {
       const logContent = this.cleanLogContent(item.detail);
       await navigator.clipboard.writeText(logContent);
-      this.message.success('日志内容已复制到剪切板');
+      this.message.success(this.translate.instant('LOG.COPIED_TO_CLIPBOARD'));
     } catch (err) {
       console.error('复制到剪切板失败:', err);
     }
@@ -169,23 +171,23 @@ export class LogComponent implements OnInit, AfterViewInit, OnDestroy {
     this.uiService.openTool("aily-chat");
     const cleanDetail = this.cleanLogContent(item.detail);
     setTimeout(() => {
-      window.sendToAilyChat(`运行日志：\n${cleanDetail}`, {
+      window.sendToAilyChat(`log:\n${cleanDetail}`, {
         sender: 'LogComponent',
         type: 'log'
       });
     }, 100);
-    this.message.info('日志内容已发送到AI助手');
+    this.message.info(this.translate.instant('LOG.SENT_TO_AI'));
   }
 
   async exportData() {
     if (this.logService.list.length === 0) {
-      this.message.warning('没有日志数据可以导出');
+      this.message.warning(this.translate.instant('LOG.NO_DATA_TO_EXPORT'));
       return;
     }
 
     // 弹出保存对话框
     const folderPath = await window['ipcRenderer'].invoke('select-folder-saveAs', {
-      title: '导出日志数据',
+      title: this.translate.instant('LOG.EXPORT_TITLE'),
       path: this.projectService.currentProjectPath,
       suggestedName: 'log_' + new Date().toLocaleString('zh-CN', {
         year: 'numeric',
@@ -196,8 +198,8 @@ export class LogComponent implements OnInit, AfterViewInit, OnDestroy {
         second: '2-digit'
       }).replace(/[/,:]/g, '_').replace(/\s/g, '_') + '.txt',
       filters: [
-        { name: '文本文件', extensions: ['txt'] },
-        { name: '所有文件', extensions: ['*'] }
+        { name: this.translate.instant('LOG.TEXT_FILE'), extensions: ['txt'] },
+        { name: this.translate.instant('LOG.ALL_FILES'), extensions: ['*'] }
       ]
     });
 
@@ -215,7 +217,7 @@ export class LogComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // 写入文件
     this.electronService.writeFile(folderPath, fileContent);
-    this.message.success('日志数据已成功导出到' + folderPath);
+    this.message.success(this.translate.instant('LOG.EXPORT_SUCCESS') + folderPath);
   }
 
 }

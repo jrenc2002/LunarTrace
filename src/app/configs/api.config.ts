@@ -79,6 +79,8 @@ export const API = {
   get refreshToken() { return `${getServerUrl()}/api/v1/auth/refresh`; },
   get me() { return `${getServerUrl()}/api/v1/auth/me`; },
   get changeNickname() { return `${getServerUrl()}/api/v1/auth/me/nickname`; },
+  // invitation
+  get invitationValidateCompile() { return `${getServerUrl()}/api/v1/invitation/validate-compile`; },
   // github oauth
   get githubBrowserAuthorize() { return `${getServerUrl()}/api/v1/oauth/github/browser-authorize`; },
   get githubTokenExchange() { return `${getServerUrl()}/api/v1/oauth/github/token-exchange`; },

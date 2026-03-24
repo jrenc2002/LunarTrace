@@ -589,5 +589,20 @@
         "INSTALLING_NEW_BOARD": "Instalando nueva placa...",
         "UPDATING_PROJECT_CONFIG": "Actualizando configuración del proyecto...",
         "BOARD_SWITCH_FAILED": "Error al cambiar la placa: "
+    },
+    "NOTIFICATION": {
+        "STOP": "Detener",
+        "VIEW_DETAIL": "Ver detalles",
+        "AI_PROCESS": "Proceso AI"
+    },
+    "LOG": {
+        "TOOLTIP": "Clic para copiar al portapapeles, doble clic para enviar al asistente AI",
+        "COPIED_TO_CLIPBOARD": "Contenido del registro copiado al portapapeles",
+        "SENT_TO_AI": "Contenido del registro enviado al asistente AI",
+        "NO_DATA_TO_EXPORT": "No hay datos de registro para exportar",
+        "EXPORT_TITLE": "Exportar datos de registro",
+        "TEXT_FILE": "Archivos de texto",
+        "ALL_FILES": "Todos los archivos",
+        "EXPORT_SUCCESS": "Datos de registro exportados exitosamente a "
     }
 }
