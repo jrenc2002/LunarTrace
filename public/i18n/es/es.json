@@ -502,7 +502,7 @@
         "BENEFIT_SHARE": "Compartir sus proyectos",
         "BENEFIT_EXPERIENCE": "Disfrutar de una experiencia de desarrollo personalizada",
         "NOTICE_LABEL": "Nota: ",
-        "NOTICE_CONTENT": "Usaremos su cuenta de GitHub para dar estrella a nuestros repositorios de código abierto, lo que ayuda al desarrollo del proyecto.",
+        "NOTICE_CONTENT": "Al iniciar sesión se dará estrella a este proyecto, ayudando al desarrollo de nuestro proyecto",
         "GITHUB_LOGIN": "Iniciar sesión con Github",
         "WECHAT_SCAN": "Escanee el código QR para seguir e iniciar sesión",
         "PHONE_NOT_OPEN": "El registro por teléfono aún no está disponible",

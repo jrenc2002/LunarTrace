@@ -502,7 +502,7 @@
         "BENEFIT_SHARE": "プロジェクトを共有できます",
         "BENEFIT_EXPERIENCE": "パーソナライズされた開発体験をお楽しみいただけます",
         "NOTICE_LABEL": "注意：",
-        "NOTICE_CONTENT": "当社はあなたのGitHubアカウントを使用して、当社のオープンソースリポジトリにスターを付けます。これはプロジェクトの発展をサポートするためです。",
+        "NOTICE_CONTENT": "ログイン後、本プロジェクトにスターが付けられ、プロジェクトの発展を支援します",
         "GITHUB_LOGIN": "Githubでログイン",
         "WECHAT_SCAN": "QRコードをスキャンしてフォローしてログイン",
         "PHONE_NOT_OPEN": "電話番号登録はまだ利用できません",

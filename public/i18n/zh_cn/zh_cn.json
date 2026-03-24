@@ -552,7 +552,7 @@
         "BENEFIT_SHARE": "分享你的项目",
         "BENEFIT_EXPERIENCE": "享受个性化的开发体验",
         "NOTICE_LABEL": "注意：",
-        "NOTICE_CONTENT": "我们会使用您的 GitHub 账号为我们的几个开源仓库点 star，这有助于支持我们的项目发展。",
+        "NOTICE_CONTENT": "登录后会star本项目，助力我们的项目发展",
         "GITHUB_LOGIN": "Github登录",
         "WECHAT_SCAN": "扫描二维码关注公众号并登录",
         "PHONE_NOT_OPEN": "暂未开放手机号注册",

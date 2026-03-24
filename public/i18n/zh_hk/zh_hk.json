@@ -502,7 +502,7 @@
         "BENEFIT_SHARE": "分享您的專案",
         "BENEFIT_EXPERIENCE": "享受個性化的開發體驗",
         "NOTICE_LABEL": "注意：",
-        "NOTICE_CONTENT": "我們會使用您的 GitHub 帳號為我們的幾個開源倉庫點 star，這有助於支持我們的專案發展。",
+        "NOTICE_CONTENT": "登錄後會star本項目，助力我們的項目發展",
         "GITHUB_LOGIN": "Github登錄",
         "WECHAT_SCAN": "掃描二維碼關注公眾號並登錄",
         "PHONE_NOT_OPEN": "暫未開放手機號註冊",
