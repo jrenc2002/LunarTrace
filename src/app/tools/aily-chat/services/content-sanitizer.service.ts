@@ -145,6 +145,21 @@ export function markContentAsHistory(content: string): string {
     }
   );
 
+  // aily-approval: 标记为已解决状态以便历史恢复时以只读模式展示
+  content = content.replace(
+    /```aily-approval\n([\s\S]*?)```/g,
+    (match, json) => {
+      try {
+        const data = JSON.parse(json.trim());
+        if (data && typeof data === 'object') {
+          data.resolved = true;
+          return '```aily-approval\n' + JSON.stringify(data) + '\n```';
+        }
+      } catch {}
+      return match;
+    }
+  );
+
   return content;
 }
 

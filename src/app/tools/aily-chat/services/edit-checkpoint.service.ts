@@ -646,20 +646,21 @@ export class EditCheckpointService {
     if (!sessionId) return false;
     const fs = AilyHost.get().fs;
     const pathUtil = AilyHost.get().path;
-    // 优先尝试 v5 按 sessionId 分目录，回退到 v4 扁平结构
-    let checkpointDir = pathUtil.join(projectPath, EditCheckpointService.CHECKPOINT_DIR, sessionId);
-    let statePath = pathUtil.join(checkpointDir, EditCheckpointService.STATE_FILE);
-    if (!fs.existsSync(statePath)) {
-      // 回退: v4 扁平结构（旧数据迁移）
-      checkpointDir = pathUtil.join(projectPath, EditCheckpointService.CHECKPOINT_DIR);
-      statePath = pathUtil.join(checkpointDir, EditCheckpointService.STATE_FILE);
-      if (!fs.existsSync(statePath)) return false;
-    }
+    // v5：按 sessionId 分目录，不再回退 v4 扁平结构（已废弃）
+    const checkpointDir = pathUtil.join(projectPath, EditCheckpointService.CHECKPOINT_DIR, sessionId);
+    const statePath = pathUtil.join(checkpointDir, EditCheckpointService.STATE_FILE);
+    if (!fs.existsSync(statePath)) return false;
 
     try {
       const raw = fs.readFileSync(statePath, 'utf-8');
       const state = JSON.parse(raw);
-      if (!state || (state.version !== 5 && state.version !== 4)) return false;
+      if (!state || state.version !== 5) return false;
+
+      // 防御性校验：确保 checkpoint 数据确实属于请求的会话
+      if (state.sessionId && state.sessionId !== sessionId) {
+        console.warn(`[EditCheckpoint] checkpoint sessionId 不匹配 (expected=${sessionId}, found=${state.sessionId})，跳过加载`);
+        return false;
+      }
 
       // 恢复 initialFileContents
       this.initialFileContents.clear();
