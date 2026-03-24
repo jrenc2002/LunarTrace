@@ -15,12 +15,15 @@ function findRipgrepPath() {
     if (process.env.AILY_RG_PATH) {
         return process.env.AILY_RG_PATH;
     }
-    // 开发模式回退：直接根据平台定位
-    const childRoot = path.join(__dirname, '..', 'child');
+    // 回退：根据平台和运行模式定位
+    const isDev = process.env.DEV === 'true';
+    const childRoot = isDev
+        ? path.join(__dirname, '..', 'child')
+        : path.join(process.resourcesPath, 'child');
     if (process.platform === 'win32') {
-        return path.join(childRoot, 'windows', 'rg.exe');
+        return path.join(childRoot, isDev ? 'windows' : '', 'rg.exe');
     } else if (process.platform === 'darwin') {
-        return path.join(childRoot, 'macos', 'rg');
+        return path.join(childRoot, isDev ? 'macos' : '', 'rg');
     } else {
         return 'rg';
     }
