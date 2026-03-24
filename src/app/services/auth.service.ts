@@ -640,6 +640,24 @@ export class AuthService {
   }
 
   /**
+   * 检查当前用户是否具备指定权益
+   */
+  hasEntitlement(entitlementKey: string): boolean {
+    const entitlements = this.currentUser?.entitlements;
+    if (!entitlements || typeof entitlements !== 'object') {
+      return false;
+    }
+    return Boolean(entitlements[entitlementKey]);
+  }
+
+  /**
+   * 是否具备功能预览资格
+   */
+  hasFeaturePreviewAccess(): boolean {
+    return this.hasEntitlement('feature-preview:access');
+  }
+
+  /**
    * 检查并同步登录状态（供组件调用）
    * 在用户点击用户组件时调用此方法来确保状态同步
    */

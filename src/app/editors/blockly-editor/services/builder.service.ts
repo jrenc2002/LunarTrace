@@ -15,6 +15,7 @@ import { BlocklyService as BlocklyService } from './blockly.service';
 import { PlatformService } from "../../../services/platform.service";
 import { ElectronService } from '../../../services/electron.service';
 import { WorkflowService, ProcessState } from '../../../services/workflow.service';
+import { CompileValidationService } from '../../../services/compile-validation.service';
 
 @Injectable()
 export class _BuilderService {
@@ -31,7 +32,8 @@ export class _BuilderService {
     private projectService: ProjectService,
     private blocklyService: BlocklyService,
     private platformService: PlatformService,
-    private electronService: ElectronService
+    private electronService: ElectronService,
+    private compileValidationService: CompileValidationService
   ) { }
 
   // buildInProgress = false;
@@ -1112,6 +1114,8 @@ export class _BuilderService {
                 this.electronService.calculateHash(this.lastCode).then(codeHash => {
                   this.saveBuildInfo('success', buildDuration, codeHash);
                 });
+
+                this.compileValidationService.triggerAfterSuccessfulCompile();
                 
                 this.workflowService.finishBuild(true);
                 resolve({ state: 'done', text: `编译完成 (耗时: ${buildDuration}s)` });

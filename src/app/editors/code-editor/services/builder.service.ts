@@ -9,6 +9,7 @@ import { CrossPlatformCmdService } from '../../../services/cross-platform-cmd.se
 import { ProjectService } from '../../../services/project.service';
 import { ActionState } from '../../../services/ui.service';
 import { PlatformService } from "../../../services/platform.service";
+import { CompileValidationService } from '../../../services/compile-validation.service';
 
 @Injectable({
   providedIn: 'root'
@@ -25,6 +26,7 @@ export class BuilderService {
     private npmService: NpmService,
     private configService: ConfigService,
     private platformService: PlatformService,
+    private compileValidationService: CompileValidationService,
   ) { }
 
   private buildInProgress = false;
@@ -572,6 +574,7 @@ export class BuilderService {
               this.noticeService.update({ title: completeTitle, text: displayTextWithTime, state: 'done', setTimeout: 600000 });
               this.buildInProgress = false;
               this.passed = true;
+              this.compileValidationService.triggerAfterSuccessfulCompile();
               resolve({ state: 'done', text: `编译完成 (耗时: ${buildDuration}s)` });
             } else if (this.cancelled) {
               console.warn("编译中断")

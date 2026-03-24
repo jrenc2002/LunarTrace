@@ -58,6 +58,14 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
     return true;
   }
 
+  private requireFeaturePreviewAccess(): boolean {
+    if (!this.authService.hasFeaturePreviewAccess()) {
+      this.message.warning('Coming Soon');
+      return false;
+    }
+    return true;
+  }
+
   ngOnInit() {
     // 监听路由变化
     if (this.router.url.indexOf('/main/blockly-editor') !== -1) {
@@ -247,6 +255,7 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
     // this.message.warning('Coming Soon');
     // return;
     if (!this.requireLogin()) return;
+    if (!this.requireFeaturePreviewAccess()) return;
 
     if (!this.electronService.isElectron || !this.boardPackagePath) {
       this.message.warning(this.translate.instant('FLOAT_SIDER.NO_PINMAP'));
