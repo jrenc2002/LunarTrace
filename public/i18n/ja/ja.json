@@ -589,5 +589,20 @@
         "INSTALLING_NEW_BOARD": "新しいボードをインストール中...",
         "UPDATING_PROJECT_CONFIG": "プロジェクト設定を更新中...",
         "BOARD_SWITCH_FAILED": "ボードの切り替えに失敗しました: "
+    },
+    "NOTIFICATION": {
+        "STOP": "停止",
+        "VIEW_DETAIL": "詳細を表示",
+        "AI_PROCESS": "AI処理"
+    },
+    "LOG": {
+        "TOOLTIP": "クリックでクリップボードにコピー、ダブルクリックでAIアシスタントに送信",
+        "COPIED_TO_CLIPBOARD": "ログ内容がクリップボードにコピーされました",
+        "SENT_TO_AI": "ログ内容がAIアシスタントに送信されました",
+        "NO_DATA_TO_EXPORT": "エクスポートするログデータがありません",
+        "EXPORT_TITLE": "ログデータをエクスポート",
+        "TEXT_FILE": "テキストファイル",
+        "ALL_FILES": "すべてのファイル",
+        "EXPORT_SUCCESS": "ログデータが正常にエクスポートされました: "
     }
 }

@@ -3,12 +3,14 @@ import { NzProgressModule } from 'ng-zorro-antd/progress';
 import { CommonModule } from '@angular/common';
 import { NoticeOptions, NoticeService } from '../../services/notice.service';
 import { UiService } from '../../services/ui.service';
+import { TranslateModule } from '@ngx-translate/core';
 
 @Component({
   selector: 'app-notification',
   imports: [
     NzProgressModule,
-    CommonModule
+    CommonModule,
+    TranslateModule
   ],
   templateUrl: './notification.component.html',
   styleUrl: './notification.component.scss'
@@ -167,7 +169,7 @@ export class NotificationComponent {
   sendAI() {
     console.log(this.data);
     const detail = this.cleanLogContent(this.data?.detail || '');
-    this.uiService.openAndSendToChat(`运行日志：\n${detail}`, {
+    this.uiService.openAndSendToChat(`log:\n${detail}`, {
       sender: 'NotificationComponent',
       type: 'log'
     });
