@@ -11,7 +11,7 @@
  * - 订阅管理（项目路径、登录状态、配置变更等）
  */
 
-import { Injectable, ElementRef } from '@angular/core';
+import { Injectable, ElementRef, NgZone } from '@angular/core';
 import { Subscription, skip, distinctUntilChanged, combineLatest } from 'rxjs';
 import { TranslateService } from '@ngx-translate/core';
 import { NzMessageService } from 'ng-zorro-antd/message';
@@ -186,6 +186,7 @@ export class ChatEngineService {
     public repetitionDetectionService: RepetitionDetectionService,
     public contextBudgetService: ContextBudgetService,
     public subagentSessionService: SubagentSessionService,
+    private ngZone: NgZone,
     private absAutoSyncService: AbsAutoSyncService,
     public editCheckpointService: EditCheckpointService,
     public translate: TranslateService,
@@ -291,37 +292,50 @@ export class ChatEngineService {
     document.addEventListener('aily-task-action', this.taskActionHandler);
 
     // 订阅 subagent 执行进度
+    // 使用节流避免每个 SSE chunk 都触发 scrollToBottom（内部含 setTimeout 轮询，
+    // 高频触发会创建大量重叠的滚动循环导致卡顿）
+    let scrollRafId: number | null = null;
     this.subagentProgressSubscription = this.subagentSessionService.onProgress()
       .subscribe((event: SubagentProgressEvent) => {
-        if (!this.isWaiting) return;
-        const agentSource = event.agentName || 'subAgent';
-        switch (event.type) {
-          case 'streaming':
-            if (event.content) { this.msg.appendMessage('aily', event.content, agentSource); }
-            break;
-          case 'tool_call_start': {
-            const innerId = event.innerToolId || `${event.toolId}_inner_${Date.now()}`;
-            const innerName = event.innerToolName || 'unknown';
-            this.msg.startToolCall(innerId, innerName, `${agentSource}: ${innerName}...`, undefined, agentSource);
-            break;
+        // 子Agent progress 通过 Subject.next() 在 Promise/async 上下文中触发，
+        // 脱离了 Angular Zone，导致变更检测不触发、UI 批量刷新而非流式。
+        // 用 ngZone.run() 将回调拉回 Zone 内，确保每次 list 变更都触发渲染。
+        this.ngZone.run(() => {
+          if (!this.isWaiting) return;
+          const agentSource = event.agentName || 'subAgent';
+          switch (event.type) {
+            case 'streaming':
+              if (event.content) { this.msg.appendMessage('aily', event.content, agentSource); }
+              break;
+            case 'tool_call_start': {
+              const innerId = event.innerToolId || `${event.toolId}_inner_${Date.now()}`;
+              const innerName = event.innerToolName || 'unknown';
+              this.msg.startToolCall(innerId, innerName, `${agentSource}: ${innerName}...`, undefined, agentSource);
+              break;
+            }
+            case 'tool_call_end': {
+              const innerId = event.innerToolId || `${event.toolId}_inner_${Date.now()}`;
+              const innerName = event.innerToolName || 'unknown';
+              const state = event.isError ? ToolCallState.ERROR : ToolCallState.DONE;
+              const text = event.isError ? `${agentSource}: ${innerName} 失败` : `${agentSource}: ${innerName} 完成`;
+              this.msg.completeToolCall(innerId, innerName, state, text, agentSource);
+              break;
+            }
+            case 'tool_call':
+              this.msg.appendMessage('aily', `\n\n> 🛠️ ${event.content}\n\n`, agentSource);
+              break;
+            case 'error':
+              this.msg.appendMessage('aily', `\n\n> ❌ ${event.content}\n\n`, agentSource);
+              break;
           }
-          case 'tool_call_end': {
-            const innerId = event.innerToolId || `${event.toolId}_inner_${Date.now()}`;
-            const innerName = event.innerToolName || 'unknown';
-            const state = event.isError ? ToolCallState.ERROR : ToolCallState.DONE;
-            const text = event.isError ? `${agentSource}: ${innerName} 失败` : `${agentSource}: ${innerName} 完成`;
-            this.msg.completeToolCall(innerId, innerName, state, text, agentSource);
-            break;
+          // 子Agent内容更新后，节流滚动：合并同一帧内的多次调用
+          if (scrollRafId === null) {
+            scrollRafId = requestAnimationFrame(() => {
+              scrollRafId = null;
+              this.scrollManager.scrollToBottom();
+            });
           }
-          case 'tool_call':
-            this.msg.appendMessage('aily', `\n\n> 🛠️ ${event.content}\n\n`, agentSource);
-            break;
-          case 'error':
-            this.msg.appendMessage('aily', `\n\n> ❌ ${event.content}\n\n`, agentSource);
-            break;
-        }
-        // 子Agent内容更新后，驱动外部消息容器也滚动到底部
-        this.scrollManager.scrollToBottom();
+        });
       });
 
     // 订阅项目路径变化

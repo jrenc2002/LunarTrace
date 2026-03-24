@@ -2479,116 +2479,63 @@ Query and return specific content (for detailed info)
 //     },
     {
         name: "todo_write_tool",
-        description: `Manage a structured todo list to track progress and plan tasks throughout your coding session. Use this tool frequently to ensure task visibility and proper planning.
+        description: `Manage a structured todo list to track progress and plan tasks.
 
-When to use:
-- Complex multi-step work requiring planning and tracking
-- When user provides multiple tasks or requests
-- BEFORE starting work on any todo (mark as in-progress)
-- IMMEDIATELY after completing each todo (mark completed individually)
+Task states: not-started | in-progress (limit ONE) | completed
 
-When NOT to use:
-- Single, trivial tasks completed in one step
-- Purely conversational/informational requests
-
-Task states:
-- not-started: Todo not yet begun
-- in-progress: Currently working (limit ONE at a time)
-- completed: Finished successfully
-
-CRITICAL workflow:
-1. Plan tasks by adding todos with specific, actionable items
-2. Mark ONE todo as in-progress before starting work
-3. Complete the work for that specific todo
-4. Mark that todo as completed IMMEDIATELY
-5. Move to next todo and repeat
+Workflow: plan todos → mark in-progress → do work → mark completed → next
 
 Operations:
-- **update**: 全量替换todo列表（推荐，传入完整的todos数组）
-- **add**: 添加单个任务（需要content字段）
-- **batch_add**: 批量添加任务（需要todos数组）
-- **list/read**: 查看当前任务列表
-- **toggle**: 切换任务状态循环 not-started → in-progress → completed
-- **delete**: 删除指定任务
+- **update**: 全量替换todo列表（传入完整的todos数组，替换当前所有任务）
+- **add**: 追加任务（传todos数组追加，或传content追加单个任务）
+- **toggle**: 切换任务状态（需id）
+- **list**: 查看当前任务列表
+- **delete**: 删除指定任务（需id）
 - **clear**: 清空所有任务
-- **stats**: 查看统计信息
 
-IMPORTANT: 任务ID为简单的递增数字（1, 2, 3...），请使用正确的数字ID。Mark todos completed as soon as they are done. Do not batch completions.`,
+IMPORTANT: update是全量替换，必须包含所有任务。只想添加新任务时用add。Mark todos completed as soon as they are done.`,
         input_schema: {
             type: 'object',
             properties: {
                 operation: {
                     type: 'string',
-                    enum: ['add', 'batch_add', 'list', 'read', 'update', 'toggle', 'delete', 'stats', 'clear'],
+                    enum: ['update', 'add', 'toggle', 'list', 'delete', 'clear'],
                     description: '操作类型'
                 },
                 sessionId: {
                     type: 'string',
-                    description: '会话ID，默认为default',
+                    description: '会话ID',
                     default: 'default'
                 },
                 content: {
                     type: 'string',
-                    description: '任务内容（add操作必需，也接受title字段）'
-                },
-                priority: {
-                    type: 'string',
-                    enum: ['high', 'medium', 'low'],
-                    description: '任务优先级，默认为medium',
-                    default: 'medium'
+                    description: '任务内容（add单项时使用，也接受title字段）'
                 },
                 status: {
                     type: 'string',
                     enum: ['not-started', 'in-progress', 'completed'],
-                    description: '任务状态，默认为not-started',
-                    default: 'not-started'
+                    description: '任务状态'
                 },
-                tags: {
-                    type: 'array',
-                    items: { type: 'string' },
-                    description: '任务标签数组'
-                },
-                estimatedHours: {
-                    type: 'number',
-                    description: '预估工时'
+                priority: {
+                    type: 'string',
+                    enum: ['high', 'medium', 'low'],
+                    description: '任务优先级',
+                    default: 'medium'
                 },
                 id: {
                     type: 'number',
-                    description: '任务ID - 简单递增数字（toggle/delete操作必需）'
+                    description: '任务ID（delete时必需）'
                 },
                 todos: {
                     type: 'array',
-                    description: '任务数组（update时为全量替换，batch_add时为新增列表）',
+                    description: '任务数组（update时全量替换，add时追加）',
                     items: {
                         type: 'object',
                         properties: {
-                            id: {
-                                type: 'number',
-                                description: '任务ID（递增数字，如 1, 2, 3）'
-                            },
-                            content: {
-                                type: 'string',
-                                description: '任务内容描述（也接受title字段）'
-                            },
-                            status: {
-                                type: 'string',
-                                enum: ['not-started', 'in-progress', 'completed'],
-                                description: '任务状态'
-                            },
-                            priority: {
-                                type: 'string',
-                                enum: ['high', 'medium', 'low'],
-                                description: '任务优先级'
-                            },
-                            tags: {
-                                type: 'array',
-                                items: { type: 'string' },
-                                description: '任务标签'
-                            },
-                            estimatedHours: {
-                                type: 'number',
-                                description: '预估工时'
-                            }
+                            id: { type: 'number', description: '任务ID' },
+                            content: { type: 'string', description: '任务内容（也接受title）' },
+                            status: { type: 'string', enum: ['not-started', 'in-progress', 'completed'] },
+                            priority: { type: 'string', enum: ['high', 'medium', 'low'] }
                         },
                         required: ['content']
                     }

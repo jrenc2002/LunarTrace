@@ -1810,8 +1810,55 @@ export class ConnectionGraphService {
   } {
     try {
       const ref = this.parsePinmapId(pinmapId);
-      const packagePath = `${packagesBasePath}/@aily-project/${ref.packageSlug}`;
+      let packagePath = `${packagesBasePath}/@aily-project/${ref.packageSlug}`;
       
+      // 验证包目录存在（防止用错 packageSlug 创建无效目录）
+      if (!this.electronService.exists(packagePath)) {
+        // 尝试模糊匹配：在 @aily-project/ 下查找以 packageSlug 开头的库
+        const ailyProjectPath = this.electronService.pathJoin(packagesBasePath, '@aily-project');
+        let matched = false;
+        if (this.electronService.exists(ailyProjectPath)) {
+          try {
+            const packages = this.electronService.readDir(ailyProjectPath);
+            for (const pkg of packages) {
+              const pkgName = typeof pkg === 'string' ? pkg : (pkg?.name || String(pkg));
+              // 精确前缀匹配：lib-sensor → lib-sensor-xxx
+              if (pkgName.startsWith(ref.packageSlug + '-') || pkgName === ref.packageSlug) {
+                // 检查该包的 catalog 中是否有匹配的 modelId
+                const candidatePath = this.electronService.pathJoin(ailyProjectPath, pkgName);
+                const catalog = this.readPinmapCatalog(candidatePath);
+                if (catalog) {
+                  const hasModel = catalog.models.some(m => m.id === ref.modelId);
+                  if (hasModel) {
+                    packagePath = candidatePath;
+                    matched = true;
+                    break;
+                  }
+                }
+                // 没有 catalog 但目录名前缀匹配，也接受（新库场景）
+                if (!matched) {
+                  packagePath = candidatePath;
+                  matched = true;
+                  // 继续搜索更精确的匹配
+                }
+              }
+            }
+          } catch (e) {
+            // 目录扫描失败，继续用原始路径
+          }
+        }
+        if (!matched) {
+          // 仍然未找到 → 报错，列出可用的库名
+          const availableLibs = this.scanAllLibraries(packagesBasePath)
+            .map(lib => lib.packageSlug)
+            .filter(slug => slug.startsWith('lib-'));
+          return {
+            success: false,
+            error: `包目录 @aily-project/${ref.packageSlug} 不存在。pinmapId 的第一段必须是已安装库的目录名。\n已安装的库: ${availableLibs.join(', ') || '(无)'}`,
+          };
+        }
+      }
+
       // 确保 pinmaps 目录存在
       const pinmapsDir = this.electronService.pathJoin(packagePath, 'pinmaps');
       if (!this.electronService.exists(pinmapsDir)) {
@@ -1826,8 +1873,8 @@ export class ConnectionGraphService {
       // 保存文件
       this.electronService.writeFile(filePath, JSON.stringify(config, null, 2));
 
-      // 更新 catalog 状态（传入 config 以便创建新条目时使用）
-      const catalogUpdated = this.updateCatalogStatus(pinmapId, 'available', `pinmaps/${fileName}`, packagesBasePath, config);
+      // 更新 catalog 状态（传入已解析的 packagePath，避免重新从 packageSlug 构建错误路径）
+      const catalogUpdated = this.updateCatalogStatus(pinmapId, 'available', `pinmaps/${fileName}`, packagePath, config);
       if (!catalogUpdated) {
         console.warn('[savePinmapConfig] catalog 更新失败，但 pinmap 文件已保存');
       }
@@ -1844,19 +1891,19 @@ export class ConnectionGraphService {
    * @param pinmapId 完整标识符
    * @param status 状态
    * @param pinmapFile pinmap 文件路径
-   * @param packagesBasePath 包基础路径
+   * @param resolvedPackagePath 已解析的库包完整路径（由调用者传入，避免从 packageSlug 重新推导出错）
    * @param componentConfig 可选，组件配置（用于创建新条目时提取信息）
    */
   private updateCatalogStatus(
     pinmapId: string,
     status: 'available' | 'needs_generation',
     pinmapFile: string,
-    packagesBasePath: string,
+    resolvedPackagePath: string,
     componentConfig?: ComponentConfig
   ): boolean {
     try {
       const ref = this.parsePinmapId(pinmapId);
-      const packagePath = `${packagesBasePath}/@aily-project/${ref.packageSlug}`;
+      const packagePath = resolvedPackagePath;
       // 兼容新旧路径：优先使用已存在的位置，新建时使用根目录（旧版）
       const catalogPath = this.resolveCatalogPath(packagePath)
         || this.electronService.pathJoin(packagePath, 'pinmap_catalog.json');

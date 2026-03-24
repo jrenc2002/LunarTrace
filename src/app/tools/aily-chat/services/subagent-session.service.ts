@@ -476,24 +476,19 @@ export class SubagentSessionService implements OnDestroy {
     session: SubagentSession,
     userContent: string,
     toolId: string,
-    timeout: number,
+    _timeout: number,  // 保留参数签名兼容，实际使用 per-turn idle timeout
   ): Promise<string> {
     session.messages.push({ role: 'user', content: userContent });
 
-    const startTime = Date.now();
-    const deadline = startTime + timeout;
+    // 参考 Copilot：不设总 deadline，循环仅受迭代次数限制 + 用户取消
+    // 每轮 SSE 使用 idle timeout（收到事件重置计时器，仅检测连接卡死）
+    const idleTimeout = this.ailyChatConfigService.subagentTimeout;  // 默认 300s 作为单轮空闲上限
     const toolCallLimit = this.ailyChatConfigService?.maxCount || 30;
     let iteration = 0;
     let finalText = '';
 
     while (iteration < toolCallLimit) {
       if (this.abortedToolIds.has(toolId)) break;
-
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) {
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        throw new Error(`${session.agentName} 执行超时 (已用 ${elapsed}s，上限 ${timeout / 1000}s)`);
-      }
 
       const turnState: SubagentTurnState = {
         toolCalls: [],
@@ -505,7 +500,7 @@ export class SubagentSessionService implements OnDestroy {
 
       // console.log(`[SubagentSession] ${session.agentName} 第 ${iteration + 1} 轮请求, messages: ${session.messages.length} 条`);
 
-      await this.processSubagentChatTurn(session, toolId, remaining, turnState);
+      await this.processSubagentChatTurn(session, toolId, idleTimeout, turnState);
 
       if (this.abortedToolIds.has(toolId)) break;
 
@@ -568,7 +563,7 @@ export class SubagentSessionService implements OnDestroy {
    *
    * 与 mainAgent 使用相同的 ChatService.chatRequest() Observable 基础设施：
    * - 取消 = subscription.unsubscribe() → teardown 设 aborted=true + reader.cancel()
-   * - 超时 = setTimeout → unsubscribe，不再使用 AbortController
+   * - 空闲超时 = 每收到 SSE 事件重置计时器，仅检测连接卡死
    * - 错误 = Observable error 回调，不会产生 BodyStreamBuffer was aborted
    *
    * 流事件中遇到非 internal 的 tool_call_request 会立即本地执行，结果收集到 turnState
@@ -576,7 +571,7 @@ export class SubagentSessionService implements OnDestroy {
   private processSubagentChatTurn(
     session: SubagentSession,
     toolId: string,
-    timeout: number,
+    idleTimeout: number,
     turnState: SubagentTurnState,
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
@@ -592,6 +587,17 @@ export class SubagentSessionService implements OnDestroy {
       };
       const settleReject = (err: Error) => {
         if (settled) return; settled = true; cleanup(); reject(err);
+      };
+
+      // 空闲超时：每收到 SSE 事件重置，仅在连接完全无响应时触发
+      const resetIdleTimer = () => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          sub.unsubscribe();
+          settleReject(new Error(
+            `${session.agentName} 空闲超时 (${idleTimeout / 1000}s 未收到响应)`
+          ));
+        }, idleTimeout);
       };
 
       const agentTools = this.getToolsForAgent(session.agentName);
@@ -611,6 +617,9 @@ export class SubagentSessionService implements OnDestroy {
 
       const sub = source$.subscribe({
         next: (event: any) => {
+          // 收到事件 → 重置空闲计时器
+          resetIdleTimer();
+
           if (this.abortedToolIds.has(toolId)) {
             sub.unsubscribe();
             settleReject(new Error(`${session.agentName} 执行被取消`));
@@ -645,11 +654,8 @@ export class SubagentSessionService implements OnDestroy {
         },
       });
 
-      // 超时：与 cancelToolCall 相同的优雅取消方式（unsubscribe → teardown）
-      timeoutId = setTimeout(() => {
-        sub.unsubscribe();
-        settleReject(new Error(`${session.agentName} 执行超时`));
-      }, timeout);
+      // 启动首次空闲计时器
+      resetIdleTimer();
     });
   }
 

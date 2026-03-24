@@ -155,7 +155,7 @@ function normalizeStatus(status: string | undefined): TodoItem['status'] {
 }
 
 // =============================================================================
-// todoWriteTool - Copilot 风格的全量替换模式 + 快捷操作
+// todoWriteTool - update=全量替换, add=追加
 // =============================================================================
 
 function formatTodoList(todos: TodoItem[]): string {
@@ -171,6 +171,61 @@ function formatTodoList(todos: TodoItem[]): string {
   return result.trim();
 }
 
+// 解析 todos 数组参数（支持 JSON 字符串）
+function parseTodosParam(raw: any): any[] | string {
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw); }
+    catch { return 'todos 参数不是有效的 JSON 格式'; }
+  }
+  return raw;
+}
+
+// 构建 TodoItem，id 缺失时按 content 匹配现有任务复用 id
+function buildTodoItem(todo: any, existingByContent: Map<string, TodoItem>, usedIds: Set<number>): TodoItem {
+  const content = (todo.content || todo.title || '').trim();
+  const hasId = typeof todo.id === 'number';
+  let resolvedId: number;
+  let createdAt = todo.createdAt || Date.now();
+
+  if (hasId) {
+    resolvedId = todo.id;
+  } else {
+    const matched = existingByContent.get(content.toLowerCase());
+    if (matched && !usedIds.has(matched.id)) {
+      resolvedId = matched.id;
+      createdAt = matched.createdAt || createdAt;
+    } else {
+      resolvedId = -1; // 后续分配
+    }
+  }
+  usedIds.add(resolvedId);
+
+  return {
+    id: resolvedId,
+    content,
+    status: normalizeStatus(todo.status),
+    priority: ['high', 'medium', 'low'].includes(todo.priority) ? todo.priority : 'medium',
+    tags: Array.isArray(todo.tags) ? todo.tags : [],
+    estimatedHours: typeof todo.estimatedHours === 'number' ? todo.estimatedHours : undefined,
+    createdAt,
+    updatedAt: Date.now()
+  };
+}
+
+// 为 id === -1 的项分配新 id
+function assignMissingIds(todos: TodoItem[], existingTodos: TodoItem[]): void {
+  const allKnownIds = new Set([
+    ...existingTodos.map(t => t.id),
+    ...todos.filter(t => t.id > 0).map(t => t.id)
+  ]);
+  let nextId = allKnownIds.size > 0 ? Math.max(...allKnownIds) + 1 : 1;
+  for (const todo of todos) {
+    if (todo.id === -1) {
+      todo.id = nextId++;
+    }
+  }
+}
+
 export async function todoWriteTool(toolArgs: any): Promise<ToolUseResult> {
   todoManager.startMonitoring();
 
@@ -178,29 +233,27 @@ export async function todoWriteTool(toolArgs: any): Promise<ToolUseResult> {
     const { operation, sessionId = 'default' } = toolArgs;
 
     switch (operation) {
-      // ====== 核心操作：全量替换（推荐，与 Copilot manage_todo_list 一致）======
+      // ====== update：全量替换（与 Copilot manage_todo_list 一致）======
       case 'update': {
-        let todosArray = toolArgs.todos;
-
+        let todosArray = parseTodosParam(toolArgs.todos);
         if (typeof todosArray === 'string') {
-          try { todosArray = JSON.parse(todosArray); }
-          catch { return { is_error: true, content: ' todos 参数不是有效的 JSON 格式' }; }
+          return { is_error: true, content: ` ${todosArray}` };
         }
-
         if (!Array.isArray(todosArray) || todosArray.length === 0) {
-          return { is_error: true, content: ' todos 必须是一个非空数组' };
+          return { is_error: true, content: ' update 需要一个非空的 todos 数组（全量替换）' };
         }
 
-        const validatedTodos: TodoItem[] = todosArray.map((todo: any, index: number) => ({
-          id: typeof todo.id === 'number' ? todo.id : index + 1,
-          content: (todo.content || todo.title || '').trim(),
-          status: normalizeStatus(todo.status),
-          priority: ['high', 'medium', 'low'].includes(todo.priority) ? todo.priority : 'medium',
-          tags: Array.isArray(todo.tags) ? todo.tags : [],
-          estimatedHours: typeof todo.estimatedHours === 'number' ? todo.estimatedHours : undefined,
-          createdAt: todo.createdAt || Date.now(),
-          updatedAt: Date.now()
-        }));
+        const existingTodos = getTodos(sessionId);
+        const existingByContent = new Map<string, TodoItem>();
+        for (const t of existingTodos) {
+          existingByContent.set(t.content.toLowerCase(), t);
+        }
+        const usedIds = new Set<number>();
+
+        const validatedTodos = todosArray.map((todo: any) =>
+          buildTodoItem(todo, existingByContent, usedIds)
+        );
+        assignMissingIds(validatedTodos, existingTodos);
 
         const validation = validateTodos(validatedTodos);
         if (!validation.result) {
@@ -209,56 +262,39 @@ export async function todoWriteTool(toolArgs: any): Promise<ToolUseResult> {
 
         setTodos(validatedTodos, sessionId);
         notifyTodoUpdate(sessionId);
-        return { is_error: false, content: ` TODO列表更新成功\n\n${formatTodoList(validatedTodos)}` };
+        return { is_error: false, content: ` TODO列表已替换（${validatedTodos.length} 项）\n\n${formatTodoList(validatedTodos)}` };
       }
 
-      // ====== 快捷操作：添加单个任务 ======
-      case 'add': {
-        const content = (toolArgs.content || toolArgs.title || '').trim();
-        if (!content) {
-          return { is_error: true, content: ' 缺少任务内容 (content)' };
-        }
-
-        const currentTodos = getTodos(sessionId);
-        const newStatus = normalizeStatus(toolArgs.status);
-
-        if (newStatus === 'in-progress' && currentTodos.some(t => t.status === 'in-progress')) {
-          return { is_error: true, content: ' 已有任务在进行中，请先完成当前任务' };
-        }
-
-        const maxId = currentTodos.length > 0 ? Math.max(...currentTodos.map(t => t.id)) : 0;
-        const newTodo: TodoItem = {
-          id: maxId + 1,
-          content,
-          status: newStatus,
-          priority: ['high', 'medium', 'low'].includes(toolArgs.priority) ? toolArgs.priority : 'medium',
-          tags: Array.isArray(toolArgs.tags) ? toolArgs.tags : [],
-          estimatedHours: typeof toolArgs.estimatedHours === 'number' ? toolArgs.estimatedHours : undefined,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
-
-        const updatedTodos = [...currentTodos, newTodo];
-        setTodos(updatedTodos, sessionId);
-        notifyTodoUpdate(sessionId);
-        return { is_error: false, content: ` 任务添加成功 (ID: ${newTodo.id})\n\n${formatTodoList(updatedTodos)}` };
-      }
-
-      // ====== 批量添加 ======
+      // ====== add：追加任务（支持单项和批量）======
+      case 'add':
       case 'batch_add': {
-        let batchArray = toolArgs.todos;
-        if (typeof batchArray === 'string') {
-          try { batchArray = JSON.parse(batchArray); }
-          catch { return { is_error: true, content: ' todos 参数不是有效的 JSON 格式' }; }
+        let todosArray = parseTodosParam(toolArgs.todos);
+        if (typeof todosArray === 'string') {
+          return { is_error: true, content: ` ${todosArray}` };
         }
-        if (!Array.isArray(batchArray) || batchArray.length === 0) {
+
+        // 无 todos 数组时，从顶层参数构建单项
+        if (!todosArray) {
+          const content = (toolArgs.content || toolArgs.title || '').trim();
+          if (!content) {
+            return { is_error: true, content: ' add 需要 content 或 todos 数组' };
+          }
+          todosArray = [{
+            content,
+            status: toolArgs.status,
+            priority: toolArgs.priority,
+            tags: toolArgs.tags,
+            estimatedHours: toolArgs.estimatedHours,
+          }];
+        }
+
+        if (!Array.isArray(todosArray) || todosArray.length === 0) {
           return { is_error: true, content: ' todos 必须是一个非空数组' };
         }
 
         const currentTodos = getTodos(sessionId);
         let nextId = currentTodos.length > 0 ? Math.max(...currentTodos.map(t => t.id)) + 1 : 1;
-
-        const newTodos: TodoItem[] = batchArray
+        const newTodos: TodoItem[] = todosArray
           .filter((t: any) => (t.content || t.title || '').trim())
           .map((todo: any) => ({
             id: nextId++,
@@ -274,14 +310,7 @@ export async function todoWriteTool(toolArgs: any): Promise<ToolUseResult> {
         const updatedTodos = [...currentTodos, ...newTodos];
         setTodos(updatedTodos, sessionId);
         notifyTodoUpdate(sessionId);
-        return { is_error: false, content: ` 批量添加完成: 添加了 ${newTodos.length} 个任务\n\n${formatTodoList(updatedTodos)}` };
-      }
-
-      // ====== 查询/列表 ======
-      case 'list':
-      case 'read': {
-        const currentTodos = getTodos(sessionId);
-        return { is_error: false, content: formatTodoList(currentTodos) };
+        return { is_error: false, content: ` 添加了 ${newTodos.length} 个任务\n\n${formatTodoList(updatedTodos)}` };
       }
 
       // ====== 切换状态 ======
@@ -313,6 +342,13 @@ export async function todoWriteTool(toolArgs: any): Promise<ToolUseResult> {
         setTodos(todos, sessionId);
         notifyTodoUpdate(sessionId);
         return { is_error: false, content: ` 任务 ${id} 状态更新:  ${newStatus}\n\n${formatTodoList(todos)}` };
+      }
+
+      // ====== 查询/列表 ======
+      case 'list':
+      case 'read': {
+        const currentTodos = getTodos(sessionId);
+        return { is_error: false, content: formatTodoList(currentTodos) };
       }
 
       // ====== 删除 ======
