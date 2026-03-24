@@ -57,25 +57,16 @@ export function convertAbiToAbs(abiJson: any, options: AbiToAbsOptions = {}): st
     lines.push('');
   }
   
-  // 提取并注册变量（用于将变量ID转换为变量名）
+  // 注册变量用于 ID→名称转换（不输出 @var 声明到 ABS）
   // 注意：不再输出 @var 声明，因为：
   // 1. @var 是 Blockly 工作区内部变量，不生成 C++ 代码
   // 2. variable_define 等块才会生成实际的 C++ 变量声明
   // 3. 避免 LLM 混淆两种不同的变量概念
-  // if (abiJson.variables && Array.isArray(abiJson.variables)) {
-  //   if (abiJson.variables.length > 0) {
-  //     // 仅注册变量用于ID→名称转换，不输出到ABS
-  //     for (const variable of abiJson.variables) {
-  //       context.registerVariable(variable.id, variable.name, variable.type || 'int');
-  //     }
-  //     // 输出为注释，供参考但不影响导入
-  //     lines.push('# Blockly workspace variables (auto-managed, do not edit):');
-  //     for (const variable of abiJson.variables) {
-  //       lines.push(`# - ${variable.name}: ${variable.type || 'int'}`);
-  //     }
-  //     lines.push('');
-  //   }
-  // }
+  if (abiJson.variables && Array.isArray(abiJson.variables)) {
+    for (const variable of abiJson.variables) {
+      context.registerVariable(variable.id, variable.name, variable.type || 'int');
+    }
+  }
   
   // 设置 lineOffset 为当前 header 行数（后续块转换时使用）
   context.lineOffset = lines.length;
@@ -137,18 +128,12 @@ export function convertAbiToAbsWithLineMap(
     lines.push('');
   }
   
-  // if (abiJson.variables && Array.isArray(abiJson.variables)) {
-  //   if (abiJson.variables.length > 0) {
-  //     for (const variable of abiJson.variables) {
-  //       context.registerVariable(variable.id, variable.name, variable.type || 'int');
-  //     }
-  //     lines.push('# Blockly workspace variables (auto-managed, do not edit):');
-  //     for (const variable of abiJson.variables) {
-  //       lines.push(`# - ${variable.name}: ${variable.type || 'int'}`);
-  //     }
-  //     lines.push('');
-  //   }
-  // }
+  // 注册变量用于 ID→名称转换（不输出 @var 声明到 ABS）
+  if (abiJson.variables && Array.isArray(abiJson.variables)) {
+    for (const variable of abiJson.variables) {
+      context.registerVariable(variable.id, variable.name, variable.type || 'int');
+    }
+  }
   
   context.lineOffset = lines.length;
   
@@ -963,7 +948,7 @@ export function convertAbsToAbi(abs: string): AbsToAbiResult {
   // 构建变量名到ID的映射
   const variableNameToId = new Map<string, string>();
   
-  // 添加变量
+  // 添加 @var 声明的变量
   for (const varDef of parseResult.variables) {
     const varId = generateUniqueId();
     variableNameToId.set(varDef.name, varId);
@@ -972,6 +957,11 @@ export function convertAbsToAbi(abs: string): AbsToAbiResult {
       type: varDef.type,
       id: varId
     });
+  }
+  
+  // 扫描所有块，收集变量引用并确保 variables 数组完整
+  for (const blockConfig of parseResult.rootBlocks) {
+    collectVariableReferences(blockConfig, variableNameToId, abiJson.variables);
   }
   
   // 转换根块
@@ -1013,13 +1003,13 @@ function convertBlockConfigToAbi(
   if (config.fields && Object.keys(config.fields).length > 0) {
     block.fields = {};
     for (const [key, value] of Object.entries(config.fields)) {
-      // 处理变量引用：{ name: "varName" } -> { id: "varId" }
+      // 处理变量引用：{ name: "varName" } -> { id: "varId", name: "varName", type: "" }
       if (typeof value === 'object' && value !== null && (value as any).name) {
         const varName = (value as any).name;
         const varId = variableNameToId.get(varName);
         if (varId) {
-          // 使用 ID 引用
-          block.fields[key] = { id: varId };
+          // 使用 ID 引用，同时保留 name（Blockly 序列化格式需要两者）
+          block.fields[key] = { id: varId, name: varName, type: '' };
         } else {
           // 变量未声明，保持 name 格式（Blockly 可能会自动创建）
           block.fields[key] = value;
@@ -1101,6 +1091,48 @@ function calculateBlockHeight(config: any): number {
   }
   
   return height;
+}
+
+/**
+ * 递归扫描 BlockConfig 树，收集所有变量引用
+ * 确保 ABI JSON 的 variables 数组包含所有引用到的变量
+ */
+function collectVariableReferences(
+  config: any,
+  variableNameToId: Map<string, string>,
+  variables: any[]
+): void {
+  // 扫描字段中的变量引用
+  if (config.fields) {
+    for (const value of Object.values(config.fields)) {
+      if (typeof value === 'object' && value !== null && (value as any).name) {
+        const varName = (value as any).name;
+        if (!variableNameToId.has(varName)) {
+          const varId = generateUniqueId();
+          variableNameToId.set(varName, varId);
+          variables.push({ name: varName, type: '', id: varId });
+        }
+      }
+    }
+  }
+
+  // 递归扫描输入中的子块
+  if (config.inputs) {
+    for (const inputConfig of Object.values(config.inputs)) {
+      const input = inputConfig as any;
+      if (input?.block) {
+        collectVariableReferences(input.block, variableNameToId, variables);
+      }
+      if (input?.shadow) {
+        collectVariableReferences(input.shadow, variableNameToId, variables);
+      }
+    }
+  }
+
+  // 递归扫描 next 链
+  if (config.next?.block) {
+    collectVariableReferences(config.next.block, variableNameToId, variables);
+  }
 }
 
 // =============================================================================
