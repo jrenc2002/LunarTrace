@@ -356,7 +356,7 @@ export const TOOLS = [
     },
     {
         name: 'execute_command',
-        description: `执行系统CLI命令。用于执行系统操作或运行特定命令来完成用户任务中的任何步骤。支持命令链，优先使用相对命令和路径以保持终端一致性。
+        description: `在 PowerShell 中执行系统 CLI 命令。用于执行系统操作或运行特定命令来完成用户任务中的任何步骤。支持命令链，优先使用相对命令和路径以保持终端一致性。
 
 如果命令需要长时间运行（如服务器、监控），请使用 start_background_command 代替。`,
         input_schema: {
