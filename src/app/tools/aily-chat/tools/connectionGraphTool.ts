@@ -1217,8 +1217,8 @@ export async function generatePinmapTool(
    - 左侧引脚: x≈10, labelX≈-20, labelAnchor="right"（文字右对齐到 labelX）
    - 右侧引脚: x≈width-15, labelX≈width+12, labelAnchor="left"（文字左对齐从 labelX 起）
    - labelY = y - 7
-4. **images.url**: 使用可渲染图片的 base64（如 data:image/png;base64,...）
-5. **images**: 必须包含这个字段
+4. **images.url**: 使用可渲染图片的 base64（如 data:image/png;base64,...），不要在图片中添加文本信息
+5. **images**: 必须包含这个字段及其结构，即使没有图片也要保留 images: { url: "", width: 0, height: 0 }
 
 ## 保存
 

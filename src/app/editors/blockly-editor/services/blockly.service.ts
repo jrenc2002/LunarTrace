@@ -103,6 +103,7 @@ export class BlocklyService {
       return;
     }
 
+    let generatorLoadSuccess = true;
     try {
       // 加载block
       // const blockFileIsExist = this.electronService.exists(libPackagePath + '\\block.json');
@@ -122,9 +123,13 @@ export class BlocklyService {
           blocks = processI18n(blocks, i18nData);
         }
         // 加载generator（必须在 i18n 数据存储后，这样动态定义的块才能读取到正确的多语言）
-        const generatorFileIsExist = this.electronService.exists(this.electronService.pathJoin(libPackagePath, 'generator.js'));
+        const generatorFilePath = this.electronService.pathJoin(libPackagePath, 'generator.js');
+        const generatorFileIsExist = this.electronService.exists(generatorFilePath);
         if (generatorFileIsExist) {
-          await this.loadLibGenerator(this.electronService.pathJoin(libPackagePath, 'generator.js'));
+          generatorLoadSuccess = await this.loadLibGenerator(generatorFilePath);
+          if (!generatorLoadSuccess) {
+            console.error(`[loadLibrary] generator.js 加载失败: ${libPackageName}，库将不会标记为已加载，下次可重试`);
+          }
         }
         // 替换block中静态图片路径
         const staticFileIsExist = this.electronService.exists(this.electronService.pathJoin(libPackagePath, 'static'));
@@ -144,8 +149,10 @@ export class BlocklyService {
         return;
       }
 
-      // 标记为已加载
-      this.loadedLibraries.add(libPackagePath);
+      // 仅在 generator 加载成功时才标记为已加载（失败时允许后续重试）
+      if (generatorLoadSuccess) {
+        this.loadedLibraries.add(libPackagePath);
+      }
     } catch (error) {
       console.error('加载库失败:', libPackageName, error);
     }
@@ -206,7 +213,7 @@ export class BlocklyService {
     this.workspace.render();
   }
 
-  loadLibGenerator(filePath) {
+  loadLibGenerator(filePath): Promise<boolean> {
     return new Promise((resolve, reject) => {
       // 检查是否已加载
       if (this.loadedGenerators.has(filePath)) {
@@ -244,15 +251,17 @@ export class BlocklyService {
   // 获取当前已注册的所有generator函数对应的block类型
   private getRegisteredGenerators(): string[] {
     const generators = [];
-    // Blockly的generator通常注册在 Blockly.Arduino、Blockly.Python等对象上
-    if ((Blockly as any).Arduino) {
-      generators.push(...Object.keys((Blockly as any).Arduino).filter(key =>
-        typeof (Blockly as any).Arduino[key] === 'function'
+    // generator 脚本通过 window.Arduino.forBlock / window.MPY.forBlock 注册
+    const arduinoGen = (window as any).Arduino;
+    if (arduinoGen?.forBlock) {
+      generators.push(...Object.keys(arduinoGen.forBlock).filter(key =>
+        typeof arduinoGen.forBlock[key] === 'function'
       ));
     }
-    if ((Blockly as any).Python) {
-      generators.push(...Object.keys((Blockly as any).Python).filter(key =>
-        typeof (Blockly as any).Python[key] === 'function'
+    const mpyGen = (window as any).MPY || (window as any).MicropPython;
+    if (mpyGen?.forBlock) {
+      generators.push(...Object.keys(mpyGen.forBlock).filter(key =>
+        typeof mpyGen.forBlock[key] === 'function'
       ));
     }
     return generators;
@@ -364,18 +373,19 @@ export class BlocklyService {
     const registeredBlocks = this.loadedGenerators.get(scriptSrc);
     if (registeredBlocks && registeredBlocks.size > 0) {
       registeredBlocks.forEach(blockType => {
-        // 清理各种语言的generator
-        if ((Blockly as any).Arduino && (Blockly as any).Arduino[blockType]) {
+        // 清理各种语言的generator（使用与脚本注册相同的全局对象）
+        const arduinoGen = (window as any).Arduino;
+        if (arduinoGen?.forBlock?.[blockType]) {
           console.log(`- delete Arduino generator for ${blockType}`);
-          delete (Blockly as any).Arduino[blockType];
+          delete arduinoGen.forBlock[blockType];
         }
-        if ((Blockly as any).Python && (Blockly as any).Python[blockType]) {
+        const mpyGen = (window as any).MPY || (window as any).MicropPython;
+        if (mpyGen?.forBlock?.[blockType]) {
           console.log(`- delete Python generator for ${blockType}`);
-          delete (Blockly as any).Python[blockType];
+          delete mpyGen.forBlock[blockType];
         }
-        // 可以继续添加其他语言: JavaScript, Dart 等
-        if ((Blockly as any).JavaScript && (Blockly as any).JavaScript[blockType]) {
-          delete (Blockly as any).JavaScript[blockType];
+        if ((Blockly as any).JavaScript?.forBlock?.[blockType]) {
+          delete (Blockly as any).JavaScript.forBlock[blockType];
         }
       });
       this.loadedGenerators.delete(scriptSrc);

@@ -172,6 +172,7 @@ import {
   BackgroundSummarizerService,
   BackgroundSummarizationState
 } from './background-summarizer.service';
+import type { TurnSpan } from '../core/turn-types';
 
 // ==================== 主服务 ====================
 
@@ -482,7 +483,8 @@ export class ContextBudgetService {
     messages: any[],
     sessionId: string,
     llmConfig?: any,
-    selectModel?: string
+    selectModel?: string,
+    turnSpans?: readonly TurnSpan[]
   ): Promise<any[]> {
     const currentTokens = estimateMessagesTokens(messages);
     const maxTokens = this.maxContextTokens;
@@ -542,8 +544,8 @@ export class ContextBudgetService {
 
     // ==================== 层级 2: 优先级裁剪（Copilot PrioritizedList 策略） ====================
     // 参考 Copilot prompt-tsx: 所有裁剪在前端完成，服务端只做安全兜底
-    // 先做内容压缩 + 优先级消息丢弃，再决定是否需要 LLM 摘要
-    const trimmed = this.prioritizedTrim(messages);
+    // Turn-aware: 以 Turn 为最小移除单元，保证 tool_call ↔ tool_result 配对完整性
+    const trimmed = this.prioritizedTrim(messages, turnSpans);
     const trimmedTokens = estimateMessagesTokens(trimmed);
 
     if (trimmedTokens < this.summarizationThreshold) {
@@ -594,24 +596,102 @@ export class ContextBudgetService {
     }
   }
 
-  // ==================== Copilot 风格优先级裁剪 ====================
+  // ==================== Copilot 风格 Turn-aware 优先级裁剪 ====================
 
   /**
-   * 优先级裁剪 — 参考 Copilot 的 PrioritizedList 策略
+   * Turn-aware 优先级裁剪 — 参考 Copilot 的 PrioritizedList 策略
    *
-   * 优先级（前端作为唯一权威裁剪者）：
-   *   Priority 900  → 用户最新消息（永远保留，不截断）
-   *   Priority 899  → 最近 N 条消息（尽量完整保留）
-   *   Priority 700  → 历史消息（先压缩内容，超预算时从旧到新丢弃）
+   * 核心原则（Copilot 对齐）：
+   *   1. Turn 是最小移除单元，绝不拆散（保证 tool_call ↔ tool_result 配对完整）
+   *   2. 从最旧 Turn 开始移除，越旧价值越低
+   *   3. 最新 Turn（含用户最新消息）永远保留（Priority 900）
    *
    * 策略分两步：
-   *   Step 1: 对历史区消息做内容级压缩（截断工具结果/arguments、移除 UI 标签）
-   *   Step 2: 如果仍超预算，从最旧的历史消息开始丢弃整条消息
+   *   Step 1: 对所有 Turn 的消息做内容级压缩（截断工具结果/arguments、移除 UI 标签）
+   *   Step 2: 如果仍超预算，从最旧 Turn 开始整体移除
    *
-   * @param messages 完整对话历史
-   * @returns 裁剪后的消息数组（保证 fit 到 token 预算内）
+   * @param messages 完整对话历史（来自 TurnManager.buildMessages()）
+   * @param turnSpans Turn 边界跨度（来自 TurnManager.turnSpans）。
+   *                  若未提供，回退到消息级裁剪（兼容旧调用路径）
+   * @returns 裁剪后的消息数组
    */
-  prioritizedTrim(messages: any[]): any[] {
+  prioritizedTrim(messages: any[], turnSpans?: readonly TurnSpan[]): any[] {
+    // 无 Turn 边界信息时回退到消息级裁剪（兼容旧代码路径）
+    if (!turnSpans || turnSpans.length === 0) {
+      return this.prioritizedTrimLegacy(messages);
+    }
+
+    if (turnSpans.length <= 1) {
+      // 只有一个 Turn，无法再移除，仅做内容压缩
+      return this.compressToolResults(messages);
+    }
+
+    const maxTokens = this.maxContextTokens;
+    const systemTokens = this._cachedSystemTokens;
+    const toolsTokens = this._cachedToolsTokens;
+    const contextTokens = this._cachedContextTokens;
+    const outputReserve = Math.floor(maxTokens * ContextBudgetService.OUTPUT_RESERVE_RATIO);
+    const availableForMessages = maxTokens - systemTokens - toolsTokens - contextTokens - outputReserve;
+
+    // Step 1: 内容级压缩（对所有消息，不移除任何消息）
+    const compressed = this.compressToolResults(messages);
+    let compressedTokens = estimateMessagesTokens(compressed);
+
+    if (compressedTokens <= availableForMessages) {
+      return compressed;
+    }
+
+    // Step 2: Turn 级移除 — 从最旧 Turn 开始整体移除
+    // 最新 Turn（turnSpans 末尾）永远保留（P900）
+    // 从 turnSpans[0] 开始逐个移除，直到 token 预算足够
+    const removedTurnIndices = new Set<number>();
+
+    for (let i = 0; i < turnSpans.length - 1; i++) {
+      // 计算该 Turn 的 token 数
+      const span = turnSpans[i];
+      let turnTokens = 0;
+      for (let j = span.startIdx; j < span.endIdx; j++) {
+        turnTokens += estimateMessageTokens(compressed[j]);
+      }
+
+      removedTurnIndices.add(i);
+      compressedTokens -= turnTokens;
+
+      if (compressedTokens <= availableForMessages) {
+        break;
+      }
+    }
+
+    if (removedTurnIndices.size === 0) {
+      return compressed;
+    }
+
+    // 构建结果：过滤掉被移除 Turn 的所有消息
+    const removedMsgIndices = new Set<number>();
+    for (const turnIdx of removedTurnIndices) {
+      const span = turnSpans[turnIdx];
+      for (let j = span.startIdx; j < span.endIdx; j++) {
+        removedMsgIndices.add(j);
+      }
+    }
+
+    const result = compressed.filter((_, idx) => !removedMsgIndices.has(idx));
+
+    console.log(
+      `[Turn 级裁剪] 移除 ${removedTurnIndices.size} 个最旧 Turn (${messages.length - result.length} 条消息), ` +
+      `剩余 ${turnSpans.length - removedTurnIndices.size} 个 Turn = ${result.length} 条消息`
+    );
+
+    return result;
+  }
+
+  /**
+   * 消息级优先级裁剪（Legacy 兜底）
+   *
+   * 当无 Turn 边界信息时使用（如旧代码路径、从 conversationMessages 直接调用）。
+   * 按消息类型分级，可能拆散 Turn 内部结构。
+   */
+  private prioritizedTrimLegacy(messages: any[]): any[] {
     if (messages.length <= ContextBudgetService.RECENT_MESSAGES_PRESERVE) {
       return messages;
     }

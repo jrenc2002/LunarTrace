@@ -9,6 +9,7 @@ export interface Tool {
   name: string;
   description: string;
   input_schema: { [key: string]: any };
+  agents?: string[];
 }
 
 export interface ResourceItem {

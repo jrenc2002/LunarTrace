@@ -568,6 +568,8 @@ export class ArduinoGenerator extends Blockly.CodeGenerator {
    */
   /**
    * 重写 blockToCode：在生成前后维护 blockId 栈，实现代码追踪
+   * 同时增加防御性检查：当 forBlock 中缺少某 block type 的生成器时，
+   * 不再抛错中断整个代码生成流程，而是跳过该块并输出警告
    */
   override blockToCode(
     block: Blockly.Block | null,
@@ -576,6 +578,29 @@ export class ArduinoGenerator extends Blockly.CodeGenerator {
     if (!block) {
       return super.blockToCode(block, opt_thisOnly);
     }
+
+    // 防御性检查：如果 forBlock 中没有该 block type 的生成器函数，
+    // 跳过该块而不是让 super.blockToCode 抛出异常
+    if (block.isEnabled() && !block.isInsertionMarker() &&
+        typeof this.forBlock[block.type] !== 'function') {
+      console.warn(
+        `[ArduinoGenerator] 跳过未注册的块类型 "${block.type}"（id: ${block.id}）。` +
+        `该块对应的库生成器可能未加载，请检查库是否已安装。`
+      );
+      // 值块返回空字符串 tuple，语句块返回空字符串
+      if (block.outputConnection) {
+        return ['', 0];
+      }
+      // 语句块：如果不是 thisOnly 模式，继续处理 next 块链
+      if (!opt_thisOnly) {
+        const nextBlock = block.getNextBlock();
+        if (nextBlock) {
+          return this.blockToCode(nextBlock);
+        }
+      }
+      return '';
+    }
+
     // 入栈当前 block
     this._blockIdStack.push(block.id);
     this._blockTypes.set(block.id, block.type);

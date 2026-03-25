@@ -125,15 +125,22 @@ export class SessionLifecycleHelper {
     }
 
     this.engine.isCompleted = false;
-    const mainAgentConfig = this.engine.ailyChatConfigService.getAgentToolsConfig('mainAgent');
-    const schematicAgentConfig = this.engine.ailyChatConfigService.getAgentToolsConfig('schematicAgent');
-    const enabledToolNames = [...(mainAgentConfig?.enabledTools || []), ...(schematicAgentConfig?.enabledTools || [])];
-    const disabledToolNames = [...(mainAgentConfig?.disabledTools || []), ...(schematicAgentConfig?.disabledTools || [])];
-    const hasEnabledToolsConfig = enabledToolNames.length > 0;
+    // 按 agents 字段过滤：mainAgent 的 startSession 只发送属于 mainAgent 的工具
+    // 参考 SubagentSessionService.getToolsForAgent() 的同等逻辑
+    let tools = this.engine.tools.filter(tool =>
+      !tool.agents || tool.agents.includes('mainAgent')
+    );
 
-    let tools = hasEnabledToolsConfig
-      ? this.engine.tools.filter(tool => enabledToolNames.includes(tool.name) || (!disabledToolNames.includes(tool.name) && !enabledToolNames.includes(tool.name)))
-      : this.engine.tools;
+    // 按 aily config 配置过滤（尊重用户的 enabledTools/disabledTools 设置）
+    const mainAgentConfig = this.engine.ailyChatConfigService.getAgentToolsConfig('mainAgent');
+    const enabledToolNames = mainAgentConfig?.enabledTools || [];
+    const disabledToolNames = new Set(mainAgentConfig?.disabledTools || []);
+    if (enabledToolNames.length > 0) {
+      const enabledSet = new Set(enabledToolNames);
+      tools = tools.filter(tool => enabledSet.has(tool.name) || !disabledToolNames.has(tool.name));
+    } else if (disabledToolNames.size > 0) {
+      tools = tools.filter(tool => !disabledToolNames.has(tool.name));
+    }
 
     let mcpTools = this.engine.mcpService.tools.map(tool => {
       if (!tool.name.startsWith('mcp_')) { tool.name = 'mcp_' + tool.name; }

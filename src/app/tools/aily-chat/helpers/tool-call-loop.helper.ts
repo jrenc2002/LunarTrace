@@ -19,16 +19,24 @@ export class ToolCallLoopHelper {
   // ==================== 工具 / LLM 配置 ====================
 
   getCurrentTools(): any[] {
-    const mainAgentConfig = this.engine.ailyChatConfigService.getAgentToolsConfig('mainAgent');
-    const schematicAgentConfig = this.engine.ailyChatConfigService.getAgentToolsConfig('schematicAgent');
-    const enabledToolNames = [...(mainAgentConfig?.enabledTools || []), ...(schematicAgentConfig?.enabledTools || [])];
-    const disabledToolNames = [...(mainAgentConfig?.disabledTools || []), ...(schematicAgentConfig?.disabledTools || [])];
-    const hasEnabledToolsConfig = enabledToolNames.length > 0;
-    let tools = hasEnabledToolsConfig
-      ? this.engine.tools.filter(tool => enabledToolNames.includes(tool.name) || (!disabledToolNames.includes(tool.name) && !enabledToolNames.includes(tool.name)))
-      : [...this.engine.tools];
+    // 1. 按 agents 字段过滤：mainAgent 只获取属于 mainAgent 的工具
+    //    参考 SubagentSessionService.getToolsForAgent() 的同等逻辑
+    let tools = this.engine.tools.filter(tool =>
+      !tool.agents || tool.agents.includes('mainAgent')
+    );
 
-    // Deferred tool filtering: 只发送 core 工具 + 已激活的 deferred 工具
+    // 2. 按 aily config 配置过滤（尊重用户的 enabledTools/disabledTools 设置）
+    const mainAgentConfig = this.engine.ailyChatConfigService.getAgentToolsConfig('mainAgent');
+    const enabledToolNames = mainAgentConfig?.enabledTools || [];
+    const disabledToolNames = new Set(mainAgentConfig?.disabledTools || []);
+    if (enabledToolNames.length > 0) {
+      const enabledSet = new Set(enabledToolNames);
+      tools = tools.filter(tool => enabledSet.has(tool.name) || !disabledToolNames.has(tool.name));
+    } else if (disabledToolNames.size > 0) {
+      tools = tools.filter(tool => !disabledToolNames.has(tool.name));
+    }
+
+    // 3. Deferred tool filtering: 只发送 core 工具 + 已激活的 deferred 工具
     // 参考 Copilot 的 deferred tool loading 策略
     const activated = this.engine.activatedDeferredTools;
     tools = tools.filter(tool => !isDeferredTool(tool.name) || activated.has(tool.name));
@@ -84,8 +92,10 @@ export class ToolCallLoopHelper {
 
     try {
       const currentMessages = this.engine.turnManager.buildMessages();
+      const turnSpans = this.engine.turnManager.turnSpans;
       const compressed = await this.engine.contextBudgetService.compressIfNeeded(
-        currentMessages, this.engine.sessionId, this.getCurrentLLMConfig(), this.engine.currentModel?.model || undefined
+        currentMessages, this.engine.sessionId, this.getCurrentLLMConfig(), this.engine.currentModel?.model || undefined,
+        turnSpans
       );
       // 压缩结果仅瞬态使用，不回写 Turn[]（Turn[] 不可变）
       this._compressedMessages = compressed;
