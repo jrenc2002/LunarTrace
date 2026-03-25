@@ -1372,6 +1372,17 @@ async function incrementalUpdate(
   const processedExistingBlocks = new Set<string>();
   const processedNewBlocks = new Set<number>();
   
+  // 🆕 追踪所有应保留在工作区的块 ID
+  // 用于最终清理阶段，移除上次导入失败残留的孤立块
+  const validBlockIds = new Set<string>();
+  
+  // 受保护的根块始终有效（不会被清理）
+  for (const item of currentRootBlocks) {
+    if (PROTECTED_ROOT_BLOCKS.has(item.serialized.type)) {
+      validBlockIds.add(item.block.id);
+    }
+  }
+  
   // ============ 阶段 1：精确签名匹配 ============
   // 签名完全相同的块直接保留，无需任何操作
   // console.log(`🔍 阶段 1: 精确签名匹配`);
@@ -1422,6 +1433,7 @@ async function incrementalUpdate(
       // console.log(`  ✅ 精确匹配: ${currentItem.serialized.type} (${currentItem.block.id})`);
       processedExistingBlocks.add(currentItem.block.id);
       processedNewBlocks.add(matchingNewBlock.index);
+      validBlockIds.add(currentItem.block.id);
       unchangedCount++;
     }
   }
@@ -1458,6 +1470,7 @@ async function incrementalUpdate(
       }
       processedExistingBlocks.add(currentItem.block.id);
       processedNewBlocks.add(matchingNewBlock.index);
+      validBlockIds.add(currentItem.block.id);
       updatedCount++;
     }
   }
@@ -1486,6 +1499,7 @@ async function incrementalUpdate(
       const result = await createBlockFromConfig(workspace, configWithPosition);
       if (result.block) {
         addedCount++;
+        validBlockIds.add(result.block.id);
         const bounds = result.block.getBoundingRectangle();
         yPosition = bounds ? bounds.bottom + 50 : yPosition + 100;
       }
@@ -1525,6 +1539,7 @@ async function incrementalUpdate(
       }
       processedExistingBlocks.add(currentItem.block.id);
       processedNewBlocks.add(matchingNewBlock.index);
+      validBlockIds.add(currentItem.block.id);
       updatedCount++;
     }
   }
@@ -1630,6 +1645,7 @@ async function incrementalUpdate(
         const result = await createBlockFromConfig(workspace, configWithPosition);
         if (result.block) {
           addedCount++;
+          validBlockIds.add(result.block.id);
           const bounds = result.block.getBoundingRectangle();
           yPosition = bounds ? bounds.bottom + 50 : yPosition + 100;
         }
@@ -1643,71 +1659,28 @@ async function incrementalUpdate(
   
   // console.log(`📊 增量更新完成: 精确匹配 ${unchangedCount}, 递归更新 ${updatedCount}, 删除 ${removedCount}, 添加 ${addedCount}`);
   
-  // ============ 阶段 6：最终清理 - 删除所有不在 ABS 中的残留根块 ============
-  // 处理创建失败残留的孤立块：获取当前所有根块，与 ABS 定义的块类型/数量进行对比
-  // console.log(`🔍 阶段 6: 最终清理残留块`);
+  // ============ 阶段 6：最终清理 - 移除所有未被本次导入处理的残留根块 ============
+  // 基于 validBlockIds 集合进行清理，而不是类型计数
+  // 这样可以可靠地移除上次导入失败残留的孤立块
+  // console.log(`🔍 阶段 6: 最终清理残留块 (基于 ID 追踪)`);
   
-  // 统计 ABS 中每种块类型的数量
-  const expectedBlockCounts = new Map<string, number>();
-  for (const newBlock of newBlocks) {
-    expectedBlockCounts.set(newBlock.type, (expectedBlockCounts.get(newBlock.type) || 0) + 1);
-  }
-  
-  // 获取当前工作区所有根块并按类型分组
   const currentTopBlocks = workspace.getTopBlocks(false);
-  const currentBlocksByType = new Map<string, any[]>();
-  for (const block of currentTopBlocks) {
-    const type = block.type;
-    if (!currentBlocksByType.has(type)) {
-      currentBlocksByType.set(type, []);
-    }
-    currentBlocksByType.get(type)!.push(block);
-  }
-  
-  // 删除多余的块（类型不在 ABS 中，或者数量超出预期）
-  // 🆕 但保留受保护的根块类型
   let cleanupCount = 0;
-  for (const [type, blocks] of currentBlocksByType) {
-    const expectedCount = expectedBlockCounts.get(type) || 0;
-    
-    // 🆕 保护机制：受保护的根块类型不删除
-    if (PROTECTED_ROOT_BLOCKS.has(type)) {
-      // console.log(`  🛡️ 跳过受保护块类型: ${type} (${blocks.length} 个)`);
-      continue;
-    }
-    
-    if (expectedCount === 0) {
-      // 该类型完全不在 ABS 中，全部删除
-      // console.log(`  🗑️ 删除不在 ABS 中的块类型: ${type} (${blocks.length} 个)`);
-      for (const block of blocks) {
-        Blockly.Events.disable();
-        try {
-          block.dispose(true);
-          cleanupCount++;
-        } catch (e) {
-          console.warn(`清理块失败: ${type}`, e);
-        } finally {
-          Blockly.Events.enable();
-        }
-      }
-    } else if (blocks.length > expectedCount) {
-      // 数量超出预期，删除多余的（保留前 expectedCount 个）
-      const toDelete = blocks.slice(expectedCount);
-      // console.log(`  🗑️ 删除多余的 ${type} 块 (${toDelete.length} 个，保留 ${expectedCount} 个)`);
-      for (const block of toDelete) {
-        Blockly.Events.disable();
-        try {
-          block.dispose(true);
-          cleanupCount++;
-        } catch (e) {
-          console.warn(`清理块失败: ${type}`, e);
-        } finally {
-          Blockly.Events.enable();
-        }
+  
+  for (const block of currentTopBlocks) {
+    if (!validBlockIds.has(block.id)) {
+      // console.log(`  🗑️ 清理残留块: ${block.type} (ID: ${block.id})`);
+      Blockly.Events.disable();
+      try {
+        block.dispose(true);
+        cleanupCount++;
+      } catch (e) {
+        console.warn(`清理残留块失败: ${block.type}`, e);
+      } finally {
+        Blockly.Events.enable();
       }
     }
   }
-  
   if (cleanupCount > 0) {
     // console.log(`  ✅ 清理了 ${cleanupCount} 个残留块`);
     removedCount += cleanupCount;
