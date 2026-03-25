@@ -5240,7 +5240,8 @@ async function configureBlockInputs(
               // 此时之前缓存的 input 变量指向已销毁的旧 Input 对象。
               const currentInput = block.getInput(inputName);
               if (!currentInput || !currentInput.connection) {
-                console.warn(`⚠️ 输入 "${inputName}" 在子块创建后不存在或无连接点，跳过连接`);
+                console.warn(`⚠️ 输入 "${inputName}" 在子块创建后不存在或无连接点，清理孤立块`);
+                try { childBlock.dispose(true); } catch (_) { /* ignore */ }
                 failedBlocks.push({
                   blockType: childBlock.type,
                   error: `输入 "${inputName}" 在子块创建后不存在（可能被动态更新销毁）`
@@ -5265,11 +5266,21 @@ async function configureBlockInputs(
               
               const connectionToUse = childBlock.outputConnection || childBlock.previousConnection;
               if (connectionToUse) {
-                currentInput.connection.connect(connectionToUse);
-                // console.log(`🔗 成功连接子块到输入 "${inputName}"`);
-                updatedInputs.push(inputName);
+                try {
+                  currentInput.connection.connect(connectionToUse);
+                  // console.log(`🔗 成功连接子块到输入 "${inputName}"`);
+                  updatedInputs.push(inputName);
+                } catch (connectError) {
+                  console.warn(`⚠️ 子块连接失败，清理孤立块: ${childBlock.type}`, connectError);
+                  try { childBlock.dispose(true); } catch (_) { /* ignore */ }
+                  failedBlocks.push({
+                    blockType: childBlock.type,
+                    error: `连接到输入 "${inputName}" 失败: ${connectError instanceof Error ? connectError.message : String(connectError)}`
+                  });
+                }
               } else {
-                console.warn(`⚠️ 子块 ${childBlock.type} 没有可用的连接点`);
+                console.warn(`⚠️ 子块 ${childBlock.type} 没有可用的连接点，清理孤立块`);
+                try { childBlock.dispose(true); } catch (_) { /* ignore */ }
                 failedBlocks.push({
                   blockType: childBlock.type,
                   error: `子块没有可用的连接点（outputConnection 或 previousConnection）`
@@ -5297,7 +5308,8 @@ async function configureBlockInputs(
             // 🆕 重新获取 input 引用（同 block 子块的理由）
             const currentInput = block.getInput(inputName);
             if (!currentInput || !currentInput.connection) {
-              console.warn(`⚠️ 输入 "${inputName}" 在影子块创建后不存在或无连接点，跳过连接`);
+              console.warn(`⚠️ 输入 "${inputName}" 在影子块创建后不存在或无连接点，清理孤立块`);
+              try { shadowBlock.dispose(true); } catch (_) { /* ignore */ }
               failedBlocks.push({
                 blockType: shadowBlock.type,
                 error: `输入 "${inputName}" 在影子块创建后不存在（可能被动态更新销毁）`
@@ -5320,14 +5332,24 @@ async function configureBlockInputs(
             // 正确设置影子块
             const connectionToUse = shadowBlock.outputConnection || shadowBlock.previousConnection;
             if (connectionToUse) {
-              // 先设置为影子块
-              shadowBlock.setShadow(true);
-              // 然后连接到输入
-              currentInput.connection.connect(connectionToUse);
-              // console.log(`🔗 成功设置影子块到输入 "${inputName}"`);
-              updatedInputs.push(inputName);
+              try {
+                // 先设置为影子块
+                shadowBlock.setShadow(true);
+                // 然后连接到输入
+                currentInput.connection.connect(connectionToUse);
+                // console.log(`🔗 成功设置影子块到输入 "${inputName}"`);
+                updatedInputs.push(inputName);
+              } catch (connectError) {
+                console.warn(`⚠️ 影子块连接失败，清理孤立块: ${shadowBlock.type}`, connectError);
+                try { shadowBlock.dispose(true); } catch (_) { /* ignore */ }
+                failedBlocks.push({
+                  blockType: shadowBlock.type,
+                  error: `影子块连接到输入 "${inputName}" 失败: ${connectError instanceof Error ? connectError.message : String(connectError)}`
+                });
+              }
             } else {
-              console.warn(`⚠️ 影子块 ${shadowBlock.type} 没有可用的连接点`);
+              console.warn(`⚠️ 影子块 ${shadowBlock.type} 没有可用的连接点，清理孤立块`);
+              try { shadowBlock.dispose(true); } catch (_) { /* ignore */ }
               failedBlocks.push({
                 blockType: shadowBlock.type,
                 error: `影子块没有可用的连接点`
@@ -5602,8 +5624,9 @@ export async function createBlockFromConfig(
           // console.log(`✅ next连接成功: ${block.type} -> ${nextBlock.type}`);
           totalBlocks += nextResult.totalBlocks;
         } catch (connectionError) {
-          console.warn(`⚠️ next连接失败: ${connectionError}`);
-          // 🆕 收集 next 连接失败
+          console.warn(`⚠️ next连接失败，清理孤立块: ${connectionError}`);
+          // 连接失败，销毁孤立的 next 块避免残留
+          try { nextBlock.dispose(true); } catch (_) { /* ignore */ }
           failedBlocks.push({
             blockType: `${block.type} -> ${nextBlock.type}`,
             error: `next 连接失败: ${connectionError instanceof Error ? connectionError.message : String(connectionError)}`
@@ -5614,8 +5637,9 @@ export async function createBlockFromConfig(
                        !block.nextConnection ? `${block.type} 无 nextConnection` : 
                        `${nextBlock.type} 无 previousConnection`;
         console.warn(`⚠️ next连接失败: ${reason}`);
-        // 🆕 收集 next 连接失败
         if (nextBlock) {
+          // 无法连接，销毁孤立块
+          try { nextBlock.dispose(true); } catch (_) { /* ignore */ }
           failedBlocks.push({
             blockType: `${block.type} -> ${nextBlock.type}`,
             error: `next 连接失败: ${reason}`

@@ -9,6 +9,7 @@ import { absVersionControlHandler } from '../absVersionControlTool';
 import { editAbiFileTool as editAbiFileHandler } from '../editAbiFileTool';
 import { reloadAbiJsonTool as reloadAbiJsonHandler, ReloadAbiJsonToolService } from '../reloadAbiJsonTool';
 import { TOOLS as LEGACY_TOOLS } from '../tools';
+import * as asyncFs from '../../core/async-fs';
 
 function findLegacySchema(name: string): any {
   return (LEGACY_TOOLS as any[]).find(t => t.name === name);
@@ -25,11 +26,11 @@ class SyncAbsFileTool implements IAilyTool {
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
     if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
-    // electronService compat wrapper: handler expects .exists/.readFile/.writeFile
+    // electronService compat wrapper: 使用异步 IPC 方法避免阻塞渲染线程
     const fsCompat = {
-      exists: (p: string) => ctx.host!.fs.existsSync(p),
-      readFile: (p: string) => ctx.host!.fs.readFileSync(p, 'utf-8'),
-      writeFile: (p: string, data: string) => ctx.host!.fs.writeFileSync(p, data),
+      exists: (p: string) => asyncFs.exists(p),
+      readFile: (p: string) => asyncFs.readFile(p, 'utf-8'),
+      writeFile: (p: string, data: string) => asyncFs.writeFile(p, data),
     };
     return syncAbsFileHandler(args, ctx.host.project, fsCompat, ctx.host.absSync);
   }

@@ -673,6 +673,22 @@ export class BlocklyComponent implements OnInit, OnDestroy {
         }
       } catch (error) {
         console.error('Code generation error:', error);
+        // 当代码生成失败时，输出更多诊断信息帮助定位缺失的生成器
+        if (this.workspace && this.generator) {
+          try {
+            const allBlocks = this.workspace.getAllBlocks(false);
+            const missingTypes = allBlocks
+              .filter(b => b.isEnabled() && typeof this.generator.forBlock[b.type] !== 'function')
+              .map(b => b.type);
+            const uniqueMissing = [...new Set(missingTypes)];
+            if (uniqueMissing.length > 0) {
+              console.warn(
+                `[Blockly] 以下块类型缺少代码生成器，可能需要重新加载对应的库：`,
+                uniqueMissing
+              );
+            }
+          } catch (_) { /* ignore diagnostic errors */ }
+        }
       }
     });
   }

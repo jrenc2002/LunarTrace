@@ -17,6 +17,7 @@ import type {
   ToolCallRound,
   ToolCallEntry,
   ToolCallResult,
+  TurnSpan,
   SerializedTurns,
 } from '../core/turn-types';
 import {
@@ -31,8 +32,22 @@ export class TurnManager {
 
   /** 缓存的消息数组（buildMessages() 的输出） */
   private _cachedMessages: any[] | null = null;
+  /** 缓存的 Turn 边界跨度（与 _cachedMessages 同步更新） */
+  private _cachedTurnSpans: TurnSpan[] = [];
   /** 缓存失效标记 */
   private _dirty = true;
+
+  /**
+   * 信息类工具名称集合（与 ContextBudgetService.INFO_TOOLS 保持同步）
+   * 用于标记 TurnSpan.hasInfoTools，帮助 prioritizedTrim 做 Turn 级价值评估
+   */
+  private static readonly INFO_TOOLS = new Set([
+    'read_file', 'fetch', 'web_search', 'grep', 'grep_tool', 'glob_tool',
+    'get_directory_tree', 'list_directory', 'search_boards_libraries',
+    'get_workspace_overview_tool',
+  ]);
+
+
 
   // ==================== 读取 ====================
 
@@ -48,6 +63,18 @@ export class TurnManager {
   /** 获取最后一个 Turn */
   get lastTurn(): Turn | undefined {
     return this._turns[this._turns.length - 1];
+  }
+
+  /**
+   * 获取 Turn 边界跨度（与 buildMessages() 的输出对应）
+   *
+   * 供 ContextBudgetService.prioritizedTrim() 使用，
+   * 保证裁剪以 Turn 为最小单元，不拆散 tool_call ↔ tool_result 配对。
+   */
+  get turnSpans(): readonly TurnSpan[] {
+    // 确保 messages 已构建（spans 随 buildMessages 一起生成）
+    this.buildMessages();
+    return this._cachedTurnSpans;
   }
 
   /** 获取最后一个 Turn 的 ID（用于 checkpoint 关联） */
@@ -162,13 +189,25 @@ export class TurnManager {
     }
 
     const messages: any[] = [];
+    const turnSpans: TurnSpan[] = [];
 
-    for (const turn of this._turns) {
+    for (let turnIdx = 0; turnIdx < this._turns.length; turnIdx++) {
+      const turn = this._turns[turnIdx];
+      const spanStart = messages.length;
+      let hasInfoTools = false;
+
       // 如果 turn 已被摘要化，使用摘要替代原始内容
       if (turn.metadata?.compressed && turn.metadata?.summary) {
         messages.push({
           role: 'user',
           content: `[历史摘要] ${turn.metadata.summary}`,
+        });
+        turnSpans.push({
+          turnId: turn.id,
+          turnIndex: turnIdx,
+          startIdx: spanStart,
+          endIdx: messages.length,
+          hasInfoTools: false,
         });
         continue;
       }
@@ -179,7 +218,16 @@ export class TurnManager {
         content: turn.request.content,
       });
 
-      if (!turn.response) continue;
+      if (!turn.response) {
+        turnSpans.push({
+          turnId: turn.id,
+          turnIndex: turnIdx,
+          startIdx: spanStart,
+          endIdx: messages.length,
+          hasInfoTools: false,
+        });
+        continue;
+      }
 
       const rounds = turn.response.toolCallRounds;
 
@@ -191,17 +239,26 @@ export class TurnManager {
             content: sanitizeAssistantContent(turn.response.content),
           });
         }
+        turnSpans.push({
+          turnId: turn.id,
+          turnIndex: turnIdx,
+          startIdx: spanStart,
+          endIdx: messages.length,
+          hasInfoTools: false,
+        });
         continue;
       }
 
-      // 有工具调用：按 round 展开为 assistant(tool_calls) + tool(results) 序列
-      for (let i = 0; i < rounds.length; i++) {
-        const round = rounds[i];
+      // 有工具调用：按 round 展开（Copilot 风格：保留所有 rounds 完整内容）
+      // 清理 <think>/aily-state 等非推理内容，但不折叠或丢弃 rounds
+      // token 裁剪由 prioritizedTrim()（Turn 级）和 compressToolResults()（内容级）负责
+      for (const round of rounds) {
+        // 清理中间轮内容：移除 <think>、aily-state 等 UI 标记，保留有意义的输出文本
+        const content = sanitizeAssistantContent(round.assistantContent || '');
 
-        // Assistant message with tool_calls（保留本轮推理文本，避免 LLM 丢失上下文导致重复）
         const assistantMsg: any = {
           role: 'assistant',
-          content: round.assistantContent || '',
+          content,
         };
 
         // 工具调用格式
@@ -215,10 +272,13 @@ export class TurnManager {
 
         messages.push(assistantMsg);
 
-        // Tool results
+        // Tool results — 同时检测是否包含信息类工具
         for (const tc of round.toolCalls) {
           const result = round.results[tc.id];
           if (result) {
+            if (TurnManager.INFO_TOOLS.has(result.toolName)) {
+              hasInfoTools = true;
+            }
             messages.push({
               role: 'tool',
               tool_call_id: tc.id,
@@ -242,15 +302,26 @@ export class TurnManager {
           });
         }
       }
+
+      turnSpans.push({
+        turnId: turn.id,
+        turnIndex: turnIdx,
+        startIdx: spanStart,
+        endIdx: messages.length,
+        hasInfoTools,
+      });
     }
 
     // 工具结果去重：同名工具的重复结果折叠以节省 token
     this.deduplicateToolResults(messages);
 
     this._cachedMessages = messages;
+    this._cachedTurnSpans = turnSpans;
     this._dirty = false;
     return messages;
   }
+
+
 
   // ==================== 回滚 / 截断 ====================
 
@@ -451,6 +522,7 @@ export class TurnManager {
   private invalidateCache(): void {
     this._dirty = true;
     this._cachedMessages = null;
+    this._cachedTurnSpans = [];
   }
 
   private generateTurnId(): string {

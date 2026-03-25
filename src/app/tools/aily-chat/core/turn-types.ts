@@ -84,6 +84,30 @@ export interface TurnMetadata {
   source?: string;
 }
 
+// ==================== Turn 边界标记（用于 Turn-aware 裁剪） ====================
+
+/**
+ * Turn 在消息数组中的位置跨度
+ *
+ * 由 TurnManager.buildMessages() 一并生成，
+ * 供 ContextBudgetService.prioritizedTrim() 以 Turn 为最小移除单元进行裁剪。
+ *
+ * Copilot 原则：Turn 要么完整保留，要么整体移除，绝不拆散。
+ * 这保证了 tool_call ↔ tool_result 的配对完整性。
+ */
+export interface TurnSpan {
+  /** Turn 的唯一 ID */
+  turnId: string;
+  /** Turn 在 Turn[] 中的索引（0-based） */
+  turnIndex: number;
+  /** 在 messages[] 中的起始索引（inclusive） */
+  startIdx: number;
+  /** 在 messages[] 中的结束索引（exclusive） */
+  endIdx: number;
+  /** 该 Turn 是否包含信息类工具调用（read_file/fetch/grep 等） */
+  hasInfoTools: boolean;
+}
+
 // ==================== 序列化接口 ====================
 
 /**

@@ -84,8 +84,10 @@ export class ToolCallLoopHelper {
 
     try {
       const currentMessages = this.engine.turnManager.buildMessages();
+      const turnSpans = this.engine.turnManager.turnSpans;
       const compressed = await this.engine.contextBudgetService.compressIfNeeded(
-        currentMessages, this.engine.sessionId, this.getCurrentLLMConfig(), this.engine.currentModel?.model || undefined
+        currentMessages, this.engine.sessionId, this.getCurrentLLMConfig(), this.engine.currentModel?.model || undefined,
+        turnSpans
       );
       // 压缩结果仅瞬态使用，不回写 Turn[]（Turn[] 不可变）
       this._compressedMessages = compressed;

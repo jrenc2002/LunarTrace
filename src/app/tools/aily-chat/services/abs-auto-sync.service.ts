@@ -14,6 +14,7 @@ import { Subscription } from 'rxjs';
 import { AilyHost } from '../core/host';
 import { convertAbsToAbi, convertAbiToAbsWithLineMap } from '../tools/abiAbsConverter';
 import { loadProjectBlockDefinitions } from '../tools/absParser';
+import * as asyncFs from '../core/async-fs';
 
 // =============================================================================
 // 类型定义
@@ -165,7 +166,7 @@ export class AbsAutoSyncService implements OnDestroy {
       const absFilePath = this.getAbsFilePath();
       console.log('[AbsAutoSync] Writing ABS file to:', absFilePath);
       console.log('[AbsAutoSync] Content length:', absContent?.length || 0);
-      AilyHost.get().fs.writeFileSync(absFilePath, absContent);
+      await asyncFs.writeFile(absFilePath, absContent);
       console.log('[AbsAutoSync] Write completed for:', absFilePath);
       
       // 版本历史已迁移到 EditCheckpointService，不再单独保存
@@ -225,7 +226,7 @@ export class AbsAutoSyncService implements OnDestroy {
   private async _doImportFromAbs(): Promise<boolean> {
     const absFilePath = this.getAbsFilePath();
 
-    if (!AilyHost.get().fs.existsSync(absFilePath)) {
+    if (!await asyncFs.exists(absFilePath)) {
       console.warn('[AbsAutoSync] ABS file does not exist:', absFilePath);
       return false;
     }
@@ -236,7 +237,7 @@ export class AbsAutoSyncService implements OnDestroy {
     }
 
     // 读取 ABS 文件
-    const absContent = AilyHost.get().fs.readFileSync(absFilePath, 'utf-8');
+    const absContent = await asyncFs.readFile(absFilePath, 'utf-8');
 
     // 转换为 ABI JSON
     const result = convertAbsToAbi(absContent);
@@ -347,8 +348,9 @@ export class AbsAutoSyncService implements OnDestroy {
         const wasEnabled = this.config.enabled;
         this.config.enabled = false;
         
-        // 清空并加载
+        // 清空并加载（中间让出事件循环，减轻 UI 冻结）
         workspace.clear();
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
         Blockly.serialization.workspaces.load(abiJson, workspace);
         
         // 恢复自动同步

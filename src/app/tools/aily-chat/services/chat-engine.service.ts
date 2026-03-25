@@ -712,8 +712,8 @@ Do not create non-existent boards and libraries.
         this.toolCallingIteration = 0;
         // 创建新的 AbortController 用于本轮工具执行中止
         this.abortController = new AbortController();
-        // Turn 开始前自动导出 ABS，确保磁盘态与图形工作区同步
-        this.ensureAbsExport();
+        // // Turn 开始前自动导出 ABS，确保磁盘态与图形工作区同步
+        // this.ensureAbsExport();
         // 同步自动保存配置
         this.editCheckpointService.autoSaveEdits = this.ailyChatConfigService.autoSaveEdits;
         // 启动新 turn 的 checkpoint
@@ -1267,8 +1267,8 @@ Do not create non-existent boards and libraries.
     // 添加新的助手消息占位
     this.msg.appendMessage('aily', '[thinking...]');
 
-    // Turn 开始前自动导出 ABS，确保磁盘态与图形工作区同步
-    this.ensureAbsExport();
+    // // Turn 开始前自动导出 ABS，确保磁盘态与图形工作区同步
+    // this.ensureAbsExport();
     // 同步自动保存配置
     this.editCheckpointService.autoSaveEdits = this.ailyChatConfigService.autoSaveEdits;
     // 创建新的 checkpoint
