@@ -138,7 +138,7 @@ interface AnswerRecord {
   styles: [`
     .aq-container {
       border-radius: 10px;
-      padding: 16px;
+      padding: 10px;
       margin: 0;
       background: #1e1e1e;
       border: 1px solid #333;
@@ -155,7 +155,7 @@ interface AnswerRecord {
       align-items: flex-start;
       justify-content: space-between;
       gap: 12px;
-      margin-bottom: 14px;
+      margin-bottom: 10px;
     }
     .aq-question {
       font-size: 13px;
@@ -184,7 +184,7 @@ interface AnswerRecord {
       display: flex;
       align-items: flex-start;
       gap: 10px;
-      padding: 10px 12px;
+      padding: 10px;
       border-radius: 8px;
       cursor: pointer;
       background: #252526;
@@ -205,8 +205,7 @@ interface AnswerRecord {
       font-size: 13px;
       font-weight: 600;
       color: #888;
-      min-width: 16px;
-      margin-top: 1px;
+      line-height: 1.4;
     }
     .aq-check-icon {
       flex-shrink: 0;
@@ -286,7 +285,7 @@ interface AnswerRecord {
 
     /* Bottom nav (Copilot style) */
     .aq-nav {
-      margin-top: 12px;
+      margin-top: 10px;
       display: flex;
       align-items: center;
       gap: 4px;
@@ -327,7 +326,7 @@ interface AnswerRecord {
 
     /* Skipped indicator */
     .aq-skipped-bar {
-      margin-top: 8px;
+      margin-top: 10px;
       display: flex; align-items: center; gap: 6px;
       font-size: 12px; color: #888;
     }
@@ -335,7 +334,7 @@ interface AnswerRecord {
 
     /* Done bar */
     .aq-done-bar {
-      margin-top: 12px;
+      margin-top: 10px;
       display: flex;
       align-items: center;
       gap: 6px;

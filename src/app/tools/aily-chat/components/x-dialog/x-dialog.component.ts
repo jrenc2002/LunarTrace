@@ -122,7 +122,11 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   onDialogMouseEnter(): void {
     this.showActions = true;
     const anchorListIndex = this.editCheckpointService.getTurnStartListIndexByAnyListIndex(this.msgIndex);
-    this.checkpointHoverChange.emit(anchorListIndex);
+    if (anchorListIndex !== null && anchorListIndex === this.msgIndex) {
+      this.checkpointHoverChange.emit(anchorListIndex);
+    } else {
+      this.checkpointHoverChange.emit(null);
+    }
   }
 
   onDialogMouseLeave(): void {
