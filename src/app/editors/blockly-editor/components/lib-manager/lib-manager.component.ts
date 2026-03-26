@@ -126,7 +126,7 @@ export class LibManagerComponent {
       // 为状态做准备
       item['state'] = 'default'; // default, installed, installing, uninstalling
       // 为全文搜索做准备
-      item['fulltext'] = `${item.name}${item.nickname}${item.keywords}${item.tags}${item.description}${item.brand}`.replace(/\s|aily|blockly/gi, '').toLowerCase();
+      item['fulltext'] = `${item.name}${item.nickname}${item.keywords}${item.tags}${item.description}${item.brand}`.replace(/\s|aily|blockly|ailyproject/gi, '').toLowerCase();
     }
     return array;
   }
