@@ -1034,7 +1034,7 @@ function createWindow() {
   })
 
   mainWindow = new BrowserWindow({
-    ...winState.state,
+    ...winState.winOptions,
     show: false,
     minWidth: 800,
     minHeight: 600,
@@ -1052,9 +1052,15 @@ function createWindow() {
     },
   });
 
-  mainWindow.setBounds({
-    height: winState.state.height,
-    width: winState.state.width,
+  mainWindow.setBounds(winState.state);
+
+  // electron-win-state 未持久化 isMaximized / isFullScreen，关闭前写入 store，供下次 ready-to-show 恢复
+  mainWindow.on('close', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      winState.state.isMaximized = mainWindow.isMaximized();
+      winState.state.isFullScreen = mainWindow.isFullScreen();
+      winState.saveState();
+    }
   });
 
   winState.manage(mainWindow);
@@ -1063,8 +1069,11 @@ function createWindow() {
 
   // 当页面准备好显示时，再显示窗口（首次启动时最大化）
   mainWindow.once('ready-to-show', () => {
-    if (isFirstLaunch) {
+    if (isFirstLaunch || winState.state.isMaximized) {
       mainWindow.maximize();
+    }
+    if (winState.state.isFullScreen) {
+      mainWindow.setFullScreen(true);
     }
     mainWindow.show();
   });
