@@ -157,8 +157,11 @@
         <div class="msg-action-btn" [class.active]="feedbackState === 'unhelpful'" (click)="onFeedback('unhelpful'); $event.stopPropagation()" title="没帮助">
           <i class="fa-light fa-thumbs-down"></i>
         </div>
+        @if (turnModelName && showActions) {
+          <span class="msg-model-label" title="本轮使用模型">{{ turnModelName }}</span>
+        }
       </div>
-    } @else if (canShowLimitActions) {
+    } @else if (canShowLimitActions && showActions) {
       <div class="msg-actions">
         <div class="msg-action-btn" (click)="onCopyContent(); $event.stopPropagation()" title="复制">
           <i class="fa-light fa-copy"></i>
@@ -169,6 +172,9 @@
         <div class="msg-action-btn" [class.active]="feedbackState === 'unhelpful'" (click)="onFeedback('unhelpful'); $event.stopPropagation()" title="没帮助">
           <i class="fa-light fa-thumbs-down"></i>
         </div>
+        @if (turnModelName) {
+          <span class="msg-model-label" title="本轮使用模型">{{ turnModelName }}</span>
+        }
       </div>
     }
   </div>

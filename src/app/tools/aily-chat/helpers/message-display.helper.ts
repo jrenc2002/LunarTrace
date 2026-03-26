@@ -153,7 +153,8 @@ export class MessageDisplayHelper {
       this.engine.list.push({
         role, content: text,
         state: (role === 'aily' && this.engine.isWaiting) ? 'doing' : 'done',
-        source: msgSource
+        source: msgSource,
+        modelName: this.engine.currentModelName || undefined,
       });
     }
     if (this.engine.sessionId) { this.engine.chatHistoryService.markDirty(this.engine.sessionId); }

@@ -425,6 +425,16 @@
   margin: 0 2px;
 }
 
+.msg-model-label {
+  margin-left: auto;
+  font-size: 11px;
+  color: #666;
+  white-space: nowrap;
+  user-select: none;
+  line-height: 26px;
+  padding: 0 4px;
+}
+
 .loader {
   position: absolute;
   bottom: 0;
