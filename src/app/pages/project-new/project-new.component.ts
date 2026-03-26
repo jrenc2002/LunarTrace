@@ -10,7 +10,7 @@ import { ConfigService } from '../../services/config.service';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NpmService } from '../../services/npm.service';
 import { NzTagModule } from 'ng-zorro-antd/tag';
-import { TranslateModule } from '@ngx-translate/core';
+import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { NzToolTipModule } from 'ng-zorro-antd/tooltip';
 import { Router } from '@angular/router';
 import { BrandListComponent } from './components/brand-list/brand-list.component';
@@ -94,7 +94,8 @@ export class ProjectNewComponent {
     private npmService: NpmService,
     private platformService: PlatformService,
     private cloudService: CloudService,
-    private cd: ChangeDetectorRef
+    private cd: ChangeDetectorRef,
+    private translate: TranslateService
   ) { }
 
   async ngOnInit() {
@@ -114,7 +115,7 @@ export class ProjectNewComponent {
     // 按使用次数排序
     this._boardList = this.configService.sortBoardsByUsage(processedBoardList);
 
-    this.boardList = JSON.parse(JSON.stringify(this._boardList));
+    this.boardList = this.applyLocalization(JSON.parse(JSON.stringify(this._boardList)));
 
     // 使用 selectBoard 方法来初始化，确保触发 checkHasExamples
     if (this.boardList.length > 0) {
@@ -139,19 +140,19 @@ export class ProjectNewComponent {
       keyword = keyword.replace(/\s/g, '').toLowerCase();
       let filteredBoardList = this._boardList.filter(item => item.fulltext.includes(keyword));
       // 对搜索结果按使用次数排序
-      this.boardList = this.configService.sortBoardsByUsage(filteredBoardList);
+      this.boardList = this.applyLocalization(this.configService.sortBoardsByUsage(filteredBoardList));
     } else {
       // 恢复完整列表（已按使用次数排序）
-      this.boardList = JSON.parse(JSON.stringify(this._boardList));
+      this.boardList = this.applyLocalization(JSON.parse(JSON.stringify(this._boardList)));
     }
   }
 
   devmodes = [];
   hasExamples = false;
-  selectBoard(boardInfo: BoardInfo) {
+  selectBoard(boardInfo: any) {
     this.currentBoard = boardInfo;
     this.newProjectData.board.name = boardInfo.name;
-    this.newProjectData.board.nickname = boardInfo.nickname;
+    this.newProjectData.board.nickname = boardInfo._nickname || boardInfo.nickname;
     this.newProjectData.board.version = boardInfo.version;
     this.newProjectData.devmode = boardInfo.mode ? this.currentBoard.mode[0] : 'arduino';
     this.devmodes = boardInfo.mode;
@@ -278,7 +279,7 @@ export class ProjectNewComponent {
           return !definedBrands.includes(boardBrand);
         });
         // 对过滤后的列表按使用次数排序
-        this.boardList = this.configService.sortBoardsByUsage(filteredBoardList);
+        this.boardList = this.applyLocalization(this.configService.sortBoardsByUsage(filteredBoardList));
       } else {
         // 普通品牌过滤
         let filteredBoardList = this._boardList.filter(board => {
@@ -287,7 +288,7 @@ export class ProjectNewComponent {
           return boardBrand === selectedBrandValue
         });
         // 对过滤后的列表按使用次数排序
-        this.boardList = this.configService.sortBoardsByUsage(filteredBoardList);
+        this.boardList = this.applyLocalization(this.configService.sortBoardsByUsage(filteredBoardList));
       }
 
       console.log('过滤后的开发板列表:', this.boardList);
@@ -300,7 +301,7 @@ export class ProjectNewComponent {
       }
     } else {
       // 如果选择"显示全部"或没有选中品牌，显示所有开发板（已按使用次数排序）
-      this.boardList = JSON.parse(JSON.stringify(this._boardList));
+      this.boardList = this.applyLocalization(JSON.parse(JSON.stringify(this._boardList)));
       if (this.boardList.length > 0) {
         this.selectBoard(this.boardList[0]);
       }
@@ -338,7 +339,7 @@ export class ProjectNewComponent {
       }
 
       // 对过滤后的列表按使用次数排序
-      this.boardList = this.configService.sortBoardsByUsage(filteredBoardList);
+      this.boardList = this.applyLocalization(this.configService.sortBoardsByUsage(filteredBoardList));
 
       console.log('按核心架构过滤后的开发板列表:', this.boardList);
 
@@ -350,7 +351,7 @@ export class ProjectNewComponent {
       }
     } else {
       // 如果选择"显示全部"或没有选中核心架构，显示所有开发板（已按使用次数排序）
-      this.boardList = JSON.parse(JSON.stringify(this._boardList));
+      this.boardList = this.applyLocalization(JSON.parse(JSON.stringify(this._boardList)));
       if (this.boardList.length > 0) {
         this.selectBoard(this.boardList[0]);
       }
@@ -365,7 +366,7 @@ export class ProjectNewComponent {
       // 如果切换到核心架构模式，重置选择状态
       this.selectedCore = null;
       // 显示所有开发板
-      this.boardList = JSON.parse(JSON.stringify(this._boardList));
+      this.boardList = this.applyLocalization(JSON.parse(JSON.stringify(this._boardList)));
       if (this.boardList.length > 0) {
         this.selectBoard(this.boardList[0]);
       }
@@ -373,7 +374,7 @@ export class ProjectNewComponent {
       // 如果切换到品牌模式，重置选择状态
       this.selectedBrand = null;
       // 显示所有开发板
-      this.boardList = JSON.parse(JSON.stringify(this._boardList));
+      this.boardList = this.applyLocalization(JSON.parse(JSON.stringify(this._boardList)));
       if (this.boardList.length > 0) {
         this.selectBoard(this.boardList[0]);
       }
@@ -383,6 +384,15 @@ export class ProjectNewComponent {
   nextStepFromProjectHub() {
     this.router.navigate(['main', 'playground', 'list'], { queryParams: { board: this.currentBoard.name } })
     // this.router.navigate(['/main/playground']);
+  }
+
+  private applyLocalization(list: any[]) {
+    const lang = this.translate.currentLang;
+    for (const board of list) {
+      board._nickname = (lang && board[`nickname_${lang}`]) || board.nickname || '';
+      board._description = (lang && board[`description_${lang}`]) || board.description || '';
+    }
+    return list;
   }
 }
 

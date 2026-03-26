@@ -40,7 +40,7 @@ import { CommonModule } from '@angular/common';
   styles: [`
     .aa-container {
       border-radius: 10px;
-      padding: 16px;
+      padding: 10px;
       margin: 0;
       background: #1e1e1e;
       border: 1px solid #333;
@@ -66,7 +66,7 @@ import { CommonModule } from '@angular/common';
       overflow-wrap: break-word;
     }
     .aa-message {
-      margin-top: 6px;
+      margin-top: 10px;
       font-size: 12px;
       color: #888;
       line-height: 1.4;
@@ -76,7 +76,7 @@ import { CommonModule } from '@angular/common';
     }
 
     .aa-nav {
-      margin-top: 12px;
+      margin-top: 10px;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -158,7 +158,7 @@ import { CommonModule } from '@angular/common';
 
     /* Done bar */
     .aa-done-bar {
-      margin-top: 12px;
+      margin-top: 10px;
       display: flex;
       align-items: center;
       gap: 6px;

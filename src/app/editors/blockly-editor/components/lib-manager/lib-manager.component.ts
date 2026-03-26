@@ -40,11 +40,11 @@ export class LibManagerComponent {
   @Output() close = new EventEmitter();
 
   keyword: string = '';
-  tagList: string[] = [];
+  tagList: { key: string; label: string }[] = [];
+  displayTagList: { key: string; label: string }[] = [];
   libraryList: PackageInfo[] = [];
   _libraryList: PackageInfo[] = [];
   installedPackageList: string[] = [];
-  tagListRandom;
 
   loading = false;
 
@@ -66,19 +66,12 @@ export class LibManagerComponent {
   }
 
   async ngOnInit() {
-    // 使用翻译初始化标签列表
-    this.tagList = [
-      this.translate.instant('LIB_MANAGER.SENSORS'),
-      this.translate.instant('LIB_MANAGER.ACTUATORS'),
-      this.translate.instant('LIB_MANAGER.COMMUNICATION'),
-      this.translate.instant('LIB_MANAGER.DISPLAY'),
-      this.translate.instant('LIB_MANAGER.STORAGE'),
-      this.translate.instant('LIB_MANAGER.AI'),
-      this.translate.instant('LIB_MANAGER.IOT'),
-    ];
+    // 从 tags.json 加载标签列表，根据当前语言显示本地化名称
+    this.tagList = this.buildLocalizedTagList();
+    this.displayTagList = this.getRandomTags(10);
 
     this._libraryList = this.process(this.configService.libraryList);
-    this.libraryList = await this.checkInstalled();
+    this.libraryList = this.applyLocalization(await this.checkInstalled());
     this.cd.detectChanges();
   }
 
@@ -92,7 +85,7 @@ export class LibManagerComponent {
     let installedLibraries = await this.npmService.getAllInstalledLibraries(this.projectService.currentProjectPath);
     installedLibraries = installedLibraries.map(item => {
       item['state'] = 'installed';
-      item['fulltext'] = `installed${item.name}${item.nickname}${item.keywords}${item.description}${item.brand}`.replace(/\s/g, '').toLowerCase();
+      item['fulltext'] = `installed${item.name}${item.nickname}${item.keywords}${item.description}${item.brand}`.replace(/\s|aily|blockly/gi, '').toLowerCase();
       return item;
     });
 
@@ -133,7 +126,7 @@ export class LibManagerComponent {
       // 为状态做准备
       item['state'] = 'default'; // default, installed, installing, uninstalling
       // 为全文搜索做准备
-      item['fulltext'] = `${item.name}${item.nickname}${item.keywords}${item.description}${item.brand}`.replace(/\s/g, '').toLowerCase();
+      item['fulltext'] = `${item.name}${item.nickname}${item.keywords}${item.tags}${item.description}${item.brand}`.replace(/\s|aily|blockly|ailyproject/gi, '').toLowerCase();
     }
     return array;
   }
@@ -142,11 +135,6 @@ export class LibManagerComponent {
     this.keyword = keyword;
     if (keyword) {
       keyword = keyword.replace(/\s/g, '').toLowerCase();
-
-      if (keyword === 'ai') {
-        keyword = 'artificialintelligence';
-      }
-
       // 使用indexOf过滤并记录关键词位置，然后按位置排序
       let libraryList = await this.checkInstalled();
       const matchedItems = libraryList
@@ -158,10 +146,29 @@ export class LibManagerComponent {
         .sort((a, b) => a.index - b.index)
         .map(({ item }) => item);
 
-      this.libraryList = matchedItems;
+      this.libraryList = this.applyLocalization(matchedItems);
     } else {
-      this.libraryList = await this.checkInstalled();
+      this.libraryList = this.applyLocalization(await this.checkInstalled());
     }
+  }
+
+  private getRandomTags(count: number): { key: string; label: string }[] {
+    if (this.tagList.length <= count) return [...this.tagList];
+    const shuffled = [...this.tagList].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, count);
+  }
+
+  private buildLocalizedTagList(): { key: string; label: string }[] {
+    const tagsData = this.configService.tagList;
+    if (!tagsData?.tags || !Array.isArray(tagsData.tags)) {
+      return [];
+    }
+    const lang = this.translate.currentLang || 'en';
+    const localizedMap = tagsData[`tags_${lang}`] || tagsData['tags_en'] || {};
+    return tagsData.tags.map((key: string) => ({
+      key,
+      label: localizedMap[key] || key
+    }));
   }
 
   back() {
@@ -206,9 +213,9 @@ export class LibManagerComponent {
         throw new Error();
       }
 
-      this.libraryList = await this.checkInstalled(this.libraryList);
+      this.libraryList = this.applyLocalization(await this.checkInstalled(this.libraryList));
       // lib.state = 'default';
-      this.message.success(`${lib.nickname} ${this.translate.instant('LIB_MANAGER.INSTALLED')}`);
+      this.message.success(`${lib._nickname || lib.nickname} ${this.translate.instant('LIB_MANAGER.INSTALLED')}`);
 
       let packageList_new = await this.npmService.getAllInstalledLibraries(this.projectService.currentProjectPath);
       // console.log('新的已安装的库列表：', packageList_new);
@@ -223,7 +230,7 @@ export class LibManagerComponent {
     } catch (error) {
       this.isInstalling = false;
       lib.state = 'error'; // Or revert to previous state
-      this.message.error(`${lib.nickname} ${this.translate.instant('LIB_MANAGER.INSTALL_FAILED')}`);
+      this.message.error(`${lib._nickname || lib.nickname} ${this.translate.instant('LIB_MANAGER.INSTALL_FAILED')}`);
       this.workflowService.finishInstall(false, error.message || 'Install failed');
     }
   }
@@ -245,9 +252,9 @@ export class LibManagerComponent {
     this.blocklyService.removeLibrary(libPackagePath);
     this.output = '';
     await this.cmdService.runAsync(`npm uninstall ${lib.name}`, this.projectService.currentProjectPath);
-    this.libraryList = await this.checkInstalled(this.libraryList);
+    this.libraryList = this.applyLocalization(await this.checkInstalled(this.libraryList));
     // lib.state = 'default';
-    this.message.success(`${lib.nickname} ${this.translate.instant('LIB_MANAGER.UNINSTALLED')}`);
+    this.message.success(`${lib._nickname || lib.nickname} ${this.translate.instant('LIB_MANAGER.UNINSTALLED')}`);
   }
 
 
@@ -313,6 +320,15 @@ export class LibManagerComponent {
         }
       });
     });
+  }
+
+  private applyLocalization(list: any[]) {
+    const lang = this.translate.currentLang;
+    for (const lib of list) {
+      lib._nickname = (lang && lib[`nickname_${lang}`]) || lib.nickname || '';
+      lib._description = (lang && lib[`description_${lang}`]) || lib.description || '';
+    }
+    return list;
   }
 
   openExample(packageName) {
@@ -393,7 +409,7 @@ export class LibManagerComponent {
       }
 
       // 重新检查已安装的库
-      this.libraryList = await this.checkInstalled();
+      this.libraryList = this.applyLocalization(await this.checkInstalled());
 
       this.message.success(`${this.translate.instant('LIB_MANAGER.IMPORTED')}`);
 
@@ -449,5 +465,8 @@ interface PackageInfo {
   url?: string,
   tested: boolean,
   state: 'default' | 'installed' | 'installing' | 'uninstalling',
-  example?: string
+  example?: string,
+  _nickname?: string,
+  _description?: string,
+  [key: string]: any
 }

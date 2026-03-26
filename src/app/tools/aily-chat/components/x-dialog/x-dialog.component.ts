@@ -51,6 +51,7 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   @Output() editAddFolder = new EventEmitter<void>();
 
   @ViewChild('subagentBody') subagentBodyRef?: ElementRef<HTMLElement>;
+  @ViewChild('editTextarea') editTextareaRef?: ElementRef<HTMLTextAreaElement>;
 
   /** 判断是否为子Agent消息 */
   get isSubagent(): boolean {
@@ -121,7 +122,11 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   onDialogMouseEnter(): void {
     this.showActions = true;
     const anchorListIndex = this.editCheckpointService.getTurnStartListIndexByAnyListIndex(this.msgIndex);
-    this.checkpointHoverChange.emit(anchorListIndex);
+    if (anchorListIndex !== null && anchorListIndex === this.msgIndex) {
+      this.checkpointHoverChange.emit(anchorListIndex);
+    } else {
+      this.checkpointHoverChange.emit(null);
+    }
   }
 
   onDialogMouseLeave(): void {
@@ -172,6 +177,8 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
     this.editResources = resources;
     this.showEditAddList = false;
     this.isEditing = true;
+    // 下一帧再 focus，确保 @if (isEditing) 已渲染出 textarea
+    setTimeout(() => this.editTextareaRef?.nativeElement?.focus(), 0);
   }
 
   onCancelEdit(): void {

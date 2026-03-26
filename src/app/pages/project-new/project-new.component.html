@@ -66,7 +66,7 @@
               <div class="img-box">
                 <img [sequentialSrc]="resourceUrl+'/imgs/boards/'+board.img" />
               </div>
-              <div class="name">{{ board.nickname }}
+              <div class="name">{{ board._nickname }}
                 @if(board.state){
                 <span>({{board.state}})</span>
                 }
@@ -82,7 +82,7 @@
           </div>
           <div class="content">
             <div class="title">
-              <div class="title-text">{{currentBoard.nickname}}</div>
+              <div class="title-text">{{currentBoard._nickname}}</div>
               @if(currentBoard.state=='alpha'){
               <span class="warn"><i class="fa-light fa-circle-exclamation"></i>{{ 'PROJECT_NEW.WARNINGS.BETA_VERSION' |
                 translate }}</span>
@@ -92,7 +92,7 @@
                 translate }}</span>
               }
             </div>
-            <div class="text sscroll">{{ currentBoard.description }}</div>
+            <div class="text sscroll">{{ currentBoard._description }}</div>
             <div class="next">
               @if(currentBoard.state!='todo'){
               <button nz-button nzType="primary" (click)="nextStep()">

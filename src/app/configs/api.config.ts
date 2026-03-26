@@ -20,7 +20,7 @@ function getInitialToolWebUrl(): string {
 function getInitialRegistryUrl(): string {
   return (typeof process !== 'undefined' && window['env'].get("AILY_NPM_REGISTRY"))
     ? window['env'].get("AILY_NPM_REGISTRY")
-    : 'https://registry.diandeng.tech';
+    : 'https://registry.yysc.tech';
 }
 
 // 动态获取服务器地址，优先使用缓存的值
