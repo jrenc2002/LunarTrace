@@ -9,7 +9,7 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://dl.diandeng.tech/blockly"
+        "url": "https://dl.yysc.tech/blockly"
       }
     ],
     "appId": "blockly.aily.pro",
