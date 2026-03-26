@@ -54,6 +54,7 @@ interface AbsNode {
   indent: number;                  // 缩进级别
   lineNumber: number;              // 源代码行号
   raw: string;                     // 原始行内容
+  extraState?: Record<string, any>; // @extra: 注解中的 mutator 状态
 }
 
 /**
@@ -181,6 +182,71 @@ function convertDynamicMeta(meta: DynamicBlockMeta): Partial<BlockMeta> {
 // =============================================================================
 // 内置块定义（作为动态加载失败时的回退）
 // =============================================================================
+
+// Blockly 运行时查询缓存：blockType -> Partial<BlockMeta>
+const runtimeBlockMetaCache = new Map<string, Partial<BlockMeta> | null>();
+
+/**
+ * 从 Blockly 运行时查询块的字段/输入结构。
+ * 当块仅由 JS 定义（不在 block.json 中）时，静态 getBlockMeta() 无法获取元信息，
+ * 此函数通过创建临时块实例来获取其真实的 argsOrder。
+ * 结果会被缓存以避免重复创建。
+ */
+function queryBlocklyRuntimeMeta(blockType: string): Partial<BlockMeta> | undefined {
+  if (runtimeBlockMetaCache.has(blockType)) {
+    return runtimeBlockMetaCache.get(blockType) || undefined;
+  }
+  try {
+    const Blockly = (window as any).Blockly;
+    if (!Blockly) return undefined;
+    const workspace = Blockly.getMainWorkspace?.();
+    if (!workspace) return undefined;
+    const tempBlock = workspace.newBlock(blockType);
+    if (!tempBlock) return undefined;
+    try {
+      const argsOrder: Array<{ name: string; kind: 'field' | 'valueInput' | 'statementInput' }> = [];
+      const fieldNames: string[] = [];
+      const valueInputNames: string[] = [];
+      const statementInputNames: string[] = [];
+      if (tempBlock.inputList) {
+        for (const input of tempBlock.inputList) {
+          if (input.fieldRow) {
+            for (const field of input.fieldRow) {
+              if (field.name && field.SERIALIZABLE) {
+                argsOrder.push({ name: field.name, kind: 'field' });
+                fieldNames.push(field.name);
+              }
+            }
+          }
+          if (input.connection) {
+            const inputName = input.name;
+            if (input.connection.type === 1) {
+              argsOrder.push({ name: inputName, kind: 'valueInput' });
+              valueInputNames.push(inputName);
+            } else if (input.connection.type === 3) {
+              argsOrder.push({ name: inputName, kind: 'statementInput' });
+              statementInputNames.push(inputName);
+            }
+          }
+        }
+      }
+      const result: Partial<BlockMeta> = {
+        argsOrder: argsOrder.length > 0 ? argsOrder : undefined,
+        fieldNames: fieldNames.length > 0 ? fieldNames : undefined,
+        valueInputNames: valueInputNames.length > 0 ? valueInputNames : undefined,
+        statementInputNames: statementInputNames.length > 0 ? statementInputNames : undefined,
+        hasStatementInput: statementInputNames.length > 0,
+      };
+      runtimeBlockMetaCache.set(blockType, result);
+      return result;
+    } finally {
+      tempBlock.dispose(false);
+    }
+  } catch (e) {
+    runtimeBlockMetaCache.set(blockType, null);
+    return undefined;
+  }
+}
 
 /**
  * 内置块定义 - 仅包含核心块，作为动态加载失败时的回退
@@ -587,7 +653,7 @@ export class BlocklyAbsParser {
     }
     
     // 解析当前行
-    const { type, fields, inlineInputs } = this.parseBlockLine(trimmed);
+    const { type, fields, inlineInputs, extraState: parsedExtraState } = this.parseBlockLine(trimmed);
     
     if (!type) {
       this.errors.push({
@@ -605,7 +671,8 @@ export class BlocklyAbsParser {
       children: [],
       indent: actualIndent,
       lineNumber: this.currentLine + 1,
-      raw: trimmed
+      raw: trimmed,
+      ...(parsedExtraState ? { extraState: parsedExtraState } : {})
     };
     
     this.currentLine++;
@@ -702,15 +769,28 @@ export class BlocklyAbsParser {
     type: string;
     fields: Record<string, any>;
     inlineInputs: Record<string, AbsNode>;
+    extraState?: Record<string, any>;
   } {
     const fields: Record<string, any> = {};
     const inlineInputs: Record<string, AbsNode> = {};
+    
+    // 提取 @extra:{json} 注解（通用 mutator 状态传递，支持任何带 extraState 的块）
+    let extraState: Record<string, any> | undefined;
+    const extraMatch = line.match(/ @extra:(\{.*\})\s*$/);
+    if (extraMatch) {
+      try {
+        extraState = JSON.parse(extraMatch[1]);
+      } catch (e) {
+        // JSON 解析失败，忽略注解
+      }
+      line = line.substring(0, line.lastIndexOf(' @extra:'));
+    }
     
     // 匹配 block_type(args) 或 block_type 或 block_type()（空括号）
     const match = line.match(/^(\w+)(?:\((.*)\))?$/);
     
     if (!match) {
-      return { type: '', fields, inlineInputs };
+      return { type: '', fields, inlineInputs, extraState };
     }
     
     const type = match[1];
@@ -721,7 +801,7 @@ export class BlocklyAbsParser {
       this.assignArguments(type, args, fields, inlineInputs);
     }
     
-    return { type, fields, inlineInputs };
+    return { type, fields, inlineInputs, extraState };
   }
   
   /**
@@ -786,7 +866,8 @@ export class BlocklyAbsParser {
     fields: Record<string, any>,
     inlineInputs: Record<string, AbsNode>
   ): void {
-    const meta = getBlockMeta(blockType);
+    // 优先从 block.json 获取元信息，失败时从 Blockly 运行时查询
+    const meta = getBlockMeta(blockType) || queryBlocklyRuntimeMeta(blockType);
     
     // 首先提取命名参数（KEY=value 格式）
     const namedArgs: Record<string, string> = {};
@@ -811,7 +892,10 @@ export class BlocklyAbsParser {
     
     // 处理命名参数
     for (const [fieldName, value] of Object.entries(namedArgs)) {
-      if (this.isComplexExpression(value)) {
+      // 裸变量引用 $varName 或 $varName:TYPE（不含函数调用）→ 始终作为字段值
+      if (/^\$[^\s(]+$/.test(value)) {
+        fields[fieldName] = this.parseFieldValue(value);
+      } else if (this.isComplexExpression(value)) {
         const valueNode = this.parseInlineValue(value);
         if (valueNode) {
           inlineInputs[fieldName] = valueNode;
@@ -988,9 +1072,14 @@ export class BlocklyAbsParser {
       return unescapeString(value.slice(1, -1));
     }
     
-    // 变量字段 $varName
+    // 变量字段 $varName 或 $varName:TYPE（类型变量）
     if (value.startsWith('$')) {
-      return { name: value.slice(1) };
+      const varRef = value.slice(1);
+      const colonIdx = varRef.lastIndexOf(':');
+      if (colonIdx > 0 && /^[A-Z_][A-Z0-9_]*$/i.test(varRef.slice(colonIdx + 1))) {
+        return { name: varRef.slice(0, colonIdx), type: varRef.slice(colonIdx + 1) };
+      }
+      return { name: varRef };
     }
     
     // 数字
@@ -1217,10 +1306,16 @@ export class BlocklyAbsParser {
       }
     }
     
+    // === 通用 @extra: 注解优先：如果 AbsNode 携带了 @extra: 解析的 extraState，直接使用 ===
+    if (node.extraState) {
+      config.extraState = node.extraState as BlockConfig['extraState'];
+    }
+    
     // 特殊处理使用 function_params_mutator 的块：将 EXTRA_N 字段转换为 extraState.params，
     // 并将 EXTRA_N 输入重映射到 RETURN
+    // 仅在没有 @extra: 注解时生效（AI 手写 ABS 的兼容路径）
     const blockMutator = getBlockMeta(node.type)?.mutator;
-    if (blockMutator === 'function_params_mutator') {
+    if (!config.extraState && blockMutator === 'function_params_mutator') {
       // 1. 收集 EXTRA_N 字段（参数类型/名称对）
       const extraFields: Array<{ index: number; value: any }> = [];
       for (const [key, value] of Object.entries(config.fields || {})) {
@@ -1281,12 +1376,31 @@ export class BlocklyAbsParser {
         }
       }
       
-      // 5. 设置 extraState
+      // 5. 设置 extraState（包含 paramCount，funcVarId/paramVarIds 由运行时 loadExtraState 生成）
       if (params.length > 0 || returnType !== 'void') {
         config.extraState = {
+          paramCount: params.length,
           params,
           returnType
         } as BlockConfig['extraState'];
+      }
+    }
+
+    // 通用 EXTRA_{N} 值输入 → INPUT{N} 重映射
+    // 适用于所有使用 dynamic-inputs 插件的块（如函数调用块等），
+    // 这些块的 mutator 通过 extraCount 控制 INPUT{N} 数量
+    if (config.inputs) {
+      const extraInputEntries = Object.entries(config.inputs)
+        .filter(([k]) => /^EXTRA_\d+$/.test(k))
+        .sort(([a], [b]) =>
+          parseInt(a.match(/\d+/)![0]) - parseInt(b.match(/\d+/)![0]));
+      
+      if (extraInputEntries.length > 0) {
+        for (let i = 0; i < extraInputEntries.length; i++) {
+          const [oldKey, value] = extraInputEntries[i];
+          config.inputs![`INPUT${i}`] = value;
+          delete config.inputs![oldKey];
+        }
       }
     }
 
@@ -1365,7 +1479,7 @@ function detectDynamicInputPattern(inputKeys: string[]): {
     return {
       inputPattern: /^INPUT(\d+)$/,
       extraStateKey: 'extraCount',
-      baseCount: 1,  // extraCount = 总数量 - 1 (默认有 INPUT0)
+      baseCount: 0,  // extraCount = INPUT 总数量（块默认无 INPUT，全部由 mutator 动态添加）
       prefix: 'INPUT'
     };
   }
