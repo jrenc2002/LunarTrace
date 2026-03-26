@@ -59,10 +59,10 @@ export class FloatSiderComponent implements OnInit, OnDestroy {
   }
 
   private requireFeaturePreviewAccess(): boolean {
-    // if (!this.authService.hasFeaturePreviewAccess()) {
-    //   this.message.warning('Coming Soon');
-    //   return false;
-    // }
+    if (!this.authService.hasFeaturePreviewAccess()) {
+      this.message.warning('Coming Soon');
+      return false;
+    }
     return true;
   }
 
