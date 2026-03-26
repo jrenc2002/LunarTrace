@@ -1034,7 +1034,7 @@ function createWindow() {
   })
 
   mainWindow = new BrowserWindow({
-    ...winState.winOptions,
+    ...winState.state,
     show: false,
     minWidth: 800,
     minHeight: 600,
@@ -1050,6 +1050,11 @@ function createWindow() {
       // // 启用 Web Serial API 支持
       // enableBlinkFeatures: 'Serial',
     },
+  });
+
+  mainWindow.setBounds({
+    height: winState.state.height,
+    width: winState.state.width,
   });
 
   winState.manage(mainWindow);
