@@ -1020,6 +1020,10 @@ function updateMainWindowWithPendingData() {
 }
 
 function createWindow() {
+  // 检查是否为首次启动（没有窗口状态记录文件）
+  const winStateFilePath = path.join(process.env.AILY_APPDATA_PATH, 'window-state.json');
+  const isFirstLaunch = !fs.existsSync(winStateFilePath);
+
   const winState = new WinState({
     defaultWidth: 1200,
     defaultHeight: 780,
@@ -1052,8 +1056,11 @@ function createWindow() {
 
   // mainWindow.setMenu(null);
 
-  // 当页面准备好显示时，再显示窗口
+  // 当页面准备好显示时，再显示窗口（首次启动时最大化）
   mainWindow.once('ready-to-show', () => {
+    if (isFirstLaunch) {
+      mainWindow.maximize();
+    }
     mainWindow.show();
   });
 
