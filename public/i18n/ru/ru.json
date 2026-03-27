@@ -326,6 +326,7 @@
         "MERMAID_ARCH_CANCEL": "Отмена",
         "MERMAID_COPY_FAILED": "Ошибка копирования",
         "MERMAID_SAVE_FAILED": "Ошибка сохранения",
+        "CLICK_TO_EDIT": "Нажмите для редактирования",
         "ONBOARDING": {
             "STEP1_TITLE": "Поле ввода",
             "STEP1_DESC": "Введите здесь ваши вопросы или задачи для помощи ИИ. Нажмите Enter для отправки, Ctrl+Enter для новой строки",

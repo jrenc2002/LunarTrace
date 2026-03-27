@@ -326,6 +326,7 @@
         "MERMAID_ARCH_CANCEL": "Annuler",
         "MERMAID_COPY_FAILED": "Échec de la copie",
         "MERMAID_SAVE_FAILED": "Échec de l'enregistrement",
+        "CLICK_TO_EDIT": "Cliquer pour modifier",
         "ONBOARDING": {
             "STEP1_TITLE": "Zone de saisie",
             "STEP1_DESC": "Tapez ici vos questions ou tâches pour l'assistance IA. Appuyez sur Entrée pour envoyer, Ctrl+Entrée pour nouvelle ligne",
