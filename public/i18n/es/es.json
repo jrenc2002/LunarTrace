@@ -588,7 +588,14 @@
         "UNINSTALLING_CURRENT_BOARD": "Desinstalando placa actual...",
         "INSTALLING_NEW_BOARD": "Instalando nueva placa...",
         "UPDATING_PROJECT_CONFIG": "Actualizando configuración del proyecto...",
-        "BOARD_SWITCH_FAILED": "Error al cambiar la placa: "
+        "BOARD_SWITCH_FAILED": "Error al cambiar la placa: ",
+        "LOCK_CONFLICT_TITLE": "Project already open",
+        "LOCK_CONFLICT_MESSAGE": "Another window or version may be editing this project.",
+        "LOCK_CONFLICT_CONTENT": "Another instance may be editing this project.\nPID: {{pid}}\nVersion: {{version}}",
+        "LOCK_CANCEL": "Cancel",
+        "LOCK_FOCUS_OTHER": "Bring to front",
+        "LOCK_FORCE_OPEN": "Open anyway",
+        "LOCK_ACQUIRE_FAILED": "Could not acquire project lock. Please try again."
     },
     "NOTIFICATION": {
         "STOP": "Detener",

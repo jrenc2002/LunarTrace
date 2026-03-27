@@ -588,7 +588,14 @@
         "UNINSTALLING_CURRENT_BOARD": "現在のボードをアンインストール中...",
         "INSTALLING_NEW_BOARD": "新しいボードをインストール中...",
         "UPDATING_PROJECT_CONFIG": "プロジェクト設定を更新中...",
-        "BOARD_SWITCH_FAILED": "ボードの切り替えに失敗しました: "
+        "BOARD_SWITCH_FAILED": "ボードの切り替えに失敗しました: ",
+        "LOCK_CONFLICT_TITLE": "プロジェクトは既に別のウィンドウで開かれています",
+        "LOCK_CONFLICT_MESSAGE": "別のウィンドウまたはバージョンがこのプロジェクトを編集中の可能性があります。",
+        "LOCK_CONFLICT_CONTENT": "別のインスタンスがこのプロジェクトを編集中の可能性があります。\nPID: {{pid}}\nバージョン: {{version}}",
+        "LOCK_CANCEL": "キャンセル",
+        "LOCK_FOCUS_OTHER": "開いているウィンドウへ切り替え",
+        "LOCK_FORCE_OPEN": "それでも開く",
+        "LOCK_ACQUIRE_FAILED": "プロジェクトロックを取得できませんでした。再試行してください。"
     },
     "NOTIFICATION": {
         "STOP": "停止",

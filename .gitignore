@@ -37,6 +37,9 @@ yarn.lock
 !.vscode/extensions.json
 .history/*
 
+# Project-local IDE lock (cross-instance)
+.aily/
+
 # Miscellaneous
 /.angular/cache
 .sass-cache/

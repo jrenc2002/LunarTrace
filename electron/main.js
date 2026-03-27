@@ -5,6 +5,7 @@ const WinState = require('electron-win-state').default;
 const { app, BrowserWindow, ipcMain, dialog, screen, shell, net } = require("electron");
 
 const { isWin32, isDarwin, isLinux } = require("./platform");
+const projectLock = require("./project-lock");
 
 // 设置应用名称，用于 Windows 系统通知显示
 app.setName("aily blockly");
@@ -218,6 +219,78 @@ if (process.defaultApp) {
 let pendingFileToOpen = null;
 let pendingRoute = null;
 let pendingQueryParams = null;
+/** 当前主进程已持有的项目锁（规范化路径） */
+let heldProjectLockNormalized = null;
+
+function getProjectLockStringsForMain() {
+  const defaults = {
+    LOCK_CONFLICT_TITLE: "Project already open",
+    LOCK_CONFLICT_MESSAGE: "Another window or version may be editing this project.",
+    LOCK_CANCEL: "Cancel",
+    LOCK_FOCUS_OTHER: "Bring to front",
+    LOCK_FORCE_OPEN: "Open anyway",
+  };
+  try {
+    const loc = (app.getLocale() || "").toLowerCase();
+    const pack = loc.startsWith("zh") ? "zh_cn" : "en";
+    const fp = path.join(__dirname, `../public/i18n/${pack}/${pack}.json`);
+    if (!fs.existsSync(fp)) {
+      return defaults;
+    }
+    const j = JSON.parse(fs.readFileSync(fp, "utf8"));
+    const P = j.PROJECT || {};
+    return {
+      LOCK_CONFLICT_TITLE: P.LOCK_CONFLICT_TITLE || defaults.LOCK_CONFLICT_TITLE,
+      LOCK_CONFLICT_MESSAGE: P.LOCK_CONFLICT_MESSAGE || defaults.LOCK_CONFLICT_MESSAGE,
+      LOCK_CANCEL: P.LOCK_CANCEL || defaults.LOCK_CANCEL,
+      LOCK_FOCUS_OTHER: P.LOCK_FOCUS_OTHER || defaults.LOCK_FOCUS_OTHER,
+      LOCK_FORCE_OPEN: P.LOCK_FORCE_OPEN || defaults.LOCK_FORCE_OPEN,
+    };
+  } catch (e) {
+    console.warn("getProjectLockStringsForMain:", e);
+    return defaults;
+  }
+}
+
+/**
+ * 打开项目目录前获取锁；冲突时弹出主进程对话框。
+ * @returns {Promise<{ proceed: boolean }>}
+ */
+async function resolveProjectLockOrPrompt(projectDir, parentWindow) {
+  const r = projectLock.tryAcquireLock(projectDir);
+  if (r.ok) {
+    heldProjectLockNormalized = r.normalizedPath;
+    return { proceed: true };
+  }
+  if (r.conflict && r.holder) {
+    const s = getProjectLockStringsForMain();
+    const detail = `${s.LOCK_CONFLICT_MESSAGE}\nPID: ${r.holder.pid}\n${r.holder.execPath || ""}\n${r.holder.appVersion || ""}`;
+    const { response } = await dialog.showMessageBox(parentWindow || undefined, {
+      type: "warning",
+      title: s.LOCK_CONFLICT_TITLE,
+      message: s.LOCK_CONFLICT_TITLE,
+      detail,
+      buttons: [s.LOCK_CANCEL, s.LOCK_FOCUS_OTHER, s.LOCK_FORCE_OPEN],
+      defaultId: 1,
+      cancelId: 0,
+    });
+    if (response === 0) {
+      return { proceed: false };
+    }
+    if (response === 1) {
+      projectLock.focusProcessByPid(r.holder.pid);
+      return { proceed: false };
+    }
+    const r2 = projectLock.tryAcquireLock(projectDir, { force: true });
+    if (r2.ok) {
+      heldProjectLockNormalized = r2.normalizedPath;
+      return { proceed: true };
+    }
+    return { proceed: false };
+  }
+  console.warn("project lock failed:", r.error || r);
+  return { proceed: false };
+}
 
 // 处理命令行参数中的 .abi 文件和路由参数
 function handleCommandLineArgs(argv) {
@@ -977,7 +1050,7 @@ function loadEnv() {
 
 
 // 更新已存在主窗口的内容（用于second-instance处理）
-function updateMainWindowWithPendingData() {
+async function updateMainWindowWithPendingData() {
   if (!mainWindow || !mainWindow.webContents) {
     console.log('主窗口不存在，无法更新内容');
     return;
@@ -986,7 +1059,13 @@ function updateMainWindowWithPendingData() {
   let targetUrl = null;
 
   if (pendingFileToOpen) {
-    const routePath = `main/blockly-editor?path=${encodeURIComponent(pendingFileToOpen)}`;
+    const dir = pendingFileToOpen;
+    const { proceed } = await resolveProjectLockOrPrompt(dir, mainWindow);
+    if (!proceed) {
+      pendingFileToOpen = null;
+      return;
+    }
+    const routePath = `main/blockly-editor?path=${encodeURIComponent(dir)}`;
     console.log('Updating existing window with project path:', routePath);
     targetUrl = `#/${routePath}`;
     pendingFileToOpen = null;
@@ -1318,19 +1397,21 @@ if (shouldUseMultiInstance()) {
       // 处理其他类型的启动参数（如.abi文件、路由参数等）
       handleCommandLineArgs(commandLine);
 
-      // 如果有待处理的文件或路由，更新主窗口
-      if (pendingFileToOpen || pendingRoute) {
-        updateMainWindowWithPendingData();
-      }
-
-      // 将现有窗口置前
-      if (mainWindow) {
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore();
+      void (async () => {
+        // 如果有待处理的文件或路由，更新主窗口
+        if (pendingFileToOpen || pendingRoute) {
+          await updateMainWindowWithPendingData();
         }
-        mainWindow.focus();
-        mainWindow.show();
-      }
+
+        // 将现有窗口置前
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) {
+            mainWindow.restore();
+          }
+          mainWindow.focus();
+          mainWindow.show();
+        }
+      })();
     }
   });
 } else {
@@ -1351,23 +1432,42 @@ if (shouldUseMultiInstance()) {
         // 处理其他类型的启动参数（如.abi文件、路由参数等）
         handleCommandLineArgs(commandLine);
 
-        // 如果有待处理的文件或路由，更新主窗口
-        if (pendingFileToOpen || pendingRoute) {
-          updateMainWindowWithPendingData();
-        }
-      }
+        void (async () => {
+          // 如果有待处理的文件或路由，更新主窗口
+          if (pendingFileToOpen || pendingRoute) {
+            await updateMainWindowWithPendingData();
+          }
 
-      // 将现有窗口置前
-      if (mainWindow) {
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore();
-        }
-        mainWindow.focus();
-        mainWindow.show();
+          // 将现有窗口置前
+          if (mainWindow) {
+            if (mainWindow.isMinimized()) {
+              mainWindow.restore();
+            }
+            mainWindow.focus();
+            mainWindow.show();
+          }
+        })();
       }
     });
   }
 }
+
+// TODO: 增加快捷任务栏任务，仅 Windows 支持（macOS/Linux 无 app.setUserTasks）
+if (process.platform === "win32" && typeof app.setUserTasks === "function") {
+  // app.setUserTasks([
+  //   {
+  //     program: process.execPath,
+  //     arguments: "--new-window",
+  //     iconPath: process.execPath,
+  //     iconIndex: 0,
+  //     title: "New Window",
+  //     description: "Create a new window",
+  //   },
+  // ]);
+}
+
+// TODO: 最近项目列表
+
 
 app.on("ready", async () => {
   // 检查是否是协议启动
@@ -1412,6 +1512,13 @@ app.on("ready", async () => {
     setTimeout(() => {
       handleProtocol(protocolUrl);
     }, 1000);
+  }
+
+  if (pendingFileToOpen) {
+    const { proceed } = await resolveProjectLockOrPrompt(pendingFileToOpen, null);
+    if (!proceed) {
+      pendingFileToOpen = null;
+    }
   }
 
   // 创建主窗口
@@ -1467,6 +1574,17 @@ app.on("window-all-closed", () => {
   }
 });
 
+app.on("will-quit", () => {
+  if (heldProjectLockNormalized) {
+    try {
+      projectLock.releaseLock(heldProjectLockNormalized);
+    } catch (e) {
+      console.warn("will-quit release project lock:", e);
+    }
+    heldProjectLockNormalized = null;
+  }
+});
+
 // 在 macOS 上，当应用被激活时（如点击 Dock 图标），重新创建窗口
 app.on("activate", () => {
   if (mainWindow === null) {
@@ -1497,15 +1615,20 @@ app.on('open-file', (event, filePath) => {
     console.log('Project directory:', projectDir);
 
     if (mainWindow && mainWindow.webContents) {
-      // 直接导航到对应路由
-      const routePath = `main/blockly-editor?path=${encodeURIComponent(projectDir)}`;
-      console.log('Navigating to route:', routePath);
+      void (async () => {
+        const { proceed } = await resolveProjectLockOrPrompt(projectDir, mainWindow);
+        if (!proceed) {
+          return;
+        }
+        const routePath = `main/blockly-editor?path=${encodeURIComponent(projectDir)}`;
+        console.log('Navigating to route:', routePath);
 
-      if (serve) {
-        mainWindow.loadURL(`http://localhost:4200/#/${routePath}`);
-      } else {
-        mainWindow.loadFile(`renderer/index.html`, { hash: `#/${routePath}` });
-      }
+        if (serve) {
+          mainWindow.loadURL(`http://localhost:4200/#/${routePath}`);
+        } else {
+          mainWindow.loadFile(`renderer/index.html`, { hash: `#/${routePath}` });
+        }
+      })();
     } else {
       pendingFileToOpen = projectDir;
     }
@@ -1545,6 +1668,39 @@ ipcMain.handle("select-folder", async (event, data) => {
     return data.path;
   }
   return result.filePaths[0];
+});
+
+// 跨版本项目占用：尝试获取 / 释放锁、前置其他进程窗口
+ipcMain.handle("project-lock-try", (event, data) => {
+  const { projectPath, force } = data || {};
+  const r = projectLock.tryAcquireLock(projectPath, { force: !!force });
+  if (r.ok) {
+    heldProjectLockNormalized = r.normalizedPath;
+  }
+  return r;
+});
+
+ipcMain.handle("project-lock-release", (event, data) => {
+  const { projectPath } = data || {};
+  const target = projectPath || heldProjectLockNormalized;
+  if (!target) {
+    return { ok: true };
+  }
+  const beforeHeld = heldProjectLockNormalized;
+  const r = projectLock.releaseLock(target);
+  if (r.ok && beforeHeld) {
+    const nt = projectLock.normalizeProjectPathLoose(target);
+    const nh = projectLock.normalizeProjectPathLoose(beforeHeld);
+    if (nt === nh) {
+      heldProjectLockNormalized = null;
+    }
+  }
+  return r;
+});
+
+ipcMain.handle("project-lock-focus", (event, data) => {
+  const pid = data && data.pid;
+  return projectLock.focusProcessByPid(pid);
 });
 
 // 另存为用

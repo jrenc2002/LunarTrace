@@ -588,7 +588,14 @@
         "UNINSTALLING_CURRENT_BOARD": "正在卸載當前開發板...",
         "INSTALLING_NEW_BOARD": "正在安裝新開發板...",
         "UPDATING_PROJECT_CONFIG": "正在更新專案配置...",
-        "BOARD_SWITCH_FAILED": "開發板切換失敗: "
+        "BOARD_SWITCH_FAILED": "開發板切換失敗: ",
+        "LOCK_CONFLICT_TITLE": "專案已在其他視窗開啟",
+        "LOCK_CONFLICT_MESSAGE": "另一視窗或版本可能正在編輯此專案。",
+        "LOCK_CONFLICT_CONTENT": "其他執行個體可能正在編輯此專案。\n程序 PID：{{pid}}\n版本：{{version}}",
+        "LOCK_CANCEL": "取消",
+        "LOCK_FOCUS_OTHER": "切換到已開啟的視窗",
+        "LOCK_FORCE_OPEN": "仍要開啟",
+        "LOCK_ACQUIRE_FAILED": "無法取得專案鎖，請重試"
     },
     "NOTIFICATION": {
         "STOP": "終止",
