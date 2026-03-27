@@ -229,9 +229,9 @@ export class ChatService {
     }
   }
 
-  startSession(mode: string, tools: MCPTool[] | null = null, maxCount?: number, customllmConfig?: any, selectModel?: string): Observable<any> {
+  startSession(mode: string, tools: MCPTool[] | null = null, maxCount?: number, customllmConfig?: any, selectModel?: string, customSessionId?: string): Observable<any> {
     const payload: any = {
-      session_id: this.currentSessionId,
+      session_id: customSessionId || this.currentSessionId,
       tools: tools || [],
       mode
     };
