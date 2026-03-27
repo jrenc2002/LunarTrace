@@ -32,6 +32,21 @@ export function estimateTokenCount(text: string): number {
   return _estimateTokensFallback(text);
 }
 
+/**
+ * 异步 Token 计数器 — 长文本卸载到 Worker
+ *
+ * 参考 Copilot TokenizerProvider 的 Worker 架构：
+ * 短文本同步计数（返回 resolved Promise），
+ * 长文本通过 Worker 异步计数避免阻塞 UI。
+ */
+export async function estimateTokenCountAsync(text: string): Promise<number> {
+  if (!text) return 0;
+  if (_tiktokenService) {
+    return _tiktokenService.countTokensAsync(text);
+  }
+  return _estimateTokensFallback(text);
+}
+
 /** 启发式 fallback（tiktoken 未就绪时使用） */
 function _estimateTokensFallback(text: string): number {
   let tokenCount = 0;
@@ -95,10 +110,10 @@ export function estimateMessagesTokens(messages: any[]): number {
 export function estimateToolsTokens(tools: any[]): number {
   if (!tools || tools.length === 0) return 0;
 
-  let tokens = 0;
+  // 参考 Copilot: baseToolTokens=16（tools 数组整体框架） + baseTokensPerTool=8（每个工具）
+  let tokens = 16; // 工具定义数组框架开销（一次性）
   for (const tool of tools) {
-    // 工具名 + 描述 + JSON schema 序列化
-    tokens += 4; // 工具定义框架开销
+    tokens += 8; // 每个工具的定义框架开销
     if (tool.name) tokens += estimateTokenCount(tool.name);
     if (tool.description) tokens += estimateTokenCount(tool.description);
     if (tool.input_schema) {
@@ -173,6 +188,12 @@ import {
   BackgroundSummarizationState
 } from './background-summarizer.service';
 import type { TurnSpan } from '../core/turn-types';
+import { TurnManager } from '../core/turn-manager';
+import {
+  PrioritizedListEngine,
+  annotateWithPriority,
+  annotateMessagesLegacy,
+} from '../core/prioritized-list';
 
 // ==================== 主服务 ====================
 
@@ -227,15 +248,34 @@ export class ContextBudgetService {
   /** LLM 摘要阈值比例（占 maxContextTokens 的百分比） */
   private static readonly SUMMARIZATION_THRESHOLD_RATIO = 0.75;
 
-  /** 工具结果截断长度（字符数）— 操作类工具的默认限额 */
-  private static readonly TOOL_RESULT_TRUNCATE_LENGTH = 500;
+  /**
+   * 工具结果截断比例（占 maxContextTokens 的百分比）
+   * 参考 Copilot: MAX_TOOL_RESPONSE_PCT = 0.5，即单个工具结果最多占上下文窗口 50%
+   * 实际截断上限 = floor(maxContextTokens × MAX_TOOL_RESPONSE_PCT)
+   */
+  private static readonly MAX_TOOL_RESPONSE_PCT = 0.50;
 
   /**
-   * 信息类工具结果截断长度（字符数）— read_file / fetch / grep 等
-   * 策略：信息类工具结果是 LLM 推理的事实依据，
-   * 截断后 LLM 只能靠猜测，准确率大幅下降。给 4x 预算。
+   * 信息类工具结果截断比例（占 MAX_TOOL_RESPONSE_PCT 的百分比）
+   * 信息类工具 (read_file/fetch/grep) 是 LLM 推理的事实依据，
+   * 给予完整的 MAX_TOOL_RESPONSE_PCT 预算。
+   * 操作类工具信息密度低，给 25% 预算。
    */
-  private static readonly INFO_TOOL_TRUNCATE_LENGTH = 2000;
+  private static readonly INFO_TOOL_BUDGET_RATIO = 1.0;
+  private static readonly ACTION_TOOL_BUDGET_RATIO = 0.25;
+
+  /**
+   * Turn 年龄衰减截断系数（参考 Copilot 的 isHistorical 分层策略）
+   * 越旧的 Turn 工具结果信息密度越低，更激进地截断以释放预算。
+   *   - 当前 Turn（最新）：100% — 完整保留，LLM 正在使用
+   *   - 上一 Turn：75% — 近期上下文，仍有参考价值
+   *   - 更旧 Turn：50% — 仅保留关键信息
+   */
+  private static readonly TURN_AGE_TRUNCATION_TIERS = [
+    { maxAge: 0, ratio: 1.0 },   // 当前 Turn
+    { maxAge: 1, ratio: 0.75 },  // 上一 Turn
+    { maxAge: Infinity, ratio: 0.50 },  // 更旧
+  ];
 
   /**
    * 信息类工具名称集合（结果为 LLM 推理事实依据的工具）
@@ -358,6 +398,9 @@ export class ContextBudgetService {
       this._maxContextTokens = ContextBudgetService.DEFAULT_CONTEXT_SIZE;
       return;
     }
+
+    // P11: 同步切换编码器（根据模型选择 cl100k_base/o200k_base）
+    this.tiktokenService.switchEncoderForModel(modelName);
 
     // 尝试精确匹配
     const lowerName = modelName.toLowerCase();
@@ -482,6 +525,7 @@ export class ContextBudgetService {
   async compressIfNeeded(
     messages: any[],
     sessionId: string,
+    turnManager: TurnManager,
     llmConfig?: any,
     selectModel?: string,
     turnSpans?: readonly TurnSpan[]
@@ -497,20 +541,23 @@ export class ContextBudgetService {
     if (bg.state === BackgroundSummarizationState.Completed) {
       const result = bg.consumeResult();
       if (result) {
-        const applied = bg.applySummary(messages, result);
+        const { messages: applied, success } = bg.applySummary(turnManager, result);
         const afterTokens = estimateMessagesTokens(applied);
-        console.log(`[上下文压缩] 应用后台摘要: ${currentTokens} → ${afterTokens} tokens`);
+        console.log(`[上下文压缩] 应用后台摘要: ${currentTokens} → ${afterTokens} tokens${success ? '' : '（写回失败，摘要未生效）'}`);
 
-        this.compressionEventSubject.next({
-          type: 'llm_summarization',
-          beforeTokens: currentTokens,
-          afterTokens,
-          compressedMessages: messages.length - applied.length,
-          timestamp: Date.now()
-        });
+        if (success) {
+          this.compressionEventSubject.next({
+            type: 'llm_summarization',
+            beforeTokens: currentTokens,
+            afterTokens,
+            compressedMessages: messages.length - applied.length,
+            timestamp: Date.now()
+          });
 
-        this.updateBudget(applied);
-        return applied;
+          this.updateBudget(applied);
+          return applied;
+        }
+        // 写回失败时继续走后续压缩层级
       }
     }
 
@@ -520,20 +567,23 @@ export class ContextBudgetService {
       const result = await bg.waitForCompletion();
       if (result) {
         bg.consumeResult(); // 消费掉状态
-        const applied = bg.applySummary(messages, result);
+        const { messages: applied, success } = bg.applySummary(turnManager, result);
         const afterTokens = estimateMessagesTokens(applied);
-        console.log(`[上下文压缩] 后台摘要等待完成: ${currentTokens} → ${afterTokens} tokens`);
+        console.log(`[上下文压缩] 后台摘要等待完成: ${currentTokens} → ${afterTokens} tokens${success ? '' : '（写回失败，摘要未生效）'}`);
 
-        this.compressionEventSubject.next({
-          type: 'llm_summarization',
-          beforeTokens: currentTokens,
-          afterTokens,
-          compressedMessages: messages.length - applied.length,
-          timestamp: Date.now()
-        });
+        if (success) {
+          this.compressionEventSubject.next({
+            type: 'llm_summarization',
+            beforeTokens: currentTokens,
+            afterTokens,
+            compressedMessages: messages.length - applied.length,
+            timestamp: Date.now()
+          });
 
-        this.updateBudget(applied);
-        return applied;
+          this.updateBudget(applied);
+          return applied;
+        }
+        // 写回失败时继续走后续压缩层级
       }
     }
 
@@ -573,8 +623,13 @@ export class ContextBudgetService {
     console.log(`[上下文压缩] Token 数 (${trimmedTokens}) 超过摘要阈值 (${this.summarizationThreshold})，触发前台 LLM 摘要`);
 
     try {
-      // 委托给 BackgroundSummarizerService，复用其 findPreservePoint / buildConversationText / validateAndTruncateSummary
-      const summarized = await this.backgroundSummarizer.foregroundSummarize(trimmed, sessionId, llmConfig, selectModel);
+      const summarized = await this.backgroundSummarizer.foregroundSummarize(
+        messages,
+        turnManager,
+        sessionId,
+        llmConfig,
+        selectModel
+      );
       const afterTokens = estimateMessagesTokens(summarized);
       console.log(`[上下文压缩] LLM 摘要: ${trimmedTokens} → ${afterTokens} tokens (节省 ${trimmedTokens - afterTokens})`);
 
@@ -589,8 +644,9 @@ export class ContextBudgetService {
       this.updateBudget(summarized);
       return summarized;
     } catch (error) {
-      console.warn('[上下文压缩] LLM 摘要失败，回退到优先级裁剪（Simple mode fallback）:', error);
-      // 层级 4: Simple mode fallback — 已经做过优先级裁剪，直接用
+      // 层级 4: 最终兜底 — foregroundSummarize 内部已实现 Full→Simple 降级链,
+      // 到达此处说明连 Simple mode 也失败了（极端情况），回退到优先级裁剪
+      console.warn('[上下文压缩] 摘要服务完全失败（含 Simple mode），回退到优先级裁剪:', error);
       this.updateBudget(trimmed);
       return trimmed;
     }
@@ -626,198 +682,124 @@ export class ContextBudgetService {
       return this.compressToolResults(messages);
     }
 
-    const maxTokens = this.maxContextTokens;
-    const systemTokens = this._cachedSystemTokens;
-    const toolsTokens = this._cachedToolsTokens;
-    const contextTokens = this._cachedContextTokens;
-    const outputReserve = Math.floor(maxTokens * ContextBudgetService.OUTPUT_RESERVE_RATIO);
-    const availableForMessages = maxTokens - systemTokens - toolsTokens - contextTokens - outputReserve;
-
     // Step 1: 内容级压缩（对所有消息，不移除任何消息）
-    const compressed = this.compressToolResults(messages);
-    let compressedTokens = estimateMessagesTokens(compressed);
-
-    if (compressedTokens <= availableForMessages) {
-      return compressed;
+    // 最新 Turn（turnSpans 末尾）的消息不做截断，保留完整内容供 LLM 推理
+    const latestSpan = turnSpans[turnSpans.length - 1];
+    const latestTurnMsgIndices = new Set<number>();
+    for (let j = latestSpan.startIdx; j < latestSpan.endIdx; j++) {
+      latestTurnMsgIndices.add(j);
     }
 
-    // Step 2: Turn 级移除 — 从最旧 Turn 开始整体移除
-    // 最新 Turn（turnSpans 末尾）永远保留（P900）
-    // 从 turnSpans[0] 开始逐个移除，直到 token 预算足够
-    const removedTurnIndices = new Set<number>();
-
-    for (let i = 0; i < turnSpans.length - 1; i++) {
-      // 计算该 Turn 的 token 数
-      const span = turnSpans[i];
-      let turnTokens = 0;
+    // P7: 构建 msgIndex → turnAge 映射（Turn 年龄：0 = 最新 Turn, 1 = 上一 Turn, ...）
+    const msgTurnAgeMap = new Map<number, number>();
+    const maxTurnIdx = turnSpans.length - 1;
+    for (const span of turnSpans) {
+      const age = maxTurnIdx - turnSpans.indexOf(span);
       for (let j = span.startIdx; j < span.endIdx; j++) {
-        turnTokens += estimateMessageTokens(compressed[j]);
-      }
-
-      removedTurnIndices.add(i);
-      compressedTokens -= turnTokens;
-
-      if (compressedTokens <= availableForMessages) {
-        break;
+        msgTurnAgeMap.set(j, age);
       }
     }
 
-    if (removedTurnIndices.size === 0) {
-      return compressed;
+    const compressed = this.compressToolResults(messages, -1, latestTurnMsgIndices, msgTurnAgeMap);
+
+    // Step 2: 声明式优先级裁剪 — 使用 PrioritizedListEngine
+    // 标注每个 Turn 的优先级（参考 Copilot prompt-tsx 的 priority 机制）
+    const items = annotateWithPriority(compressed, turnSpans, ContextBudgetService.INFO_TOOLS);
+    const engine = new PrioritizedListEngine(this.getAvailableMessageBudget());
+    const result = engine.trim(items);
+
+    if (result.evictedCount > 0) {
+      console.log(
+        `[声明式裁剪] 淘汰 ${result.evictedCount} 个 Turn (${result.evictedTokens} tokens), ` +
+        `保留 ${items.length - result.evictedCount} 个 Turn = ${result.messages.length} 条消息`
+      );
     }
 
-    // 构建结果：过滤掉被移除 Turn 的所有消息
-    const removedMsgIndices = new Set<number>();
-    for (const turnIdx of removedTurnIndices) {
-      const span = turnSpans[turnIdx];
-      for (let j = span.startIdx; j < span.endIdx; j++) {
-        removedMsgIndices.add(j);
-      }
-    }
-
-    const result = compressed.filter((_, idx) => !removedMsgIndices.has(idx));
-
-    console.log(
-      `[Turn 级裁剪] 移除 ${removedTurnIndices.size} 个最旧 Turn (${messages.length - result.length} 条消息), ` +
-      `剩余 ${turnSpans.length - removedTurnIndices.size} 个 Turn = ${result.length} 条消息`
-    );
-
-    return result;
+    return result.messages;
   }
 
   /**
    * 消息级优先级裁剪（Legacy 兜底）
    *
    * 当无 Turn 边界信息时使用（如旧代码路径、从 conversationMessages 直接调用）。
-   * 按消息类型分级，可能拆散 Turn 内部结构。
+   * 按消息类型分级，使用 PrioritizedListEngine 自动淘汰。
    */
   private prioritizedTrimLegacy(messages: any[]): any[] {
     if (messages.length <= ContextBudgetService.RECENT_MESSAGES_PRESERVE) {
       return messages;
     }
 
-    const maxTokens = this.maxContextTokens;
-    const systemTokens = this._cachedSystemTokens;
-    const toolsTokens = this._cachedToolsTokens;
-    const contextTokens = this._cachedContextTokens;
-    const outputReserve = Math.floor(maxTokens * ContextBudgetService.OUTPUT_RESERVE_RATIO);
-    const availableForMessages = maxTokens - systemTokens - toolsTokens - contextTokens - outputReserve;
+    // 内容级压缩
+    const compressed = this.compressToolResults(messages);
 
-    // Step 1: 找到用户最新消息（Priority 900）
-    let lastUserIdx = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'user') {
-        lastUserIdx = i;
-        break;
-      }
-    }
+    // 声明式优先级标注
+    const items = annotateMessagesLegacy(
+      compressed,
+      ContextBudgetService.RECENT_MESSAGES_PRESERVE,
+      ContextBudgetService.INFO_TOOLS
+    );
+    const engine = new PrioritizedListEngine(this.getAvailableMessageBudget());
+    const result = engine.trim(items);
 
-    // Step 2: 分割为 recent（P899）和 older（P700）
-    let preserveStart = Math.max(0, messages.length - ContextBudgetService.RECENT_MESSAGES_PRESERVE);
-    // 确保用户最新消息在 recent 区间内
-    if (lastUserIdx >= 0 && lastUserIdx < preserveStart) {
-      preserveStart = lastUserIdx;
-    }
-
-    const olderMessages = messages.slice(0, preserveStart);
-    const recentMessages = messages.slice(preserveStart);
-
-    // Step 3: 对历史区做内容级压缩
-    const compressedOlder = this.compressToolResults(olderMessages, lastUserIdx);
-
-    // Step 4: 计算 recent 区 token
-    const recentTokens = estimateMessagesTokens(recentMessages);
-    const budgetForOlder = Math.max(0, availableForMessages - recentTokens);
-
-    // Step 5: 智能丢弃 — 优先丢弃操作类工具结果，保留信息类工具结果
-    // 信息类(read_file/fetch/grep)是 LLM 推理依据，值得保留
-    // 操作类(create_file/execute_command/"success")信息密度低，优先牺牲
-    let keptOlder: any[] = [];
-    let accumulatedTokens = 0;
-
-    // Pass 1: 从最新开始尝试全部填入
-    const allFit: any[] = [];
-    let totalOlderTokens = 0;
-    for (let i = compressedOlder.length - 1; i >= 0; i--) {
-      const msgTokens = estimateMessageTokens(compressedOlder[i]);
-      if (totalOlderTokens + msgTokens <= budgetForOlder) {
-        allFit.unshift(compressedOlder[i]);
-        totalOlderTokens += msgTokens;
-      } else {
-        break;
-      }
-    }
-
-    if (allFit.length === compressedOlder.length || budgetForOlder <= 0) {
-      // 全部 fit 或无预算，直接使用
-      keptOlder = allFit;
-      accumulatedTokens = totalOlderTokens;
-    } else {
-      // Pass 2: 预算不足 — 按工具类型分级，优先保留信息类工具结果
-      const highValue: { idx: number; msg: any; tokens: number }[] = [];
-      const lowValue: { idx: number; msg: any; tokens: number }[] = [];
-
-      for (let i = compressedOlder.length - 1; i >= 0; i--) {
-        const m = compressedOlder[i];
-        const t = estimateMessageTokens(m);
-        const isInfoTool = m.role === 'tool' && ContextBudgetService.INFO_TOOLS.has(m.name || '');
-        const isUser = m.role === 'user';
-        if (isInfoTool || isUser) {
-          highValue.unshift({ idx: i, msg: m, tokens: t });
-        } else {
-          lowValue.unshift({ idx: i, msg: m, tokens: t });
-        }
-      }
-
-      // 先填入高价值（从最新开始）
-      accumulatedTokens = 0;
-      const selectedIndices = new Set<number>();
-      for (let i = highValue.length - 1; i >= 0; i--) {
-        if (accumulatedTokens + highValue[i].tokens <= budgetForOlder) {
-          selectedIndices.add(highValue[i].idx);
-          accumulatedTokens += highValue[i].tokens;
-        } else {
-          break;  // 连高价值都放不下了
-        }
-      }
-      // 再用剩余预算填入低价值（从最新开始）
-      for (let i = lowValue.length - 1; i >= 0; i--) {
-        if (accumulatedTokens + lowValue[i].tokens <= budgetForOlder) {
-          selectedIndices.add(lowValue[i].idx);
-          accumulatedTokens += lowValue[i].tokens;
-        }
-        // 低价值不 break，继续尝试更旧但更小的消息
-      }
-      // 按原始顺序输出
-      keptOlder = compressedOlder.filter((_, idx) => selectedIndices.has(idx));
-    }
-
-    const result = [...keptOlder, ...recentMessages];
-    const droppedCount = olderMessages.length - keptOlder.length;
-    if (droppedCount > 0) {
+    if (result.evictedCount > 0) {
       console.log(
-        `[优先级裁剪] 丢弃 ${droppedCount} 条历史消息, ` +
-        `保留 ${keptOlder.length} 条历史 + ${recentMessages.length} 条最近 = ${result.length} 条`
+        `[声明式裁剪-Legacy] 淘汰 ${result.evictedCount} 条消息 (${result.evictedTokens} tokens), ` +
+        `保留 ${result.messages.length} 条消息`
       );
     }
-    return result;
+
+    return result.messages;
+  }
+
+  /**
+   * 计算对话消息可用的 token 预算
+   * = maxContextTokens - system - tools - context - outputReserve
+   */
+  getAvailableMessageBudget(): number {
+    const maxTokens = this.maxContextTokens;
+    const outputReserve = Math.floor(maxTokens * ContextBudgetService.OUTPUT_RESERVE_RATIO);
+    return maxTokens - this._cachedSystemTokens - this._cachedToolsTokens - this._cachedContextTokens - outputReserve;
   }
 
   // ==================== 内容级压缩 ====================
+
+  /**
+   * 计算工具结果的动态截断上限（token 数）
+   * 参考 Copilot: maxToolResultLength = floor(modelMaxPromptTokens × MAX_TOOL_RESPONSE_PCT)
+   *
+   * @param isInfoTool 是否为信息类工具（read_file/fetch/grep 等）
+   * @param turnAge Turn 年龄（0 = 当前 Turn, 1 = 上一 Turn, 2+ = 更旧）。
+   *                默认 0 表示不做年龄衰减（兼容旧调用路径）
+   * @returns token 数上限
+   */
+  getToolResultTokenLimit(isInfoTool: boolean, turnAge: number = 0): number {
+    const maxToolTokens = Math.floor(this.maxContextTokens * ContextBudgetService.MAX_TOOL_RESPONSE_PCT);
+    const baseLimit = Math.floor(maxToolTokens * (isInfoTool
+      ? ContextBudgetService.INFO_TOOL_BUDGET_RATIO
+      : ContextBudgetService.ACTION_TOOL_BUDGET_RATIO));
+
+    // P7: Turn 年龄衰减 — 越旧的 Turn 工具结果截断越激进
+    const tier = ContextBudgetService.TURN_AGE_TRUNCATION_TIERS.find(t => turnAge <= t.maxAge)
+      ?? ContextBudgetService.TURN_AGE_TRUNCATION_TIERS[ContextBudgetService.TURN_AGE_TRUNCATION_TIERS.length - 1];
+    return Math.floor(baseLimit * tier.ratio);
+  }
 
   /**
    * 压缩消息内容（不丢弃消息，只截断内容）
    *
    * 策略：
    * - 用户最新消息永远不压缩（protectedUserIdx 指定）
-   * - 对 tool 消息，清理冗余标签后截断 content
+   * - 最新 Turn 的消息不做截断（protectedMsgIndices 指定），保留完整内容供 LLM 推理
+   * - 对 tool 消息，清理冗余标签后按 token 级动态截断 content
    * - 对 assistant 消息，清理 UI 标签，截断大 arguments
    * - user / system 消息保持原样
    *
    * @param messages 要压缩的消息数组
    * @param protectedUserIdx 永远不压缩的用户消息索引（-1 表示全部可压缩）
+   * @param protectedMsgIndices 最新 Turn 中不做截断的消息索引集合
+   * @param msgTurnAgeMap 消息索引 → Turn 年龄 的映射（用于 P7 分层截断；缺省时所有消息 age=0）
    */
-  compressToolResults(messages: any[], protectedUserIdx: number = -1): any[] {
+  compressToolResults(messages: any[], protectedUserIdx: number = -1, protectedMsgIndices?: Set<number>, msgTurnAgeMap?: Map<number, number>): any[] {
     const result: any[] = [];
 
     for (let i = 0; i < messages.length; i++) {
@@ -825,6 +807,12 @@ export class ContextBudgetService {
 
       // 用户最新消息（P900）永远不压缩
       if (i === protectedUserIdx) {
+        result.push(msg);
+        continue;
+      }
+
+      // 最新 Turn 的消息不做截断（保留完整内容供 LLM 推理当前轮次）
+      if (protectedMsgIndices && protectedMsgIndices.has(i)) {
         result.push(msg);
         continue;
       }
@@ -844,14 +832,13 @@ export class ContextBudgetService {
           .replace(/\n{3,}/g, '\n\n')
           .trim();
 
-        // 信息类工具保留更多内容
+        // 按 token 级动态计算截断上限（参考 Copilot: maxToolResultLength = modelMaxPromptTokens × 50%）
+        // P7: 根据 Turn 年龄分层衰减截断上限
         const toolName = msg.name || '';
         const isInfoTool = ContextBudgetService.INFO_TOOLS.has(toolName);
-        const truncateLimit = isInfoTool
-          ? ContextBudgetService.INFO_TOOL_TRUNCATE_LENGTH
-          : ContextBudgetService.TOOL_RESULT_TRUNCATE_LENGTH;
-
-        const truncatedContent = this.truncateText(cleaned, truncateLimit);
+        const turnAge = msgTurnAgeMap?.get(i) ?? 0;
+        const tokenLimit = this.getToolResultTokenLimit(isInfoTool, turnAge);
+        const truncatedContent = this.truncateByTokens(cleaned, tokenLimit);
         result.push({
           ...msg,
           content: truncatedContent
@@ -892,16 +879,19 @@ export class ContextBudgetService {
 
           // 过滤孤立 tool_calls（无对应 result），并截断 arguments
           // 参考 Copilot: isHistorical 时只保留有对应结果的 tool_calls
+          // 工具参数截断：使用操作类工具的 token 限额（考虑 Turn 年龄衰减）
+          const assistantTurnAge = msgTurnAgeMap?.get(i) ?? 0;
+          const argsTokenLimit = this.getToolResultTokenLimit(false, assistantTurnAge);
           compressedMsg.tool_calls = msg.tool_calls
             .filter((tc: any) => tc.id && existingToolResultIds.has(tc.id))
             .map((tc: any) => {
               const args = tc.function?.arguments;
-              if (args && args.length > ContextBudgetService.TOOL_RESULT_TRUNCATE_LENGTH) {
+              if (args && estimateTokenCount(args) > argsTokenLimit) {
                 return {
                   ...tc,
                   function: {
                     ...tc.function,
-                    arguments: this.truncateText(args, ContextBudgetService.TOOL_RESULT_TRUNCATE_LENGTH)
+                    arguments: this.truncateByTokens(args, argsTokenLimit)
                   }
                 };
               }
@@ -928,11 +918,39 @@ export class ContextBudgetService {
   // ==================== 工具方法 ====================
 
   /**
-   * 截断文本到指定长度
+   * 按 token 数截断文本，采用 Copilot 风格的 40/60 头尾分割策略。
+   *
+   * 参考 Copilot 的 onText() 实现：
+   *   1. 先用 tokenizer 计算实际 token 数
+   *   2. 算出 approxCharsPerToken = text.length / tokens
+   *   3. 按比例转换为字符级截断点
+   *   4. 保留头部 40% 和尾部 60%（错误信息和关键结果通常在输出末尾）
+   *
+   * @param text 要截断的文本
+   * @param maxTokens 最大 token 数
+   * @returns 截断后的文本
    */
+  private truncateByTokens(text: string, maxTokens: number): string {
+    if (!text) return text;
+    const currentTokens = estimateTokenCount(text);
+    if (currentTokens <= maxTokens) return text;
+
+    const marker = '\n[Tool response was too long and was truncated.]\n';
+    const markerTokens = estimateTokenCount(marker);
+    const availableTokens = maxTokens - markerTokens;
+    if (availableTokens <= 0) return text.substring(0, 100);
+
+    // 按 Copilot 方式：用 chars/token 比例换算字符级截断点
+    const approxCharsPerToken = text.length / currentTokens;
+    const targetChars = Math.round(approxCharsPerToken * availableTokens);
+
+    const headSize = Math.round(targetChars * 0.4);
+    const tailSize = targetChars - headSize;
+    return text.substring(0, headSize) + marker + text.substring(text.length - tailSize);
+  }
+
   /**
-   * 截断文本到指定长度，采用 Copilot 风格的 40/60 头尾分割策略。
-   * 保留头部 40% 和尾部 60%，因为错误信息和关键结果通常在输出末尾。
+   * 按字符数截断文本（Legacy 兜底，用于非工具结果的通用截断）
    */
   private truncateText(text: string, maxLength: number): string {
     if (!text || text.length <= maxLength) return text;

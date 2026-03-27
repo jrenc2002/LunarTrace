@@ -1386,9 +1386,10 @@ export class BlocklyAbsParser {
       }
     }
 
-    // 通用 EXTRA_{N} 值输入 → INPUT{N} 重映射
-    // 适用于所有使用 dynamic-inputs 插件的块（如函数调用块等），
-    // 这些块的 mutator 通过 extraCount 控制 INPUT{N} 数量
+    // 通用 EXTRA_{N} 值输入重映射
+    // 对于已知动态块（如 text_join / lists_create_with），使用其输入模式前缀（ADD）
+    // 并从已有同模式输入的下一个编号开始，而非固定用 INPUT{N}
+    // 对于其他块，使用 INPUT{N}（适用于 dynamic-inputs 插件的块）
     if (config.inputs) {
       const extraInputEntries = Object.entries(config.inputs)
         .filter(([k]) => /^EXTRA_\d+$/.test(k))
@@ -1396,9 +1397,30 @@ export class BlocklyAbsParser {
           parseInt(a.match(/\d+/)![0]) - parseInt(b.match(/\d+/)![0]));
       
       if (extraInputEntries.length > 0) {
+        // 检查是否是已知动态块，确定重映射前缀和起始编号
+        const coreConfig = CORE_DYNAMIC_BLOCKS[node.type];
+        let prefix = 'INPUT';
+        let startIndex = 0;
+        
+        if (coreConfig) {
+          // 提取输入前缀（如 ADD、CASE）
+          const patternStr = coreConfig.inputPattern.source;
+          const prefixMatch = patternStr.match(/^\^?\(?([A-Z]+)/);
+          if (prefixMatch) {
+            prefix = prefixMatch[1];
+          }
+          // 计算已有同前缀输入的下一个编号
+          const existingNums = Object.keys(config.inputs)
+            .filter(k => new RegExp(`^${prefix}\\d+$`).test(k))
+            .map(k => parseInt(k.replace(prefix, ''), 10));
+          if (existingNums.length > 0) {
+            startIndex = Math.max(...existingNums) + 1;
+          }
+        }
+        
         for (let i = 0; i < extraInputEntries.length; i++) {
           const [oldKey, value] = extraInputEntries[i];
-          config.inputs![`INPUT${i}`] = value;
+          config.inputs![`${prefix}${startIndex + i}`] = value;
           delete config.inputs![oldKey];
         }
       }

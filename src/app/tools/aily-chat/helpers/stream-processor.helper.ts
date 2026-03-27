@@ -24,6 +24,13 @@ import {
 import { searchDeferredTools, getDeferredToolsListing } from '../tools/tools';
 import { SkillRegistry } from '../core/skill-registry';
 import { loadSkillHandler } from '../tools/loadSkillTool';
+import { PromptPipeline } from '../core/prompt-pipeline';
+import { PromptBuildContext } from '../core/prompt-elements';
+import {
+  ContextInjectionProvider,
+  ConversationHistoryProvider,
+  ToolContinuationProvider,
+} from '../core/prompt-providers';
 // import { manageSkillsHandler } from '../tools/manageSkillsTool'; // TODO: Skills Hub 后续完善
 
 export class StreamProcessorHelper {
@@ -88,20 +95,49 @@ export class StreamProcessorHelper {
     this.engine.pendingUserInput = false;
     this.engine.streamCompleted = false;
 
-    // 从 Turn[] 构建消息（优先使用压缩后的瞬态消息），并注入上下文
+    // 从 Turn[] 构建消息（优先使用普通裁剪产出的瞬态 prepared messages），并注入上下文
     // 参考 Copilot PromptRenderer：instructions 在消息数组开头（历史对话之前），
     // 每轮 tool call 都重新注入，确保 LLM 始终看到完整指令。
     let apiMessages: any[] | undefined;
     if (statelessMode) {
-      // 压缩结果由 startChatTurn() 瞬态产出，用完即弃
-      const base = this.engine.turnLoop._compressedMessages
-        ?? this.engine.turnManager.buildMessages();
-      this.engine.turnLoop._compressedMessages = null;
-      apiMessages = [...base];
-      const contextMsg = this.buildContextMessage();
-      // 更新 budget 中的瞬态上下文 token 计量
-      this.engine.contextBudgetService.updateContextTokens(contextMsg);
-      if (contextMsg) apiMessages.unshift(contextMsg);
+      // ========== 声明式 Prompt 管线 ==========
+      // 通过 PromptPipeline 组合消息，自动管理预算和优先级裁剪。
+      // 参考 Copilot PromptRenderer.render() 的声明式组合模式。
+      const pipeline = new PromptPipeline();
+      pipeline.registerAll([
+        new ContextInjectionProvider(
+          (agentName: string) => this._getAgentExcludedTools(agentName)
+        ),
+        new ConversationHistoryProvider(),
+        new ToolContinuationProvider(),
+      ]);
+
+      const buildContext: PromptBuildContext = {
+        mode: this.engine.currentMode,
+        messageSource: this.engine.currentMessageSource || 'mainAgent',
+        toolCallingIteration: this.engine.toolCallingIteration,
+        engine: this.engine,
+      };
+
+      const tokenBudget = this.engine.contextBudgetService.getAvailableMessageBudget();
+      const result = pipeline.render(buildContext, tokenBudget);
+
+      apiMessages = result.messages;
+
+      // 更新 budget 中的瞬态上下文 token 计量（兼容旧路径）
+      const contextElement = result.elementBreakdown.find(e => e.id === 'context-injection');
+      if (contextElement && !contextElement.evicted) {
+        this.engine.contextBudgetService.updateContextTokens(apiMessages[0]);
+      }
+
+      if (result.evictedCount > 0) {
+        console.log('[PromptPipeline] 渲染完成:', {
+          totalTokens: result.totalTokens,
+          budget: result.budget,
+          evicted: result.evictedCount,
+          elements: result.elementBreakdown,
+        });
+      }
     }
 
     const source$ = statelessMode
@@ -308,6 +344,31 @@ export class StreamProcessorHelper {
             const isBlockTool = BLOCK_TOOLS.includes(data.tool_name);
             if (isBlockTool) { this.engine.aiWriting = true; }
 
+            // Hook: PreToolUse — 参考 Copilot IChatHookService.executePreToolUseHook()
+            // 工具调用前拦截：允许 Hook 修改参数、拒绝执行、或注入额外上下文
+            if (this.engine.hookService.hasHandlers('PreToolUse')) {
+              const preResult = await this.engine.hookService.executePreToolUse({
+                toolName: data.tool_name,
+                toolInput: toolArgs,
+                toolCallId,
+              });
+              if (preResult) {
+                if (preResult.permissionDecision === 'deny') {
+                  const denyMsg = `工具调用被 Hook 拒绝: ${preResult.permissionDecisionReason || '未知原因'}`;
+                  console.warn('[Hook] PreToolUse denied:', denyMsg);
+                  if (statelessMode) {
+                    this.engine.pendingToolResults.push({ tool_id: data.tool_id, tool_name: data.tool_name, content: denyMsg, is_error: true });
+                    this.engine.turnLoop.onToolExecutionComplete();
+                  }
+                  return;
+                }
+                // Hook 可修改工具参数
+                if (preResult.updatedInput) {
+                  toolArgs = preResult.updatedInput;
+                }
+              }
+            }
+
             if (statelessMode) { this.engine.activeToolExecutions++; }
 
             try {
@@ -440,6 +501,25 @@ export class StreamProcessorHelper {
             }
 
             const isSubagent = messageSource !== 'mainAgent';
+
+            // Hook: PostToolUse — 参考 Copilot IChatHookService.executePostToolUseHook()
+            // 工具调用后处理：允许 Hook 阻止结果或注入额外上下文
+            if (this.engine.hookService.hasHandlers('PostToolUse')) {
+              const postResult = await this.engine.hookService.executePostToolUse({
+                toolName: data.tool_name,
+                toolInput: toolArgs,
+                toolResult,
+                toolCallId,
+                isError: toolResult?.is_error ?? resultState === 'error',
+              });
+              if (postResult?.decision === 'block') {
+                console.warn('[Hook] PostToolUse blocked:', postResult.reason);
+                toolResult = { is_error: true, content: `工具结果被 Hook 阻止: ${postResult.reason || '未知原因'}` };
+                resultState = 'error';
+                resultText = postResult.reason || '工具结果被阻止';
+              }
+            }
+
             let reminder = '';
             if (toolResult && data.tool_name !== 'todo_write_tool' && !isSubagent) {
               reminder = injectTodoReminder(data.tool_name);
