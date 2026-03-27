@@ -523,12 +523,19 @@ export class BackgroundSummarizerService {
     llmConfig?: any,
     selectModel?: string
   ): Promise<string> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       let summaryText = '';
       let resolved = false;
 
+      const fgSessionId = sessionId + '_fg_summary';
+      try {
+        await this.chatService.startSession('ask', null, undefined, llmConfig, selectModel, fgSessionId).toPromise();
+      } catch (e) {
+        // 忽略重复创建错误，继续请求
+      }
+
       const subscription = this.chatService.chatRequest(
-        sessionId + '_fg_summary',
+        fgSessionId,
         messages,
         null,
         'ask',
@@ -586,12 +593,19 @@ export class BackgroundSummarizerService {
     llmConfig?: any,
     selectModel?: string
   ): Promise<string> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       let summaryText = '';
       let resolved = false;
 
+      const bgSessionId = sessionId + '_bg_summary';
+      try {
+        await this.chatService.startSession('ask', null, undefined, llmConfig, selectModel, bgSessionId).toPromise();
+      } catch (e) {
+        // 忽略重复创建错误，继续请求
+      }
+
       this._activeSubscription = this.chatService.chatRequest(
-        sessionId + '_bg_summary', // 独立 session ID，不干扰主对话
+        bgSessionId, // 独立 session ID，不干扰主对话
         messages,
         null,     // 不需要工具
         'ask',    // ask 模式（不执行工具）
