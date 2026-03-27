@@ -319,6 +319,10 @@ export class ProjectService {
       nzMaskClosable: false,
       nzClosable: true,
       nzWidth: 480,
+      nzStyle: {
+        backgroundColor: '#1f1f1f',
+        paddingBottom: '0',
+      },
       nzFooter: [
         {
           label: this.translate.instant('PROJECT.LOCK_CANCEL'),
@@ -326,15 +330,16 @@ export class ProjectService {
         },
         {
           label: this.translate.instant('PROJECT.LOCK_FOCUS_OTHER'),
-          type: 'default',
+          type: 'primary',
           onClick: () => modalRef.close('focus'),
         },
-        {
-          label: this.translate.instant('PROJECT.LOCK_FORCE_OPEN'),
-          type: 'primary',
-          danger: true,
-          onClick: () => modalRef.close('force'),
-        },
+        // 不需要强制打开选项
+        // {
+        //   label: this.translate.instant('PROJECT.LOCK_FORCE_OPEN'),
+        //   type: 'primary',
+        //   danger: true,
+        //   onClick: () => modalRef.close('force'),
+        // },
       ],
     });
     return new Promise((resolve) => {
