@@ -949,6 +949,8 @@ Do not create non-existent boards and libraries.
     if (oldSessionId && newSessionId && oldSessionId !== newSessionId) {
       this.chatHistoryService.migrateSessionId(oldSessionId, newSessionId);
     }
+    // 切换模型后立即更新上下文窗口大小 + 预算快照
+    this.contextBudgetService?.updateModelContextSize(model.model || null);
     this.contextBudgetService?.updateBudget(this.conversationMessages, this.turnLoop.getCurrentTools());
   }
 
