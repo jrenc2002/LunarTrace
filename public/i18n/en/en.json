@@ -242,7 +242,7 @@
         "TITLE": "Library Manager",
         "BACK": "Back",
         "SEARCH_LIBRARY": "Search Library",
-        "ALL": "All Libraries",
+        "ALL": "All",
         "INSTALLED": "Installed",
         "CORE_LIBRARY": "Core Library",
         "IMPORT_LIBRARY": "Import Local Library",

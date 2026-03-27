@@ -1,4 +1,4 @@
-import { arduinoGenerator } from "../../../editors/blockly-editor/components/blockly/generators/arduino/arduino";
+﻿import { arduinoGenerator } from "../../../editors/blockly-editor/components/blockly/generators/arduino/arduino";
 import { ToolUseResult } from "./tools";
 import { jsonrepair } from 'jsonrepair';
 import { ArduinoSyntaxTool } from "./arduinoSyntaxTool";
@@ -1443,9 +1443,17 @@ function configureBlockFields(block: any, fields: FieldConfig): {
             const variableMap = workspace?.getVariableMap?.();
             let finalVariableId: string | null = null;
             
-            // � 获取字段期望的变量类型
+            // 获取字段期望的变量类型（使用公开 API，编译后的 Blockly 属性名无下划线）
             const field = block.getField(fieldName);
-            const expectedTypes: string[] = field?.variableTypes_ || [''];
+            let expectedTypes: string[] = [''];
+            if (field && typeof field.getVariableTypes === 'function') {
+              try {
+                const types = field.getVariableTypes();
+                if (Array.isArray(types) && types.length > 0) {
+                  expectedTypes = types;
+                }
+              } catch (_) { /* ignore */ }
+            }
             // console.log(`🔍 字段 ${fieldName} 期望的变量类型:`, expectedTypes);
             
             // 🎯 策略：优先使用变量名查找，因为变量ID在不同工作区中会变化
@@ -1517,7 +1525,29 @@ function configureBlockFields(block: any, fields: FieldConfig): {
                 // console.log(`🔍 从字段配置提取变量类型: ${variableType}`);
               }
               
-              // 🔧 使用变量名查找或创建变量
+              // 如果配置中无类型，从块定义的 FieldVariable 推断期望类型
+              if (!variableType) {
+                try {
+                  const field = block.getField(fieldName);
+                  if (field && typeof field.getVariable === 'function') {
+                    // 优先使用 getVariableTypes() 公开 API
+                    if (typeof field.getVariableTypes === 'function') {
+                      try {
+                        const types = field.getVariableTypes();
+                        if (Array.isArray(types) && types.length > 0 && types[0] !== '') {
+                          variableType = types[0];
+                        }
+                      } catch (_) { /* ignore */ }
+                    }
+                    // 回退到 defaultType 属性
+                    if (!variableType && field.defaultType) {
+                      variableType = field.defaultType;
+                    }
+                  }
+                } catch (_) { /* ignore */ }
+              }
+              
+              // 使用变量名查找或创建变量
               finalVariableId = handleVariableField(block, nameToUse, true, variableType, true);
             }
             
@@ -2371,14 +2401,34 @@ function handleVariableField(
     // 使用优化后的 resolveExistingVariableId 函数
     const existingVarId = resolveExistingVariableId(workspace, variableName);
     if (existingVarId) {
-      return returnId ? existingVarId : variableName;
+      // 如果调用方指定了 variableType，验证找到的变量类型是否匹配
+      if (variableType) {
+        const existingVar = variableMap.getVariableById?.(existingVarId);
+        if (existingVar && existingVar.type !== variableType) {
+          // 类型不匹配 — 尝试查找同名且类型匹配的变量
+          const typedVar = workspace.getVariable?.(variableName, variableType);
+          if (typedVar) {
+            return returnId ? typedVar.getId() : variableName;
+          }
+          // 没有匹配的，继续到创建阶段
+        } else {
+          return returnId ? existingVarId : variableName;
+        }
+      } else {
+        return returnId ? existingVarId : variableName;
+      }
     }
     
     // 尝试模糊匹配（作为回退方案）
     const fuzzyVariable = findVariableByFuzzyMatch(variableMap, variableName);
     if (fuzzyVariable) {
-      // console.log(`✅ 通过模糊匹配找到变量: "${fuzzyVariable.name}" (查找: "${variableName}")`);
-      return returnId ? fuzzyVariable.getId() : fuzzyVariable.name;
+      // 如果有类型要求，验证模糊匹配结果的类型
+      if (variableType && fuzzyVariable.type !== variableType) {
+        // 类型不匹配，跳过模糊匹配结果
+      } else {
+        // console.log(`✅ 通过模糊匹配找到变量: "${fuzzyVariable.name}" (查找: "${variableName}")`);
+        return returnId ? fuzzyVariable.getId() : fuzzyVariable.name;
+      }
     }
 
     // ========================================
@@ -4565,16 +4615,35 @@ async function applyDynamicExtraState(block: any, extraState: any, dynamicSuppor
   // 通用处理
   else {
     // console.log(`🔧 ${blockType} 使用通用 extraState 处理`);
-    Object.keys(extraState).forEach(key => {
-      if (block.hasOwnProperty(key + '_')) {
-        block[key + '_'] = extraState[key];
-        // console.log(`✅ 设置 ${key}_: ${extraState[key]}`);
-      }
-    });
     
-    if (block.updateShape_ && typeof block.updateShape_ === 'function') {
-      block.updateShape_();
-      // console.log('🔄 调用通用 updateShape_');
+    // 优先使用 loadExtraState（块自身最了解自己的 extraState 格式）
+    if (block.loadExtraState && typeof block.loadExtraState === 'function') {
+      try {
+        block.loadExtraState(extraState);
+      } catch (e) {
+        console.warn(`⚠️ ${blockType} loadExtraState 失败，回退通用处理:`, e);
+        // 回退：手动设置属性
+        Object.keys(extraState).forEach(key => {
+          if (block.hasOwnProperty(key + '_')) {
+            block[key + '_'] = extraState[key];
+          }
+        });
+        if (block.updateShape_ && typeof block.updateShape_ === 'function') {
+          block.updateShape_();
+        }
+      }
+    } else {
+      Object.keys(extraState).forEach(key => {
+        if (block.hasOwnProperty(key + '_')) {
+          block[key + '_'] = extraState[key];
+          // console.log(`✅ 设置 ${key}_: ${extraState[key]}`);
+        }
+      });
+      
+      if (block.updateShape_ && typeof block.updateShape_ === 'function') {
+        block.updateShape_();
+        // console.log('🔄 调用通用 updateShape_');
+      }
     }
   }
 }

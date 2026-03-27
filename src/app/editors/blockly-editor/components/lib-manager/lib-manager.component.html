@@ -16,8 +16,8 @@
         </ng-template>
         <div class="tag-list">
             <nz-tag (click)="keyword='';search()">{{ 'LIB_MANAGER.ALL' | translate }}</nz-tag>
-            @for (tag of tagList; track tag) {
-            <nz-tag (click)="keyword=tag;search()">{{ tag }}</nz-tag>
+            @for (tag of displayTagList; track tag.key) {
+            <nz-tag (click)="keyword=tag.key;search()">{{ tag.label }}</nz-tag>
             }
             <span style="position: absolute;top: 10px;color: #444;">|</span>
             <nz-tag style="margin-left: 11px;" (click)="search('installed')">{{ 'LIB_MANAGER.INSTALLED' | translate

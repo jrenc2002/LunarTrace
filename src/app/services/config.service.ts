@@ -120,10 +120,11 @@ export class ConfigService {
     this.data["platform"] = window['platform'].type;
     this.data["lang"] = this.get_lang_filename(window['platform'].lang);
 
-    // 并行加载缓存的boards.json和libraries.json（旧格式，用于基础功能）
+    // 并行加载缓存的boards.json、libraries.json和tags.json（旧格式，用于基础功能）
     // await Promise.all([
     this.loadAndCacheBoardList(configFilePath);
     this.loadAndCacheLibraryList(configFilePath);
+    this.loadAndCacheTagList(configFilePath);
     // ]);
 
     // 注意：boardIndex 和 libraryIndex（新格式索引）延迟到 AI 组件加载时再加载
@@ -145,6 +146,7 @@ export class ConfigService {
             // 重新加载数据，确保获取最新内容
             this.loadAndCacheBoardList(configFilePath);
             this.loadAndCacheLibraryList(configFilePath);
+            this.loadAndCacheTagList(configFilePath);
           }
         } catch (e) {
           console.error('Failed to reload data after region detection:', e);
@@ -385,6 +387,8 @@ export class ConfigService {
   libraryList = [];
   libraryDict = {};
 
+  tagList: any = {};
+
   private parseLibraryList(raw: string): any[] {
     return this.parseArrayPayload(raw, 'libraries.json 格式无效');
   }
@@ -421,6 +425,64 @@ export class ConfigService {
     } catch (error) {
       console.error('Failed to load library list:', error);
       return [];
+    }
+  }
+
+  // ==================== tags.json ====================
+
+  private async loadAndCacheTagList(configFilePath: string): Promise<void> {
+    const localPath = `${configFilePath}/tags.json`;
+
+    try {
+      if (this.electronService.exists(localPath)) {
+        this.tagList = JSON.parse(this.electronService.readFile(localPath));
+        const tagList = await this.fetchTagList();
+        if (tagList) {
+          this.tagList = tagList;
+          this.electronService.writeFile(localPath, JSON.stringify(tagList));
+        }
+      } else {
+        // 首次启动软件，创建tags.json
+        const tagList = await this.fetchTagList();
+        if (tagList) {
+          this.tagList = tagList;
+          this.electronService.writeFile(localPath, JSON.stringify(tagList));
+        }
+      }
+    } catch (error) {
+      console.error('[ConfigService] tags.json 加载失败，尝试从线上恢复:', error);
+      await this.reloadTagListFromRemote(localPath, error);
+    }
+
+    console.log('[ConfigService] tagList加载完成:', this.tagList?.tags?.length || 0, '个标签');
+  }
+
+  private async fetchTagList(): Promise<any> {
+    try {
+      return await lastValueFrom(
+        this.http.get(this.getCurrentResourceUrl() + '/tags.json', {
+          responseType: 'json',
+        }),
+      );
+    } catch (error) {
+      console.error('Failed to load tag list:', error);
+      return null;
+    }
+  }
+
+  private async reloadTagListFromRemote(localPath: string, originalError: unknown): Promise<void> {
+    try {
+      const latestTagList = await this.fetchTagList();
+      if (latestTagList) {
+        this.tagList = latestTagList;
+        this.electronService.writeFile(localPath, JSON.stringify(latestTagList));
+        console.log('[ConfigService] 已使用线上最新 tags.json 覆盖本地缓存');
+      }
+    } catch (remoteError) {
+      this.tagList = {};
+      const message = this.buildReloadFailureMessage('标签列表', 'tags.json', remoteError, originalError);
+      console.error('[ConfigService] 从线上恢复 tags.json 失败:', remoteError);
+      this.showDedupedError('tag-list', message);
     }
   }
 

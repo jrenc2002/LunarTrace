@@ -40,11 +40,11 @@ export class LibManagerComponent {
   @Output() close = new EventEmitter();
 
   keyword: string = '';
-  tagList: string[] = [];
+  tagList: { key: string; label: string }[] = [];
+  displayTagList: { key: string; label: string }[] = [];
   libraryList: PackageInfo[] = [];
   _libraryList: PackageInfo[] = [];
   installedPackageList: string[] = [];
-  tagListRandom;
 
   loading = false;
 
@@ -66,16 +66,9 @@ export class LibManagerComponent {
   }
 
   async ngOnInit() {
-    // 使用翻译初始化标签列表
-    this.tagList = [
-      this.translate.instant('LIB_MANAGER.SENSORS'),
-      this.translate.instant('LIB_MANAGER.ACTUATORS'),
-      this.translate.instant('LIB_MANAGER.COMMUNICATION'),
-      this.translate.instant('LIB_MANAGER.DISPLAY'),
-      this.translate.instant('LIB_MANAGER.STORAGE'),
-      this.translate.instant('LIB_MANAGER.AI'),
-      this.translate.instant('LIB_MANAGER.IOT'),
-    ];
+    // 从 tags.json 加载标签列表，根据当前语言显示本地化名称
+    this.tagList = this.buildLocalizedTagList();
+    this.displayTagList = this.getRandomTags(10);
 
     this._libraryList = this.process(this.configService.libraryList);
     this.libraryList = this.applyLocalization(await this.checkInstalled());
@@ -92,7 +85,7 @@ export class LibManagerComponent {
     let installedLibraries = await this.npmService.getAllInstalledLibraries(this.projectService.currentProjectPath);
     installedLibraries = installedLibraries.map(item => {
       item['state'] = 'installed';
-      item['fulltext'] = `installed${item.name}${item.nickname}${item.keywords}${item.description}${item.brand}`.replace(/\s/g, '').toLowerCase();
+      item['fulltext'] = `installed${item.name}${item.nickname}${item.keywords}${item.description}${item.brand}`.replace(/\s|aily|blockly/gi, '').toLowerCase();
       return item;
     });
 
@@ -133,7 +126,7 @@ export class LibManagerComponent {
       // 为状态做准备
       item['state'] = 'default'; // default, installed, installing, uninstalling
       // 为全文搜索做准备
-      item['fulltext'] = `${item.name}${item.nickname}${item.keywords}${item.description}${item.brand}`.replace(/\s/g, '').toLowerCase();
+      item['fulltext'] = `${item.name}${item.nickname}${item.keywords}${item.tags}${item.description}${item.brand}`.replace(/\s|aily|blockly|ailyproject/gi, '').toLowerCase();
     }
     return array;
   }
@@ -142,11 +135,6 @@ export class LibManagerComponent {
     this.keyword = keyword;
     if (keyword) {
       keyword = keyword.replace(/\s/g, '').toLowerCase();
-
-      if (keyword === 'ai') {
-        keyword = 'artificialintelligence';
-      }
-
       // 使用indexOf过滤并记录关键词位置，然后按位置排序
       let libraryList = await this.checkInstalled();
       const matchedItems = libraryList
@@ -162,6 +150,25 @@ export class LibManagerComponent {
     } else {
       this.libraryList = this.applyLocalization(await this.checkInstalled());
     }
+  }
+
+  private getRandomTags(count: number): { key: string; label: string }[] {
+    if (this.tagList.length <= count) return [...this.tagList];
+    const shuffled = [...this.tagList].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, count);
+  }
+
+  private buildLocalizedTagList(): { key: string; label: string }[] {
+    const tagsData = this.configService.tagList;
+    if (!tagsData?.tags || !Array.isArray(tagsData.tags)) {
+      return [];
+    }
+    const lang = this.translate.currentLang || 'en';
+    const localizedMap = tagsData[`tags_${lang}`] || tagsData['tags_en'] || {};
+    return tagsData.tags.map((key: string) => ({
+      key,
+      label: localizedMap[key] || key
+    }));
   }
 
   back() {
