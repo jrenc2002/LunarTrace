@@ -43,6 +43,8 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   @Input() activeCheckpointAnchorIndex: number | null = null;
   @Input() currentMode = 'agent';
   @Input() currentModelName = '';
+  /** 该消息创建时使用的模型名称 */
+  @Input() turnModelName = '';
   @Input() isWaiting = false;
 
   @Output() checkpointHoverChange = new EventEmitter<number | null>();
@@ -81,7 +83,8 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   streamContent = signal('');
   streamingConfig = signal<StreamingOption>({ hasNextChunk: false, enableAnimation: false });
   readonly componentMap: ComponentMap = { code: AilyChatCodeComponent };
-
+  /** 是否显示操作栏 */
+  showActions = false;
   /** 反馈状态 */
   feedbackState: 'helpful' | 'unhelpful' | null = null;
 
@@ -120,8 +123,10 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   }
 
   onDialogMouseEnter(): void {
+    this.showActions = true;
+    // 悬停任意消息时，激活该 turn 对应 user 消息上的检查点锚点
     const anchorListIndex = this.editCheckpointService.getTurnStartListIndexByAnyListIndex(this.msgIndex);
-    if (anchorListIndex !== null && anchorListIndex === this.msgIndex) {
+    if (anchorListIndex !== null) {
       this.checkpointHoverChange.emit(anchorListIndex);
     } else {
       this.checkpointHoverChange.emit(null);
@@ -129,6 +134,7 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   }
 
   onDialogMouseLeave(): void {
+    this.showActions = false;
     this.checkpointHoverChange.emit(null);
   }
 

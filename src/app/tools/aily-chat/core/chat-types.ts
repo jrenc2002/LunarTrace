@@ -29,6 +29,8 @@ export interface ChatMessage {
   state: 'doing' | 'done';
   /** 消息来源，mainAgent 为主Agent，其他值为子Agent名称 */
   source?: string;
+  /** 该消息对应的模型名称（创建时快照） */
+  modelName?: string;
 }
 
 export enum ToolCallState {
