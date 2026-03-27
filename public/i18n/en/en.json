@@ -375,6 +375,7 @@
         "MERMAID_ARCH_CANCEL": "Cancel",
         "MERMAID_COPY_FAILED": "Copy failed",
         "MERMAID_SAVE_FAILED": "Save failed",
+        "CLICK_TO_EDIT": "Click to edit",
         "ONBOARDING": {
             "STEP1_TITLE": "Input Box",
             "STEP1_DESC": "Type your questions or tasks here for AI assistance. Press Enter to send, Ctrl+Enter for new line",

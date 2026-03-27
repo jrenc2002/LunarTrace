@@ -12,6 +12,8 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { TranslateModule } from '@ngx-translate/core';
+import { NzToolTipModule } from 'ng-zorro-antd/tooltip';
 import { XMarkdownComponent } from 'ngx-x-markdown';
 import type { StreamingOption, ComponentMap } from 'ngx-x-markdown';
 import { AilyChatCodeComponent } from './aily-chat-code.component';
@@ -25,7 +27,7 @@ import { ResourceItem } from '../../core/chat-types';
   templateUrl: './x-dialog.component.html',
   styleUrls: ['./x-dialog.component.scss'],
   standalone: true,
-  imports: [CommonModule, FormsModule, XMarkdownComponent],
+  imports: [CommonModule, FormsModule, TranslateModule, NzToolTipModule, XMarkdownComponent],
 })
 export class XDialogComponent implements OnChanges, AfterViewChecked {
   @Input() role = 'user';
@@ -81,8 +83,7 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   streamContent = signal('');
   streamingConfig = signal<StreamingOption>({ hasNextChunk: false, enableAnimation: false });
   readonly componentMap: ComponentMap = { code: AilyChatCodeComponent };
-
-  /** 是否显示操作栏（鼠标悬停时） */
+  /** 是否显示操作栏 */
   showActions = false;
   /** 反馈状态 */
   feedbackState: 'helpful' | 'unhelpful' | null = null;
