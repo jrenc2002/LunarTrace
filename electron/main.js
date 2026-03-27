@@ -866,7 +866,7 @@ function loadEnv() {
     // TODO: 下一版删除，统一修正 regions.cn.api_server 地址为标准地址
     let needSave = false;
     if (userConf.regions && userConf.regions.cn) {
-      const correctApiServer = "https://aapi.diandeng.tech";
+      const correctApiServer = "https://api.yysc.tech";
       const currentApiServer = userConf.regions.cn.api_server;
       
       // 检查当前地址是否需要修正（只要不是正确地址就修正）
@@ -897,8 +897,8 @@ function loadEnv() {
   // child Path
   process.env.AILY_CHILD_PATH = childPath;
 
-  // TODO 下一版本删除，强制将cn区域的api_server地址设置为https://aapi.diandeng.tech
-  conf.regions["cn"]["api_server"] = "https://aapi.diandeng.tech";
+  // TODO 下一版本删除，强制将cn区域的api_server地址设置为https://api.yysc.tech
+  conf.regions["cn"]["api_server"] = "https://api.yysc.tech";
   // console.log("conf: ", conf);
   // 从 regions 配置中获取当前区域的服务地址
   const currentRegion = conf.region || 'cn';

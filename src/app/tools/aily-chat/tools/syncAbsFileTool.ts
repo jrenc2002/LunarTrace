@@ -4,7 +4,7 @@
  * 提供 Blockly 工作区与 project.abs 文件之间的同步操作
  */
 
-import { convertAbiToAbs, convertAbsToAbi } from './abiAbsConverter';
+import { convertAbiToAbs, convertAbsToAbi, inferFieldVariableType } from './abiAbsConverter';
 import { getActiveWorkspace, createBlockFromConfig } from './editBlockTool';
 import { AbsAutoSyncService } from '../services/abs-auto-sync.service';
 import { loadProjectBlockDefinitions, parseAbs, BlocklyAbsParser } from './absParser';
@@ -289,13 +289,13 @@ async function importFromAbs(
       allVariables.set(varDef.name, varDef.type);
     }
     
-    // 2. 从 $varName 引用中自动收集（扫描所有块）
+    // 2. 从 $varName 引用中自动收集（扫描所有块，带类型推断）
     // 🆕 排除会被初始化块自动创建的变量
     const inferredVars = collectVariableReferences(parseResult.rootBlocks);
-    for (const varName of inferredVars) {
+    for (const [varName, varType] of inferredVars) {
       if (!allVariables.has(varName) && !autoCreatedVars.has(varName)) {
-        allVariables.set(varName, ''); // 类型未知，使用默认
-        // console.log(`🔍 自动推断变量: "${varName}" (从 $${varName} 引用)`);
+        allVariables.set(varName, varType); // 使用推断的类型（可能来自 FieldVariable 的类型约束）
+        // console.log(`🔍 自动推断变量: "${varName}" (类型: ${varType || '默认'}, 从 $${varName} 引用)`);
       } else if (autoCreatedVars.has(varName)) {
         // console.log(`⏭️ 跳过变量: "${varName}" (将由初始化块自动创建)`);
       }
@@ -316,12 +316,29 @@ async function importFromAbs(
     }
     
     // 同步 ABS 中声明的变量到工作区（只创建不存在的，保留已有的）
+    // 注意：当推断出变量类型时，必须精确匹配（名称+类型），
+    // 否则已存在的空类型变量会导致 FieldVariable "type doesn't match" 错误
     const variableNameToId = new Map<string, string>();
     
     for (const [name, type] of allVariables) {
-      let variable = workspace.getVariable(name);
-      if (!variable) {
-        variable = workspace.createVariable(name, type || undefined);
+      let variable: any;
+      if (type) {
+        // 类型已知时，按名称+类型精确查找
+        variable = workspace.getVariable(name, type);
+        if (!variable) {
+          // 检查是否存在同名但类型不匹配的旧变量
+          const wrongTypeVar = workspace.getVariable(name);
+          if (wrongTypeVar && wrongTypeVar.type !== type) {
+            // 删除旧的错误类型变量，用正确类型重建
+            variableMap.deleteVariable(wrongTypeVar);
+          }
+          variable = workspace.createVariable(name, type);
+        }
+      } else {
+        variable = workspace.getVariable(name);
+        if (!variable) {
+          variable = workspace.createVariable(name);
+        }
       }
       variableNameToId.set(name, variable.getId());
     }
@@ -533,6 +550,16 @@ async function importFromAbs(
       }
     }
     
+    // 触发 FINISHED_LOADING 事件，让各库的初始化逻辑执行
+    // （如 _initFunctionLibOnLoad 绑定 FUNC 变量到 custom_function_def）
+    // createBlockFromConfig 路径不像 Blockly.serialization.workspaces.load 那样自动触发此事件
+    try {
+      const finishedLoadingEvent = new Blockly.Events.FinishedLoading(workspace);
+      Blockly.Events.fire(finishedLoadingEvent);
+    } catch (e) {
+      console.warn('[syncAbsFile] 触发 FINISHED_LOADING 事件失败:', e);
+    }
+    
     // 保存工作区到 ABI 文件
     const abiJson = Blockly.serialization.workspaces.save(workspace);
     await electronService.writeFile(abiFilePath, JSON.stringify(abiJson, null, 2));
@@ -605,17 +632,22 @@ async function importFromAbs(
  * 从块配置中收集所有变量引用（$varName 格式）
  * 用于自动创建 Blockly 工作区变量
  */
-function collectVariableReferences(blocks: any[]): Set<string> {
-  const varNames = new Set<string>();
+function collectVariableReferences(blocks: any[]): Map<string, string> {
+  const varMap = new Map<string, string>(); // name → type
   
   function collectFromConfig(config: any): void {
     if (!config) return;
     
-    // 从字段中收集变量引用
+    // 从字段中收集变量引用（带类型推断）
     if (config.fields) {
-      for (const value of Object.values(config.fields)) {
+      for (const [key, value] of Object.entries(config.fields)) {
         if (typeof value === 'object' && value !== null && (value as any).name) {
-          varNames.add((value as any).name);
+          const varName = (value as any).name;
+          if (!varMap.has(varName)) {
+            // 优先使用解析值中的 type，再从 Blockly 运行时推断
+            const varType = (value as any).type || inferFieldVariableType(config.type, key);
+            varMap.set(varName, varType);
+          }
         }
       }
     }
@@ -643,7 +675,7 @@ function collectVariableReferences(blocks: any[]): Set<string> {
     collectFromConfig(block);
   }
   
-  return varNames;
+  return varMap;
 }
 
 /**
@@ -724,8 +756,10 @@ function preprocessVariableReferences(
         const varName = (value as any).name;
         const varId = variableNameToId.get(varName);
         if (varId) {
-          // Blockly 需要 id 字段
-          config.fields[key] = { id: varId, name: varName, type: '' };
+          // Blockly 需要 id 字段，同时保留/推断变量类型
+          // 类型信息对 FieldVariable 验证至关重要（如 FUNC_NAME 期望 'FUNC' 类型）
+          const varType = (value as any).type || inferFieldVariableType(config.type, key);
+          config.fields[key] = { id: varId, name: varName, type: varType };
         }
       }
     }

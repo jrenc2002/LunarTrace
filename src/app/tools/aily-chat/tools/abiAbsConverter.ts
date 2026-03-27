@@ -186,6 +186,11 @@ class ConversionContext {
     return varInfo ? varInfo.name : idOrName;
   }
   
+  getVariableType(idOrName: string): string {
+    const varInfo = this.variables.get(idOrName);
+    return varInfo ? varInfo.type : '';
+  }
+  
   indent(level: number): string {
     return this.indentStr.repeat(level);
   }
@@ -249,6 +254,7 @@ function convertBlockToAbs(block: any, indentLevel: number, context: ConversionC
   
   // 构建主块行
   const blockCall = buildBlockCall(block, context);
+  // extraState 由解析器从结构推断（字段、输入、mutator），不需要注解
   const idComment = context.includeBlockIds ? `  # id: ${block.id}` : '';
   lines.push(`${indent}${blockCall}${idComment}`);
   const mainLineNum = context.lineOffset + 1;  // 当前行的 1-based 行号
@@ -486,7 +492,7 @@ function buildBlockCall(block: any, context: ConversionContext): string {
   const argsOrder = (meta?.argsOrder?.length ? meta.argsOrder : null) || queryArgsOrderFromBlockly(block.type);
   
   if (argsOrder && argsOrder.length > 0) {
-    // 有 argsOrder：按定义顺序输出参数
+    // 有 argsOrder：按定义顺序输出位置参数
     for (const argInfo of argsOrder) {
       const { name, kind } = argInfo;
       
@@ -511,8 +517,8 @@ function buildBlockCall(block: any, context: ConversionContext): string {
       // statementInput 不在括号内输出，跳过
     }
   } else {
-    // 无元数据：使用原逻辑（先字段后值输入）
-    // 收集字段参数
+    // 无 argsOrder（动态块、未知块）：位置参数（先字段后输入）
+    // 导入时由 Blockly 运行时 argsOrder 正确映射
     if (block.fields) {
       for (const [fieldName, fieldValue] of Object.entries(block.fields)) {
         const formattedValue = formatFieldValue(block.type, fieldName, fieldValue, context);
@@ -522,7 +528,6 @@ function buildBlockCall(block: any, context: ConversionContext): string {
       }
     }
     
-    // 收集值输入参数（非语句输入）
     if (block.inputs) {
       for (const [inputName, inputValue] of Object.entries(block.inputs)) {
         if (statementInputs.has(inputName)) continue;
@@ -537,6 +542,35 @@ function buildBlockCall(block: any, context: ConversionContext): string {
   }
   
   // 构建调用 - 始终使用括号格式，确保导入时能正确识别为块
+  
+  // === 通用处理：导出 argsOrder 未覆盖的剩余字段和非语句输入（动态 mutator 添加的）===
+  // 作为额外位置参数输出，导入时通过 EXTRA_N 模式进入 mutator 处理器
+  if (argsOrder && argsOrder.length > 0) {
+    const processedByArgsOrder = new Set(argsOrder.map(a => a.name));
+    // 剩余字段
+    if (block.fields) {
+      for (const [fieldName, fieldValue] of Object.entries(block.fields)) {
+        if (processedByArgsOrder.has(fieldName)) continue;
+        const formattedValue = formatFieldValue(block.type, fieldName, fieldValue, context);
+        if (formattedValue !== null) {
+          args.push(formattedValue);
+        }
+      }
+    }
+    // 剩余输入
+    if (block.inputs) {
+      for (const [inputName, inputValue] of Object.entries(block.inputs)) {
+        if (processedByArgsOrder.has(inputName)) continue;
+        if (statementInputs.has(inputName)) continue;
+        const input = inputValue as any;
+        const formattedValue = formatInputValue(input, context);
+        if (formattedValue !== null) {
+          args.push(formattedValue);
+        }
+      }
+    }
+  }
+  
   if (args.length > 0) {
     return `${block.type}(${args.join(', ')})`;
   }
@@ -656,6 +690,9 @@ const runtimeStatementInputCache = new Map<string, Set<string>>();
 // 运行时查询缓存：blockType -> argsOrder
 const runtimeArgsOrderCache = new Map<string, Array<{ name: string; kind: 'field' | 'valueInput' | 'statementInput' }> | null>();
 
+// 运行时查询缓存：blockType -> Map<fieldName, variableType>
+const runtimeFieldVarTypeCache = new Map<string, Map<string, string>>();
+
 /**
  * 通过 Blockly 运行时查询块的参数顺序
  * 遍历 inputList 及其 fieldRow，按定义顺序收集所有字段和输入
@@ -683,6 +720,28 @@ function queryArgsOrderFromBlockly(blockType: string): Array<{ name: string; kin
           for (const field of input.fieldRow) {
             if (field.name && field.SERIALIZABLE) {
               argsOrder.push({ name: field.name, kind: 'field' });
+              // 顺便收集 FieldVariable 的类型过滤器
+              // 使用多种方法探测：getVariableTypes() 公开 API → defaultType 属性
+              if (typeof field.getVariable === 'function') {
+                let varType = '';
+                if (typeof field.getVariableTypes === 'function') {
+                  try {
+                    const types = field.getVariableTypes();
+                    if (Array.isArray(types) && types.length > 0 && types[0] !== '') {
+                      varType = types[0];
+                    }
+                  } catch (_) { /* ignore */ }
+                }
+                if (!varType && field.defaultType) {
+                  varType = field.defaultType;
+                }
+                if (varType) {
+                  if (!runtimeFieldVarTypeCache.has(blockType)) {
+                    runtimeFieldVarTypeCache.set(blockType, new Map());
+                  }
+                  runtimeFieldVarTypeCache.get(blockType)!.set(field.name, varType);
+                }
+              }
             }
           }
         }
@@ -750,6 +809,29 @@ function queryStatementInputsFromBlockly(blockType: string): Set<string> | null 
     console.warn(`[abiAbsConverter] Failed to query block ${blockType} from Blockly:`, e);
     return null;
   }
+}
+
+/**
+ * 从 Blockly 运行时推断 FieldVariable 字段期望的变量类型。
+ * 例如: custom_function_call_advance 的 FUNC_NAME 字段期望 "FUNC" 类型。
+ * 块定义本身知道每个 FieldVariable 接受的变量类型，ABS 无需重复标注。
+ *
+ * 类型信息在 queryArgsOrderFromBlockly 执行时顺便收集到 runtimeFieldVarTypeCache。
+ * 若缓存中没有，则触发一次 queryArgsOrderFromBlockly 来填充。
+ */
+export function inferFieldVariableType(blockType: string, fieldName: string): string {
+  if (runtimeFieldVarTypeCache.has(blockType)) {
+    return runtimeFieldVarTypeCache.get(blockType)!.get(fieldName) || '';
+  }
+
+  // 触发 queryArgsOrderFromBlockly 以填充缓存
+  queryArgsOrderFromBlockly(blockType);
+
+  if (runtimeFieldVarTypeCache.has(blockType)) {
+    return runtimeFieldVarTypeCache.get(blockType)!.get(fieldName) || '';
+  }
+
+  return '';
 }
 
 /**
@@ -866,6 +948,26 @@ export function normalizeInputNameForAbs(inputName: string): string {
  */
 function isIdentifier(value: string): boolean {
   return /^[A-Z_][A-Z0-9_]*$/.test(value);
+}
+
+/**
+ * 创建可移植的 extraState：去除工作区特定的 ID 值
+ * 启发式规则：值为包含 '::' 的字符串（如 "xxx::FUNC"、"xxx::PARAM::1"）
+ * 或数组元素全部包含 '::'，视为 Blockly 运行时 ID，导出时剔除。
+ * 这些 ID 由运行时 loadExtraState + FINISHED_LOADING 通过名称查找自动重建。
+ */
+function makePortableExtraState(extraState: any): any | null {
+  if (!extraState || typeof extraState !== 'object') return extraState;
+  const result: any = {};
+  for (const [key, value] of Object.entries(extraState)) {
+    // 字符串值包含 '::' → 工作区特定 ID，跳过
+    if (typeof value === 'string' && value.includes('::')) continue;
+    // 数组元素全部是包含 '::' 的字符串 → ID 数组，跳过
+    if (Array.isArray(value) && value.length > 0
+        && value.every((v: any) => typeof v === 'string' && v.includes('::'))) continue;
+    result[key] = value;
+  }
+  return Object.keys(result).length > 0 ? result : null;
 }
 
 /**
@@ -1007,11 +1109,11 @@ function convertBlockConfigToAbi(
       if (typeof value === 'object' && value !== null && (value as any).name) {
         const varName = (value as any).name;
         const varId = variableNameToId.get(varName);
+        // 优先使用解析值中的 type（$name:TYPE），再从 Blockly 运行时推断
+        const varType = (value as any).type || inferFieldVariableType(config.type, key);
         if (varId) {
-          // 使用 ID 引用，同时保留 name（Blockly 序列化格式需要两者）
-          block.fields[key] = { id: varId, name: varName, type: '' };
+          block.fields[key] = { id: varId, name: varName, type: varType };
         } else {
-          // 变量未声明，保持 name 格式（Blockly 可能会自动创建）
           block.fields[key] = value;
         }
       } else {
@@ -1052,6 +1154,12 @@ function convertBlockConfigToAbi(
     };
     delete block.next.block.x;
     delete block.next.block.y;
+  }
+  
+  // === 通用写入 extraState（mutator 块的关键状态）===
+  // 直接透传，不做 blockType 特定的补全——完整的 extraState 应由 @extra: 注解或解析器推断提供
+  if (config.extraState) {
+    block.extraState = { ...config.extraState };
   }
   
   return block;
@@ -1103,14 +1211,16 @@ function collectVariableReferences(
   variables: any[]
 ): void {
   // 扫描字段中的变量引用
+  // 变量类型优先使用解析值中携带的 type（来自 $name:TYPE 向后兼容），再从 Blockly 运行时推断
   if (config.fields) {
-    for (const value of Object.values(config.fields)) {
+    for (const [key, value] of Object.entries(config.fields)) {
       if (typeof value === 'object' && value !== null && (value as any).name) {
         const varName = (value as any).name;
+        const varType = (value as any).type || inferFieldVariableType(config.type, key);
         if (!variableNameToId.has(varName)) {
           const varId = generateUniqueId();
           variableNameToId.set(varName, varId);
-          variables.push({ name: varName, type: '', id: varId });
+          variables.push({ name: varName, type: varType, id: varId });
         }
       }
     }

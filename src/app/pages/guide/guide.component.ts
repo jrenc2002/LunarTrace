@@ -230,7 +230,7 @@ export class GuideComponent implements OnInit, AfterViewInit {
   //   setTimeout(() => {
   //     const img = document.querySelector('.qrcode') as HTMLImageElement;
   //     if (img) {
-  //       const originalSrc = 'https://dl.diandeng.tech/blockly/wechat.jpg';
+  //       const originalSrc = 'https://dl.yysc.tech/blockly/wechat.jpg';
   //       img.src = `${originalSrc}?t=${Date.now()}`;
   //     }
   //   }, 1000);

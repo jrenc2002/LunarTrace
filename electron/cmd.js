@@ -1,5 +1,6 @@
 const { spawn, exec } = require('child_process');
 const { ipcMain } = require('electron');
+const path = require('path');
 const { isWin32, isDarwin, isLinux } = require('./platform');
 
 class CommandManager {
@@ -15,7 +16,9 @@ class CommandManager {
     // 根据平台选择正确的 shell
     let shell;
     if (isWin32) {
-      shell = 'powershell';
+      // 使用绝对路径，避免 PATH 中找不到 powershell 导致 ENOENT
+      const systemRoot = process.env.SystemRoot || process.env.windir || 'C:\\Windows';
+      shell = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
     } else if (isDarwin) {
       shell = '/bin/zsh';
     } else if (isLinux) {

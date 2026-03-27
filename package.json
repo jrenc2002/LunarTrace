@@ -1,7 +1,7 @@
 {
   "name": "aily-blockly",
   "productName": "aily blockly",
-  "version": "0.9.34",
+  "version": "0.9.35",
   "author": "coloz",
   "description": "aily blockly dev",
   "main": "electron/main.js",
@@ -9,7 +9,7 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://dl.diandeng.tech/blockly"
+        "url": "https://dl.yysc.tech/blockly"
       }
     ],
     "appId": "blockly.aily.pro",

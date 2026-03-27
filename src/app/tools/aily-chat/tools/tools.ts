@@ -344,7 +344,7 @@ export const TOOLS = [
     // =============================================================================
     {
         name: 'create_project',
-        description: '创建一个新项目，返回项目路径。需要提供使用的开发板（如 "@aily-project/board-arduino_uno", "@aily-project/board-arduino_uno_r4_minima"），传入的开发板名称以`https://blockly.diandeng.tech/boards.json`中的内容为准。',
+        description: '创建一个新项目，返回项目路径。需要提供使用的开发板（如 "@aily-project/board-arduino_uno", "@aily-project/board-arduino_uno_r4_minima"），传入的开发板名称以`https://blockly.yysc.tech/boards.json`中的内容为准。',
         input_schema: {
             type: 'object',
             properties: {
