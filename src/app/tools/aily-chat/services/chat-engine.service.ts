@@ -575,9 +575,6 @@ Do not create non-existent boards and libraries.
 
   showAiWritingNotice(isWaiting: boolean): void {
     if (isWaiting) {
-      if (AilyHost.get().electron?.isWindowMinimized()) {
-        AilyHost.get().electron?.notify('Aily', 'Blockly图形需要窗口权限', { timeoutType: 'never' });
-      }
       this._aiNoticeShown = true;
       AilyHost.get().notice?.update({
         title: 'AI正在操作', state: 'doing', showProgress: false, setTimeout: 0,
