@@ -308,39 +308,50 @@ async function importFromAbs(
     const variableMap = workspace.getVariableMap();
     const existingVars = workspace.getAllVariables();
     if (variableMap && existingVars.length > 0) {
-      for (const oldVar of existingVars) {
-        if (!allVariables.has(oldVar.name) && !autoCreatedVars.has(oldVar.name)) {
-          variableMap.deleteVariable(oldVar);
+      Blockly.Events.disable();
+      try {
+        for (const oldVar of existingVars) {
+          if (!allVariables.has(oldVar.name) && !autoCreatedVars.has(oldVar.name)) {
+            variableMap.deleteVariable(oldVar);
+          }
         }
+      } finally {
+        Blockly.Events.enable();
       }
     }
     
     // 同步 ABS 中声明的变量到工作区（只创建不存在的，保留已有的）
     // 注意：当推断出变量类型时，必须精确匹配（名称+类型），
     // 否则已存在的空类型变量会导致 FieldVariable "type doesn't match" 错误
+    // 禁用事件，避免删除/重建变量时触发代码生成导致 getVariableById 返回 null
     const variableNameToId = new Map<string, string>();
     
-    for (const [name, type] of allVariables) {
-      let variable: any;
-      if (type) {
-        // 类型已知时，按名称+类型精确查找
-        variable = workspace.getVariable(name, type);
-        if (!variable) {
-          // 检查是否存在同名但类型不匹配的旧变量
-          const wrongTypeVar = workspace.getVariable(name);
-          if (wrongTypeVar && wrongTypeVar.type !== type) {
-            // 删除旧的错误类型变量，用正确类型重建
-            variableMap.deleteVariable(wrongTypeVar);
+    Blockly.Events.disable();
+    try {
+      for (const [name, type] of allVariables) {
+        let variable: any;
+        if (type) {
+          // 类型已知时，按名称+类型精确查找
+          variable = workspace.getVariable(name, type);
+          if (!variable) {
+            // 检查是否存在同名但类型不匹配的旧变量
+            const wrongTypeVar = workspace.getVariable(name);
+            if (wrongTypeVar && wrongTypeVar.type !== type) {
+              // 删除旧的错误类型变量，用正确类型重建
+              variableMap.deleteVariable(wrongTypeVar);
+            }
+            variable = workspace.createVariable(name, type);
           }
-          variable = workspace.createVariable(name, type);
+        } else {
+          variable = workspace.getVariable(name);
+          if (!variable) {
+            variable = workspace.createVariable(name);
+          }
         }
-      } else {
-        variable = workspace.getVariable(name);
-        if (!variable) {
-          variable = workspace.createVariable(name);
-        }
+        variableNameToId.set(name, variable.getId());
       }
-      variableNameToId.set(name, variable.getId());
+    } finally {
+      Blockly.Events.enable();
     }
     // console.log(`📋 同步 ${allVariables.size} 个变量`);
     

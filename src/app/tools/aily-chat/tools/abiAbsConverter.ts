@@ -585,17 +585,39 @@ function buildBlockCall(block: any, context: ConversionContext): string {
  * @param value 字段值
  * @param context 转换上下文
  */
+/**
+ * 检查变量名是否包含会破坏 ABS 语法的特殊字符
+ * 这些字符会干扰括号深度计算和参数分割
+ */
+function isUnsafeVarName(name: string): boolean {
+  return /[(),\[\]{}"'`]/.test(name);
+}
+
+/**
+ * 生成安全的 ABS 变量引用
+ * 普通变量名: $varName
+ * 含特殊字符: $"varName" （防止括号等字符破坏 ABS 解析）
+ */
+function safeVarRef(name: string): string {
+  if (isUnsafeVarName(name)) {
+    // 转义名称中的双引号和反斜杠，然后用双引号包裹
+    const escaped = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return `$"${escaped}"`;
+  }
+  return `$${name}`;
+}
+
 function formatFieldValue(blockType: string, fieldName: string, value: any, context: ConversionContext): string | null {
   if (value === null || value === undefined) return null;
   
   // 变量字段
   if (typeof value === 'object') {
     if (value.name) {
-      return `$${value.name}`;
+      return safeVarRef(value.name);
     }
     if (value.id) {
       const varName = context.getVariableName(value.id);
-      return `$${varName}`;
+      return safeVarRef(varName);
     }
     return null;
   }
@@ -666,15 +688,15 @@ function formatBlockAsValue(block: any, context: ConversionContext): string {
       if (typeof varField === 'object') {
         // 优先使用 name，其次通过 id 查找
         if (varField.name) {
-          return `$${varField.name}`;
+          return safeVarRef(varField.name);
         }
         if (varField.id) {
           const varName = context.getVariableName(varField.id);
-          return `$${varName}`;
+          return safeVarRef(varName);
         }
       }
       if (typeof varField === 'string') {
-        return `$${context.getVariableName(varField)}`;
+        return safeVarRef(context.getVariableName(varField));
       }
       return '$unknown';
     
@@ -721,16 +743,17 @@ function queryArgsOrderFromBlockly(blockType: string): Array<{ name: string; kin
             if (field.name && field.SERIALIZABLE) {
               argsOrder.push({ name: field.name, kind: 'field' });
               // 顺便收集 FieldVariable 的类型过滤器
-              // 使用多种方法探测：getVariableTypes() 公开 API → defaultType 属性
+              // 注意：不使用 getVariableTypes() 公开 API，因为对于无约束的 FieldVariable
+              // （如 variables_set 的 VAR），它会回退到 workspace.getVariableTypes()，
+              // 错误地返回工作区中其他类型（如 FUNC）。
+              // 直接检查 field.variableTypes（字段自身的显式类型约束）+ defaultType。
               if (typeof field.getVariable === 'function') {
                 let varType = '';
-                if (typeof field.getVariableTypes === 'function') {
-                  try {
-                    const types = field.getVariableTypes();
-                    if (Array.isArray(types) && types.length > 0 && types[0] !== '') {
-                      varType = types[0];
-                    }
-                  } catch (_) { /* ignore */ }
+                // field.variableTypes: 编译后的 Blockly 属性（无下划线）
+                // 空数组 [] = 不限类型；['FUNC'] = 只接受 FUNC
+                const explicitTypes = field.variableTypes;
+                if (Array.isArray(explicitTypes) && explicitTypes.length > 0 && explicitTypes[0] !== '') {
+                  varType = explicitTypes[0];
                 }
                 if (!varType && field.defaultType) {
                   varType = field.defaultType;

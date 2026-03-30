@@ -502,6 +502,39 @@ export class BlocklyAbsParser {
    * logic_operation($a, AND, logic_compare($a, EQ, math_number(1)), logic_compare($b, EQ, math_number(2)))
    * ```
    */
+  /**
+   * 上下文感知的括号深度计算
+   * 跳过字符串引号内的括号
+   */
+  private countParenDepth(text: string): number {
+    let depth = 0;
+    let inString = false;
+    let stringChar = '';
+
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+
+      // 处理字符串（"..." 或 '...'）
+      if (ch === '"' || ch === "'") {
+        if (!inString) {
+          inString = true;
+          stringChar = ch;
+        } else if (ch === stringChar && text[i - 1] !== '\\') {
+          inString = false;
+        }
+        continue;
+      }
+      if (inString) continue;
+
+      if (ch === '(') {
+        depth++;
+      } else if (ch === ')') {
+        depth--;
+      }
+    }
+    return depth;
+  }
+
   private mergeMultilineParentheses(code: string): string {
     const lines = code.split('\n');
     const result: string[] = [];
@@ -521,10 +554,8 @@ export class BlocklyAbsParser {
       
       // 如果当前没有待合并的行
       if (parenDepth === 0) {
-        // 计算括号深度
-        const openCount = (line.match(/\(/g) || []).length;
-        const closeCount = (line.match(/\)/g) || []).length;
-        parenDepth = openCount - closeCount;
+        // 上下文感知的括号深度计算（跳过字符串内的括号）
+        parenDepth = this.countParenDepth(line);
         
         if (parenDepth > 0) {
           // 括号未闭合，开始收集
@@ -534,14 +565,15 @@ export class BlocklyAbsParser {
           baseIndent = indentMatch ? indentMatch[1] : '';
         } else {
           // 括号已闭合，直接添加
+          // 重要：如果 depth < 0（变量ID含特殊字符如 $zE)_p7... 导致多余的 )），
+          // 必须重置为0，否则后续行会被错误地当作"括号内续行"处理，
+          // 导致缩进丢失和解析错误
+          parenDepth = 0;
           result.push(line);
         }
       } else {
         // 在括号内，继续收集
-        // 更新括号深度
-        const openCount = (trimmed.match(/\(/g) || []).length;
-        const closeCount = (trimmed.match(/\)/g) || []).length;
-        parenDepth += openCount - closeCount;
+        parenDepth += this.countParenDepth(trimmed);
         
         // 合并到待处理行（用空格连接，去掉额外的缩进）
         pendingLine += ' ' + trimmed;
@@ -1073,8 +1105,28 @@ export class BlocklyAbsParser {
     }
     
     // 变量字段 $varName 或 $varName:TYPE（类型变量）
+    // 支持带引号的变量引用 $"name" （用于名称含特殊字符的情况）
     if (value.startsWith('$')) {
-      const varRef = value.slice(1);
+      let varRef = value.slice(1);
+      // 带引号的变量引用: $"name" 或 $"name":TYPE
+      if (varRef.startsWith('"')) {
+        // 查找未转义的闭合引号
+        let closeQuote = -1;
+        for (let ci = 1; ci < varRef.length; ci++) {
+          if (varRef[ci] === '"' && varRef[ci - 1] !== '\\') {
+            closeQuote = ci;
+            break;
+          }
+        }
+        if (closeQuote > 0) {
+          const quotedName = varRef.slice(1, closeQuote).replace(/\\\\/g, '\\').replace(/\\"/g, '"');
+          const afterQuote = varRef.slice(closeQuote + 1);
+          if (afterQuote.startsWith(':') && /^[A-Z_][A-Z0-9_]*$/i.test(afterQuote.slice(1))) {
+            return { name: quotedName, type: afterQuote.slice(1) };
+          }
+          return { name: quotedName };
+        }
+      }
       const colonIdx = varRef.lastIndexOf(':');
       if (colonIdx > 0 && /^[A-Z_][A-Z0-9_]*$/i.test(varRef.slice(colonIdx + 1))) {
         return { name: varRef.slice(0, colonIdx), type: varRef.slice(colonIdx + 1) };
@@ -1102,9 +1154,13 @@ export class BlocklyAbsParser {
   private parseInlineValue(value: string): AbsNode | null {
     value = value.trim();
     
-    // 变量引用 $varName
+    // 变量引用 $varName 或 $"varName"（带引号，用于含特殊字符的名称）
     if (value.startsWith('$')) {
-      const varName = value.slice(1);
+      let varName = value.slice(1);
+      // 带引号的变量引用: $"name"
+      if (varName.startsWith('"') && varName.endsWith('"')) {
+        varName = varName.slice(1, -1).replace(/\\\\/g, '\\').replace(/\\"/g, '"');
+      }
       return {
         type: 'variables_get',
         fields: { VAR: { name: varName } },
