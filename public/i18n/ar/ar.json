@@ -326,6 +326,7 @@
         "MERMAID_ARCH_CANCEL": "إلغاء",
         "MERMAID_COPY_FAILED": "فشل النسخ",
         "MERMAID_SAVE_FAILED": "فشل الحفظ",
+        "CLICK_TO_EDIT": "انقر للتعديل",
         "ONBOARDING": {
             "STEP1_TITLE": "مربع الإدخال",
             "STEP1_DESC": "اكتب هنا أسئلتك أو المهام التي تحتاج مساعدة الذكاء الاصطناعي فيها. اضغط Enter للإرسال، Ctrl+Enter لسطر جديد",

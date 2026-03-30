@@ -5,9 +5,14 @@
  * - Turn[] 作为 source of truth，engine.conversationMessages 是只读 getter
  * - 每次 API 调用前通过 buildMessages() 从 Turn[] 重建消息数组
  * - 上下文注入（skills/tools listing/memory）在 API 调用时瞬态插入，不存储
- * - Turn[] 不可变：压缩结果通过瞬态 _compressedMessages 传递，不回写 Turn[]
+ * - 普通裁剪可通过瞬态 prepared messages 传递，摘要结果必须回写 Turn[]
  * - 回滚/截断使用 Turn-native 操作（removeFromTurn / truncateToTurn）
  * - 工具结果去重在 buildMessages() 中执行，不修改原始 Turn 数据
+ *
+ * 不可变快照契约（Copilot 对齐）：
+ * - 已提交到 _turns 的 turn/round 不做就地字段修改
+ * - 状态更新通过 copy-on-write 生成新对象并替换数组槽位
+ * - deserialize/rebuild 等恢复路径也遵循“先构建后替换”
  */
 
 import type {
@@ -30,6 +35,9 @@ export class TurnManager {
   /** 不可变 Turn 列表（source of truth） */
   private _turns: Turn[] = [];
 
+  /** Turn 历史版本号：每次 Turn[] 发生变更时递增，用于摘要写回防竞态 */
+  private _revision = 0;
+
   /** 缓存的消息数组（buildMessages() 的输出） */
   private _cachedMessages: any[] | null = null;
   /** 缓存的 Turn 边界跨度（与 _cachedMessages 同步更新） */
@@ -47,6 +55,86 @@ export class TurnManager {
     'get_workspace_overview_tool',
   ]);
 
+  private createToolCallRoundId(): string {
+    return `round_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  private createSummaryMessage(summary: string): any {
+    return {
+      role: 'system',
+      content: `<conversation-summary>\n${summary}\n</conversation-summary>`
+    };
+  }
+
+  private clearSummaryState(turns: Turn[]): Turn[] {
+    let changed = false;
+
+    const nextTurns = turns.map(turn => {
+      const originalRounds = turn.response?.toolCallRounds;
+      let roundsChanged = false;
+
+      const nextRounds = originalRounds?.map(round => {
+        if (!round.summary) {
+          return round;
+        }
+        roundsChanged = true;
+        changed = true;
+        const { summary: _summary, ...rest } = round;
+        return rest;
+      });
+
+      const hasTurnSummary = !!turn.metadata?.summary;
+      const nextMetadata = hasTurnSummary
+        ? (() => {
+            const { summary: _summary, ...rest } = turn.metadata!;
+            return Object.keys(rest).length > 0 ? rest : undefined;
+          })()
+        : turn.metadata;
+
+      if (hasTurnSummary) {
+        changed = true;
+      }
+
+      if (!roundsChanged && nextMetadata === turn.metadata) {
+        return turn;
+      }
+
+      return {
+        ...turn,
+        metadata: nextMetadata,
+        response: turn.response
+          ? {
+              ...turn.response,
+              toolCallRounds: roundsChanged ? (nextRounds ?? []) : turn.response.toolCallRounds,
+            }
+          : turn.response,
+      };
+    });
+
+    return changed ? nextTurns : turns;
+  }
+
+  private findSummaryAnchor(): { turnIndex: number; roundIndex: number; summary: string } | null {
+    for (let turnIndex = this._turns.length - 1; turnIndex >= 0; turnIndex--) {
+      const turn = this._turns[turnIndex];
+      const rounds = turn.response?.toolCallRounds ?? [];
+
+      for (let roundIndex = rounds.length - 1; roundIndex >= 0; roundIndex--) {
+        const summary = rounds[roundIndex].summary?.trim();
+        if (summary) {
+          return { turnIndex, roundIndex, summary };
+        }
+      }
+
+      const turnSummary = turn.metadata?.summary?.trim();
+      if (turnSummary) {
+        return { turnIndex, roundIndex: -1, summary: turnSummary };
+      }
+    }
+
+    return null;
+  }
+
 
 
   // ==================== 读取 ====================
@@ -56,8 +144,18 @@ export class TurnManager {
     return this._turns;
   }
 
+  /** 获取 Turn 快照（结构化拷贝，避免外部误修改内部引用） */
+  get turnsSnapshot(): readonly Turn[] {
+    return structuredClone(this._turns);
+  }
+
   get length(): number {
     return this._turns.length;
+  }
+
+  /** 当前 Turn 历史版本号 */
+  get revision(): number {
+    return this._revision;
   }
 
   /** 获取最后一个 Turn */
@@ -97,7 +195,7 @@ export class TurnManager {
         timestamp: Date.now(),
       },
     };
-    this._turns.push(turn);
+    this._turns = [...this._turns, turn];
     this.invalidateCache();
     return id;
   }
@@ -112,19 +210,30 @@ export class TurnManager {
    * @param toolCalls 本轮 LLM 请求的工具调用列表
    */
   addToolCallRound(assistantContent: string, toolCalls: ToolCallEntry[]): void {
-    const turn = this.lastTurn;
-    if (!turn) return;
+    const lastIdx = this._turns.length - 1;
+    if (lastIdx < 0) return;
 
-    if (!turn.response) {
-      turn.response = { content: '', toolCallRounds: [] };
-    }
+    const turn = this._turns[lastIdx];
+    const response = turn.response ?? { content: '', toolCallRounds: [] };
 
     const round: ToolCallRound = {
+      id: this.createToolCallRoundId(),
       assistantContent: assistantContent || '',
       toolCalls,
       results: {},
     };
-    turn.response.toolCallRounds.push(round);
+
+    const nextTurn: Turn = {
+      ...turn,
+      response: {
+        ...response,
+        toolCallRounds: [...response.toolCallRounds, round],
+      },
+    };
+
+    const nextTurns = [...this._turns];
+    nextTurns[lastIdx] = nextTurn;
+    this._turns = nextTurns;
     this.invalidateCache();
   }
 
@@ -134,25 +243,52 @@ export class TurnManager {
    * 在工具执行完成时调用，将结果关联到对应的 ToolCallRound。
    */
   addToolResult(toolCallId: string, result: ToolCallResult): void {
-    const turn = this.lastTurn;
-    if (!turn?.response) return;
+    const lastIdx = this._turns.length - 1;
+    if (lastIdx < 0) return;
 
-    // 找到包含该 toolCallId 的 round
-    for (let i = turn.response.toolCallRounds.length - 1; i >= 0; i--) {
-      const round = turn.response.toolCallRounds[i];
-      if (round.toolCalls.some(tc => tc.id === toolCallId)) {
-        round.results[toolCallId] = result;
-        this.invalidateCache();
-        return;
+    const turn = this._turns[lastIdx];
+    if (!turn.response) return;
+
+    const rounds = turn.response.toolCallRounds;
+    if (rounds.length === 0) return;
+
+    let targetRoundIdx = -1;
+    for (let i = rounds.length - 1; i >= 0; i--) {
+      if (rounds[i].toolCalls.some(tc => tc.id === toolCallId)) {
+        targetRoundIdx = i;
+        break;
       }
     }
 
-    // 兜底：放入最后一个 round
-    const lastRound = turn.response.toolCallRounds[turn.response.toolCallRounds.length - 1];
-    if (lastRound) {
-      lastRound.results[toolCallId] = result;
-      this.invalidateCache();
+    if (targetRoundIdx < 0) {
+      targetRoundIdx = rounds.length - 1;
     }
+
+    const nextRounds = rounds.map((round, idx) => {
+      if (idx !== targetRoundIdx) {
+        return round;
+      }
+      return {
+        ...round,
+        results: {
+          ...round.results,
+          [toolCallId]: result,
+        },
+      };
+    });
+
+    const nextTurn: Turn = {
+      ...turn,
+      response: {
+        ...turn.response,
+        toolCallRounds: nextRounds,
+      },
+    };
+
+    const nextTurns = [...this._turns];
+    nextTurns[lastIdx] = nextTurn;
+    this._turns = nextTurns;
+    this.invalidateCache();
   }
 
   /**
@@ -161,14 +297,22 @@ export class TurnManager {
    * 在 finalizeStatelessTurn() 中调用（SSE 流完成且无 pending tool results）。
    */
   finalizeTurn(assistantContent: string): void {
-    const turn = this.lastTurn;
-    if (!turn) return;
+    const lastIdx = this._turns.length - 1;
+    if (lastIdx < 0) return;
 
-    if (!turn.response) {
-      turn.response = { content: assistantContent, toolCallRounds: [] };
-    } else {
-      turn.response.content = assistantContent;
-    }
+    const turn = this._turns[lastIdx];
+    const nextResponse = turn.response
+      ? { ...turn.response, content: assistantContent }
+      : { content: assistantContent, toolCallRounds: [] };
+
+    const nextTurn: Turn = {
+      ...turn,
+      response: nextResponse,
+    };
+
+    const nextTurns = [...this._turns];
+    nextTurns[lastIdx] = nextTurn;
+    this._turns = nextTurns;
     this.invalidateCache();
   }
 
@@ -190,33 +334,30 @@ export class TurnManager {
 
     const messages: any[] = [];
     const turnSpans: TurnSpan[] = [];
+    const summaryAnchor = this.findSummaryAnchor();
 
     for (let turnIdx = 0; turnIdx < this._turns.length; turnIdx++) {
+      if (summaryAnchor && turnIdx < summaryAnchor.turnIndex) {
+        continue;
+      }
+
       const turn = this._turns[turnIdx];
       const spanStart = messages.length;
       let hasInfoTools = false;
 
-      // 如果 turn 已被摘要化，使用摘要替代原始内容
-      if (turn.metadata?.compressed && turn.metadata?.summary) {
+      const isAnchorTurn = !!summaryAnchor && summaryAnchor.turnIndex === turnIdx;
+      const renderTurnLevelSummary = isAnchorTurn && summaryAnchor!.roundIndex === -1;
+      const renderRoundLevelSummary = isAnchorTurn && summaryAnchor!.roundIndex >= 0;
+
+      if (renderTurnLevelSummary) {
+        messages.push(this.createSummaryMessage(summaryAnchor!.summary));
+      } else {
+        // User message
         messages.push({
           role: 'user',
-          content: `[历史摘要] ${turn.metadata.summary}`,
+          content: turn.request.content,
         });
-        turnSpans.push({
-          turnId: turn.id,
-          turnIndex: turnIdx,
-          startIdx: spanStart,
-          endIdx: messages.length,
-          hasInfoTools: false,
-        });
-        continue;
       }
-
-      // User message
-      messages.push({
-        role: 'user',
-        content: turn.request.content,
-      });
 
       if (!turn.response) {
         turnSpans.push({
@@ -249,10 +390,13 @@ export class TurnManager {
         continue;
       }
 
-      // 有工具调用：按 round 展开（Copilot 风格：保留所有 rounds 完整内容）
-      // 清理 <think>/aily-state 等非推理内容，但不折叠或丢弃 rounds
-      // token 裁剪由 prioritizedTrim()（Turn 级）和 compressToolResults()（内容级）负责
-      for (const round of rounds) {
+      const firstRoundIndex = renderRoundLevelSummary ? summaryAnchor!.roundIndex + 1 : 0;
+      if (renderRoundLevelSummary) {
+        messages.push(this.createSummaryMessage(summaryAnchor!.summary));
+      }
+
+      for (let roundIndex = firstRoundIndex; roundIndex < rounds.length; roundIndex++) {
+        const round = rounds[roundIndex];
         // 清理中间轮内容：移除 <think>、aily-state 等 UI 标记，保留有意义的输出文本
         const content = sanitizeAssistantContent(round.assistantContent || '');
 
@@ -332,9 +476,9 @@ export class TurnManager {
   truncateToTurn(turnId: string): void {
     const idx = this._turns.findIndex(t => t.id === turnId);
     if (idx >= 0) {
-      this._turns.length = idx + 1;
-      // 清除该 turn 的 response（用于 regenerate）
-      delete this._turns[idx].response;
+      const targetTurn = this._turns[idx];
+      const { response: _response, ...rest } = targetTurn;
+      this._turns = [...this._turns.slice(0, idx), rest];
       this.invalidateCache();
     }
   }
@@ -346,7 +490,7 @@ export class TurnManager {
   removeFromTurn(turnId: string): void {
     const idx = this._turns.findIndex(t => t.id === turnId);
     if (idx >= 0) {
-      this._turns.length = idx;
+      this._turns = this._turns.slice(0, idx);
       this.invalidateCache();
     }
   }
@@ -356,7 +500,7 @@ export class TurnManager {
    */
   removeIncompleteLast(): void {
     if (this._turns.length > 0 && !this._turns[this._turns.length - 1].response) {
-      this._turns.pop();
+      this._turns = this._turns.slice(0, -1);
       this.invalidateCache();
     }
   }
@@ -366,15 +510,89 @@ export class TurnManager {
   /**
    * 标记指定范围的 Turn 为已摘要化
    */
-  markCompressed(turnIds: string[], summary: string): void {
-    for (const turn of this._turns) {
-      if (turnIds.includes(turn.id)) {
-        if (!turn.metadata) turn.metadata = {};
-        turn.metadata.compressed = true;
-        turn.metadata.summary = summary;
-      }
+  applySummary(
+    turnIds: string[],
+    anchorTurnId: string,
+    summary: string,
+    _source: 'background' | 'foreground',
+    anchorRoundId?: string,
+    expectedRevision?: number
+  ): boolean {
+    if (!turnIds.length || !summary.trim()) {
+      return false;
     }
+
+    if (typeof expectedRevision === 'number' && expectedRevision !== this._revision) {
+      // revision 不匹配仅做日志警告，不阻断写入。
+      // 后续的 turn 前缀校验 + round ID 校验已足够防止过期写回；
+      // revision 在任何 invalidateCache() 时递增（包括新 turn 追加），
+      // 后台摘要期间用户继续对话会导致 revision 漂移，但被覆盖的旧 turn 并未变化。
+      console.warn(`[TurnManager] 摘要写回 revision 不匹配（expected=${expectedRevision}, current=${this._revision}），继续校验 turn 前缀`);
+    }
+
+    // stale guard: 仅在“待覆盖 turn 列表”与当前历史前缀一致时应用摘要。
+    // 防止后台摘要在历史已变更后错误写回。
+    const anchorIdxInCurrent = this._turns.findIndex(turn => turn.id === anchorTurnId);
+    if (anchorIdxInCurrent < 0) {
+      return false;
+    }
+    const expectedCoveredIds = this._turns.slice(0, anchorIdxInCurrent + 1).map(turn => turn.id);
+    if (
+      turnIds.length !== expectedCoveredIds.length ||
+      !turnIds.every((id, idx) => id === expectedCoveredIds[idx])
+    ) {
+      console.warn('[TurnManager] 跳过过期摘要写回：covered turn 列表与当前历史前缀不一致');
+      return false;
+    }
+
+    const baseTurns = this.clearSummaryState(this._turns);
+    const anchorTurnIdx = baseTurns.findIndex(turn => turn.id === anchorTurnId);
+    if (anchorTurnIdx < 0) {
+      return false;
+    }
+
+    const anchorTurn = baseTurns[anchorTurnIdx];
+
+    if (anchorRoundId) {
+      const rounds = anchorTurn.response?.toolCallRounds ?? [];
+      const anchorRoundIdx = rounds.findIndex(round => round.id === anchorRoundId);
+      if (anchorRoundIdx >= 0 && anchorTurn.response) {
+        const nextRounds = rounds.map((round, idx) =>
+          idx === anchorRoundIdx ? { ...round, summary } : round
+        );
+        const nextTurn: Turn = {
+          ...anchorTurn,
+          response: {
+            ...anchorTurn.response,
+            toolCallRounds: nextRounds,
+          },
+        };
+        const nextTurns = [...baseTurns];
+        nextTurns[anchorTurnIdx] = nextTurn;
+        this._turns = nextTurns;
+        this.invalidateCache();
+        return true;
+      }
+
+      // 若调用方明确指定了 round 锚点，但当前 turn 中已不存在该 round，
+      // 说明摘要结果与当前历史快照不一致（过期/竞态），直接跳过写回。
+      console.warn('[TurnManager] 跳过过期摘要写回：anchorRoundId 在当前 turn 中不存在');
+      return false;
+    }
+
+    const nextTurn: Turn = {
+      ...anchorTurn,
+      metadata: {
+        ...(anchorTurn.metadata ?? {}),
+        summary,
+      },
+    };
+    const nextTurns = [...baseTurns];
+    nextTurns[anchorTurnIdx] = nextTurn;
+    this._turns = nextTurns;
+
     this.invalidateCache();
+    return true;
   }
 
   // ==================== 序列化 ====================
@@ -383,9 +601,24 @@ export class TurnManager {
    * 序列化为可持久化格式
    */
   serialize(): SerializedTurns {
+    const turns = structuredClone(this._turns);
+
+    // turn.metadata.summary 仅用于兼容旧数据或无 rounds 场景。
+    // 若已有 round.summary，则不再冗余持久化 turn 级摘要。
+    for (const turn of turns) {
+      const rounds = turn.response?.toolCallRounds ?? [];
+      const hasRoundSummary = rounds.some(round => !!round.summary?.trim());
+      if (hasRoundSummary && turn.metadata) {
+        delete turn.metadata.summary;
+        if (Object.keys(turn.metadata).length === 0) {
+          delete turn.metadata;
+        }
+      }
+    }
+
     return {
       version: 1,
-      turns: structuredClone(this._turns),
+      turns,
     };
   }
 
@@ -394,7 +627,40 @@ export class TurnManager {
    */
   deserialize(data: SerializedTurns): void {
     if (data?.version === 1 && Array.isArray(data.turns)) {
-      this._turns = data.turns;
+      const clonedTurns = structuredClone(data.turns as Turn[]);
+      this._turns = clonedTurns.map(turn => {
+        const rounds = turn.response?.toolCallRounds ?? [];
+        const hadMissingRoundId = rounds.some(round => !round.id);
+        const normalizedRounds = rounds.map(round =>
+          round.id ? round : { ...round, id: this.createToolCallRoundId() }
+        );
+
+        let migratedRounds = normalizedRounds;
+        let migratedSummary = false;
+        if (turn.metadata?.summary && normalizedRounds.length > 0 && !normalizedRounds.some(round => !!round.summary)) {
+          const lastRoundIdx = normalizedRounds.length - 1;
+          migratedRounds = normalizedRounds.map((round, idx) =>
+            idx === lastRoundIdx ? { ...round, summary: turn.metadata!.summary } : round
+          );
+          migratedSummary = true;
+        }
+
+        if (!turn.response) {
+          return turn;
+        }
+
+        if (!hadMissingRoundId && !migratedSummary) {
+          return turn;
+        }
+
+        return {
+          ...turn,
+          response: {
+            ...turn.response,
+            toolCallRounds: migratedRounds,
+          },
+        };
+      });
       this.invalidateCache();
     }
   }
@@ -406,8 +672,9 @@ export class TurnManager {
    * 从消息数组重建 Turn[]
    */
   rebuildFromMessages(messages: any[]): void {
-    this._turns = [];
+    const rebuiltTurns: Turn[] = [];
     if (!messages || messages.length === 0) {
+      this._turns = [];
       this.invalidateCache();
       return;
     }
@@ -426,7 +693,7 @@ export class TurnManager {
       if (msg.role === 'user') {
         // 新 Turn 开始
         if (currentTurn) {
-          this._turns.push(currentTurn);
+          rebuiltTurns.push(currentTurn);
         }
         currentTurn = {
           id: this.generateTurnId(),
@@ -441,6 +708,7 @@ export class TurnManager {
         if (msg.tool_calls && msg.tool_calls.length > 0) {
           // 有 tool_calls 的 assistant 消息 → 新建一个 ToolCallRound
           currentRound = {
+            id: this.createToolCallRoundId(),
             assistantContent: msg.content || '',
             toolCalls: msg.tool_calls.map((tc: any) => ({
               id: tc.id,
@@ -469,9 +737,10 @@ export class TurnManager {
 
     // 推入最后一个 turn
     if (currentTurn) {
-      this._turns.push(currentTurn);
+      rebuiltTurns.push(currentTurn);
     }
 
+    this._turns = rebuiltTurns;
     this.invalidateCache();
   }
 
@@ -520,6 +789,7 @@ export class TurnManager {
   // ==================== 内部方法 ====================
 
   private invalidateCache(): void {
+    this._revision += 1;
     this._dirty = true;
     this._cachedMessages = null;
     this._cachedTurnSpans = [];

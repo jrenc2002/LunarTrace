@@ -1443,16 +1443,14 @@ function configureBlockFields(block: any, fields: FieldConfig): {
             const variableMap = workspace?.getVariableMap?.();
             let finalVariableId: string | null = null;
             
-            // 获取字段期望的变量类型（使用公开 API，编译后的 Blockly 属性名无下划线）
+            // 获取字段期望的变量类型（检查字段自身的显式约束，不回退到工作区类型）
             const field = block.getField(fieldName);
             let expectedTypes: string[] = [''];
-            if (field && typeof field.getVariableTypes === 'function') {
-              try {
-                const types = field.getVariableTypes();
-                if (Array.isArray(types) && types.length > 0) {
-                  expectedTypes = types;
-                }
-              } catch (_) { /* ignore */ }
+            if (field) {
+              const explicitTypes = field.variableTypes;
+              if (Array.isArray(explicitTypes) && explicitTypes.length > 0) {
+                expectedTypes = explicitTypes;
+              }
             }
             // console.log(`🔍 字段 ${fieldName} 期望的变量类型:`, expectedTypes);
             
@@ -1530,14 +1528,10 @@ function configureBlockFields(block: any, fields: FieldConfig): {
                 try {
                   const field = block.getField(fieldName);
                   if (field && typeof field.getVariable === 'function') {
-                    // 优先使用 getVariableTypes() 公开 API
-                    if (typeof field.getVariableTypes === 'function') {
-                      try {
-                        const types = field.getVariableTypes();
-                        if (Array.isArray(types) && types.length > 0 && types[0] !== '') {
-                          variableType = types[0];
-                        }
-                      } catch (_) { /* ignore */ }
+                    // 检查字段自身的显式类型约束（不使用 getVariableTypes() 因为它回退到工作区类型）
+                    const explicitTypes = field.variableTypes;
+                    if (Array.isArray(explicitTypes) && explicitTypes.length > 0 && explicitTypes[0] !== '') {
+                      variableType = explicitTypes[0];
                     }
                     // 回退到 defaultType 属性
                     if (!variableType && field.defaultType) {

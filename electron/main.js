@@ -1126,8 +1126,11 @@ function createWindow() {
       nodeIntegration: true,
       webSecurity: false,
       preload: path.join(__dirname, "preload.js"),
-      // // 启用 Web Serial API 支持
+      // 启用 Web Serial API 支持
       // enableBlinkFeatures: 'Serial',
+      // 禁用后台节流和页面可见性，避免在后台时停止渲染
+      backgroundThrottling: false,
+      pageVisibility: true,
     },
   });
 

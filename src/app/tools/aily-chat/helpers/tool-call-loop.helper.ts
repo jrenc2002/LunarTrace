@@ -9,10 +9,31 @@ import type { ChatEngineService } from '../services/chat-engine.service';
 import { ToolCallState } from '../core/chat-types';
 import { AilyHost } from '../core/host';
 import { isDeferredTool } from '../tools/tools';
+import { formatHookContext } from '../services/chat-hook.service';
 
 export class ToolCallLoopHelper {
-  /** 压缩后的消息（瞬态，仅在 startChatTurn → streamConnect 之间传递） */
-  _compressedMessages: any[] | null = null;
+  /** 发送前准备好的消息（瞬态，仅承载未持久化的普通裁剪结果） */
+  _preparedMessages: any[] | null = null;
+
+  /**
+   * AutoPilot 安全阀：单 Turn 内连续工具调用的软上限
+   *
+   * 参考 Copilot 的 MAX_AUTOPILOT_ITERATIONS 概念：
+   * - 到达此阈值时注入 task_complete 期望提示，引导 LLM 收束输出
+   * - 不直接硬中断（硬中断由 maxCount 兜底），而是给 LLM 一次机会完成总结
+   * - 防止 LLM 无限循环调用工具而不产出有效回答
+   */
+  private static readonly AUTOPILOT_SOFT_LIMIT = 15;
+
+  /**
+   * Stop Hook 状态 — 参考 Copilot ToolCallingLoop.stopHookReason
+   *
+   * 当 Stop Hook 阻止停止时，将原因存储在此字段。
+   * 下次 startChatTurn() 时作为 user 消息注入，
+   * 引导 LLM 继续处理 Hook 指定的任务。
+   */
+  private _stopHookReason: string | undefined;
+  private _stopHookActive = false;
 
   constructor(private engine: ChatEngineService) {}
 
@@ -72,10 +93,47 @@ export class ToolCallLoopHelper {
       return;
     }
 
+    // Hook: SessionStart — 参考 Copilot executeSessionStartHook()
+    // 仅在首轮（iteration=0）触发，注入额外上下文
+    if (this.engine.toolCallingIteration === 0 && this.engine.hookService.hasHandlers('SessionStart')) {
+      const hookResult = await this.engine.hookService.executeGeneric('SessionStart', {
+        sessionId: this.engine.sessionId,
+        mode: this.engine.currentMode,
+      });
+      if (hookResult?.additionalContext) {
+        console.log('[Hook] SessionStart 注入额外上下文');
+        // 将上下文注入到 prepared messages（类似 Copilot additionalHookContext）
+        const base = this._preparedMessages ?? this.engine.turnManager.buildMessages();
+        this._preparedMessages = [
+          ...base,
+          { role: 'user', content: hookResult.additionalContext },
+        ];
+      }
+    }
+
     this.engine.contextBudgetService.updateModelContextSize(this.engine.currentModel?.model || null);
     this.engine.contextBudgetService.updateBudget(this.engine.conversationMessages, this.getCurrentTools());
 
     const preCompressBudget = this.engine.contextBudgetService.getSnapshot();
+
+    // Hook: PreCompact — 参考 Copilot executeHook('PreCompact', ...)
+    // 在压缩决策前允许外部模块注入自定义指令或阻止压缩
+    if (this.engine.hookService.hasHandlers('PreCompact')) {
+      const usageRatio = preCompressBudget.currentTokens / preCompressBudget.maxContextTokens;
+      const hookResult = await this.engine.hookService.executeGeneric('PreCompact', {
+        trigger: 'auto',
+        usageRatio,
+        currentTokens: preCompressBudget.currentTokens,
+        maxTokens: preCompressBudget.maxContextTokens,
+      });
+      if (hookResult?.decision === 'block') {
+        console.log('[Hook] PreCompact 被阻止:', hookResult.reason);
+        // 跳过压缩，直接进入流连接
+        this.engine.stream.streamConnect(true);
+        return;
+      }
+    }
+
     const willSummarize = preCompressBudget.currentTokens >= preCompressBudget.summarizationThreshold;
     const bg = this.engine.contextBudgetService.backgroundSummarizer;
     const bgWaiting = bg.shouldBlockAndWait(preCompressBudget.currentTokens, preCompressBudget.maxContextTokens);
@@ -94,17 +152,18 @@ export class ToolCallLoopHelper {
       const currentMessages = this.engine.turnManager.buildMessages();
       const turnSpans = this.engine.turnManager.turnSpans;
       const compressed = await this.engine.contextBudgetService.compressIfNeeded(
-        currentMessages, this.engine.sessionId, this.getCurrentLLMConfig(), this.engine.currentModel?.model || undefined,
+        currentMessages, this.engine.sessionId, this.engine.turnManager,
+        this.getCurrentLLMConfig(), this.engine.currentModel?.model || undefined,
         turnSpans
       );
-      // 压缩结果仅瞬态使用，不回写 Turn[]（Turn[] 不可变）
-      this._compressedMessages = compressed;
+      const canonicalMessages = this.engine.turnManager.buildMessages();
+      this._preparedMessages = compressed === canonicalMessages ? null : compressed;
       if (showCompressionState) {
         this.engine.msg.displayToolCallState({ id: compressionStateId, name: 'context_compression', state: ToolCallState.DONE, text: '上下文摘要完成' });
       }
     } catch (error) {
       console.warn('[无状态模式] 上下文压缩失败，使用原始历史:', error);
-      this._compressedMessages = null;
+      this._preparedMessages = null;
       if (showCompressionState) {
         this.engine.msg.displayToolCallState({ id: compressionStateId, name: 'context_compression', state: ToolCallState.WARN, text: '上下文摘要失败，使用原始历史继续' });
       }
@@ -116,6 +175,25 @@ export class ToolCallLoopHelper {
     this.engine.activeToolExecutions = 0;
     this.engine.sseStreamCompleted = false;
     this.engine.currentStatelessMode = true;
+
+    // P10: AutoPilot 安全阀 — 到达软上限时注入收束提示
+    // 参考 Copilot: 在接近迭代上限时注入 "please finalize" 指令
+    if (this.engine.toolCallingIteration >= ToolCallLoopHelper.AUTOPILOT_SOFT_LIMIT) {
+      const remaining = this.engine.ailyChatConfigService.maxCount - this.engine.toolCallingIteration;
+      if (remaining > 0 && remaining <= 3) {
+        // 将收束提示注入到 prepared messages 中
+        const base = this._preparedMessages ?? this.engine.turnManager.buildMessages();
+        this._preparedMessages = [
+          ...base,
+          {
+            role: 'user',
+            content: `[System notice: You have used ${this.engine.toolCallingIteration} tool call iterations. ` +
+              `Only ${remaining} iteration(s) remain. Please wrap up your current task and provide a final response ` +
+              `to the user. If you need more iterations, explain what remains to be done.]`
+          }
+        ];
+      }
+    }
 
     // 压缩期间用户可能已取消，再次检查
     if (this.engine.isCancelled) { this.engine.isWaiting = false; return; }
@@ -167,41 +245,85 @@ export class ToolCallLoopHelper {
     if (this.engine.pendingToolResults.length > 0 && !this.engine.isCancelled) {
       this.continueToolCallingLoop();
     } else {
-      // Turn 结构化存储：最终 assistant 响应
-      this.engine.turnManager.finalizeTurn(this.engine.currentTurnAssistantContent || '');
-      this.engine.contextBudgetService.updateBudget(this.engine.conversationMessages, this.getCurrentTools());
-      const budget = this.engine.contextBudgetService.getSnapshot();
-      this.engine.contextBudgetService.backgroundSummarizer.checkAndTrigger(
-        this.engine.conversationMessages, budget.maxContextTokens, budget.currentTokens,
-        this.engine.sessionId, this.getCurrentLLMConfig(), this.engine.currentModel?.model || undefined
-      );
+      // Hook: Stop — 参考 Copilot ToolCallingLoop.executeStopHook()
+      // 在 Agent 循环结束前允许 Hook 阻止停止，注入后续任务
+      if (this.engine.hookService.hasHandlers('Stop')) {
+        this.engine.hookService.executeStop({
+          stopHookActive: this._stopHookActive,
+          toolCallingIteration: this.engine.toolCallingIteration,
+        }).then(stopResult => {
+          if (stopResult.shouldContinue && stopResult.reasons && stopResult.reasons.length > 0) {
+            // 参考 Copilot: 将 Hook 原因格式化为 user 消息，注入下轮
+            this._stopHookReason = formatHookContext(stopResult.reasons);
+            this._stopHookActive = true;
+            console.log('[Hook] Stop 被阻止，将继续循环:', stopResult.reasons);
 
-      // 提交当前 turn 的 checkpoint
-      this.engine.editCheckpointService.commitCurrentTurn();
-
-      // 如果本轮有文件变更，通过服务推送摘要到面板
-      if (this.engine.editCheckpointService.hasEditsInCurrentTurn()) {
-        if (this.engine.ailyChatConfigService.autoSaveEdits) {
-          // 自动保存模式：直接保留变更，不弹出面板
-          this.engine.editCheckpointService.acceptAllAsBaseline();
-          this.engine.editCheckpointService.dismissSummary();
-        } else {
-          const summary = this.engine.editCheckpointService.getEditsSummary();
-          this.engine.editCheckpointService.publishSummary(summary);
-        }
+            // 注入 Hook 原因作为 user 消息，然后继续循环
+            const base = this._preparedMessages ?? this.engine.turnManager.buildMessages();
+            this._preparedMessages = [
+              ...base,
+              { role: 'user', content: this._stopHookReason },
+            ];
+            this._stopHookReason = undefined;
+            this.engine.toolCallingIteration++;
+            this.startChatTurn();
+            return;
+          }
+          // Hook 未阻止，正常完成
+          this._doFinalize();
+        }).catch(err => {
+          console.error('[Hook] Stop hook 执行异常，正常完成:', err);
+          this._doFinalize();
+        });
+        return;
       }
 
-      if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
-        this.engine.list[this.engine.list.length - 1].state = 'done';
-      }
-      this.engine.isWaiting = false;
-      this.engine.isCompleted = true;
-      this.engine.session.saveCurrentSession();
-      if (!AilyHost.get().electron?.isWindowFocused()) {
-        AilyHost.get().electron?.notify('Aily', '对话已完成');
-      }
-      // 应用延迟的模型/模式切换
-      this.engine.applyPendingSwitch();
+      this._doFinalize();
     }
+  }
+
+  /**
+   * 实际完成逻辑（从 finalizeStatelessTurn 抽取，供 Hook 流程复用）
+   */
+  private _doFinalize(): void {
+    // Turn 结构化存储：最终 assistant 响应
+    this.engine.turnManager.finalizeTurn(this.engine.currentTurnAssistantContent || '');
+    this.engine.contextBudgetService.updateBudget(this.engine.conversationMessages, this.getCurrentTools());
+    const budget = this.engine.contextBudgetService.getSnapshot();
+    this.engine.contextBudgetService.backgroundSummarizer.checkAndTrigger(
+      this.engine.conversationMessages, budget.maxContextTokens, budget.currentTokens,
+      this.engine.sessionId, this.engine.turnManager,
+      this.getCurrentLLMConfig(), this.engine.currentModel?.model || undefined
+    );
+
+    // 提交当前 turn 的 checkpoint
+    this.engine.editCheckpointService.commitCurrentTurn();
+
+    // 如果本轮有文件变更，通过服务推送摘要到面板
+    if (this.engine.editCheckpointService.hasEditsInCurrentTurn()) {
+      if (this.engine.ailyChatConfigService.autoSaveEdits) {
+        // 自动保存模式：直接保留变更，不弹出面板
+        this.engine.editCheckpointService.acceptAllAsBaseline();
+        this.engine.editCheckpointService.dismissSummary();
+      } else {
+        const summary = this.engine.editCheckpointService.getEditsSummary();
+        this.engine.editCheckpointService.publishSummary(summary);
+      }
+    }
+
+    if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
+      this.engine.list[this.engine.list.length - 1].state = 'done';
+    }
+    this.engine.isWaiting = false;
+    this.engine.isCompleted = true;
+    this.engine.session.saveCurrentSession();
+    if (!AilyHost.get().electron?.isWindowFocused()) {
+      AilyHost.get().electron?.notify('Aily', '对话已完成');
+    }
+    // 应用延迟的模型/模式切换
+    this.engine.applyPendingSwitch();
+
+    // 重置 Stop Hook 状态
+    this._stopHookActive = false;
   }
 }

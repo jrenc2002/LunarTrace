@@ -425,6 +425,16 @@
   margin: 0 2px;
 }
 
+.msg-model-label {
+  margin-left: auto;
+  font-size: 11px;
+  color: #666;
+  white-space: nowrap;
+  user-select: none;
+  line-height: 26px;
+  padding: 0 4px;
+}
+
 .loader {
   position: absolute;
   bottom: 0;
@@ -455,14 +465,6 @@
   &:hover {
     background: rgba(255, 255, 255, 0.03);
   }
-}
-
-.click-to-edit-hint {
-  text-align: center;
-  font-size: 11px;
-  color: #666;
-  padding: 2px 0 4px;
-  user-select: none;
 }
 
 // ===== 编辑模式输入框（与主输入框样式一致） =====

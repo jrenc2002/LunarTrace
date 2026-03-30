@@ -20,8 +20,12 @@
  * 以及对应的执行结果。
  */
 export interface ToolCallRound {
+  /** 唯一标识，用于将摘要锚定到具体 round */
+  id: string;
   /** 本轮 LLM 在发起 tool_calls 前/同时输出的推理文本 */
   assistantContent?: string;
+  /** 可选摘要文本；存在时表示更早历史已被该摘要覆盖 */
+  summary?: string;
   /** 本轮中 LLM 请求的所有 tool_calls */
   toolCalls: ToolCallEntry[];
   /** tool_call_id → 执行结果，结果收集完成后填充 */
@@ -76,9 +80,7 @@ export interface TurnResponse {
 }
 
 export interface TurnMetadata {
-  /** 该 turn 的对话是否已被压缩/摘要化 */
-  compressed?: boolean;
-  /** 压缩后的摘要内容（替代原始 request+response） */
+  /** turn 级摘要内容：仅在无 tool rounds 或旧数据迁移时作为兜底 */
   summary?: string;
   /** 该 turn 的消息来源 */
   source?: string;

@@ -326,6 +326,7 @@
         "MERMAID_ARCH_CANCEL": "取消",
         "MERMAID_COPY_FAILED": "複製失敗",
         "MERMAID_SAVE_FAILED": "保存失敗",
+        "CLICK_TO_EDIT": "點擊編輯",
         "ONBOARDING": {
             "STEP1_TITLE": "輸入框",
             "STEP1_DESC": "在這裡輸入你想問的問題或需要AI幫助完成的任務，按 Enter 發送，Ctrl+Enter 換行",

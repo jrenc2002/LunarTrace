@@ -75,6 +75,8 @@ export interface ChatListItem {
   content: string;
   state: 'doing' | 'done';
   source?: string;
+  /** 该消息对应的模型名称（创建时快照） */
+  modelName?: string;
 }
 
 export interface SessionMetadata {

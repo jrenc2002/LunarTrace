@@ -3,6 +3,8 @@ import { BehaviorSubject, Observable, Subscription } from 'rxjs';
 import { ChatService } from './chat.service';
 import { AilyChatConfigService } from './aily-chat-config.service';
 import { estimateMessagesTokens, estimateTokenCount } from './context-budget.service';
+import type { TurnSpan } from '../core/turn-types';
+import { TurnManager } from '../core/turn-manager';
 
 // ==================== 后台摘要化状态机 ====================
 
@@ -28,14 +30,28 @@ export enum BackgroundSummarizationState {
 export interface BackgroundSummaryResult {
   /** 摘要文本 */
   summary: string;
-  /** 被摘要的消息数量 */
-  summarizedCount: number;
-  /** 保留的最近消息数量 */
-  preservedCount: number;
-  /** 摘要前的消息数组快照长度 */
-  originalLength: number;
+  /** 被摘要覆盖的 Turn ID 列表 */
+  coveredTurnIds: string[];
+  /** 摘要锚定的 Turn ID */
+  anchorTurnId: string;
+  /** 摘要优先锚定的 ToolCallRound ID（Copilot 对齐） */
+  anchorRoundId?: string;
+  /** 被摘要的消息数量（可见消息视角，仅用于日志） */
+  summarizedMessageCount: number;
+  /** 摘要来源 */
+  source: 'background' | 'foreground';
   /** 摘要生成时间戳 */
   timestamp: number;
+  /** 摘要生成时的 Turn 历史版本号（用于写回防竞态） */
+  historyRevision: number;
+}
+
+interface SummaryPlan {
+  coveredTurnIds: string[];
+  anchorTurnId: string;
+  anchorRoundId?: string;
+  toSummarizeMessages: any[];
+  historyRevision: number;
 }
 
 // ==================== 摘要提示模板 ====================
@@ -230,6 +246,7 @@ export class BackgroundSummarizerService {
     maxTokens: number,
     currentTokens: number,
     sessionId: string,
+    turnManager: TurnManager,
     llmConfig?: any,
     selectModel?: string
   ): void {
@@ -244,7 +261,7 @@ export class BackgroundSummarizerService {
     // ≥ 75%：启动后台摘要
     if (ratio >= BackgroundSummarizerService.BACKGROUND_TRIGGER_RATIO) {
       console.log(`[后台摘要] token 使用率 ${(ratio * 100).toFixed(1)}% ≥ 75%，启动后台摘要化`);
-      this.startBackground(messages, sessionId, llmConfig, selectModel);
+      this.startBackground(messages, turnManager, sessionId, llmConfig, selectModel);
     }
   }
 
@@ -285,34 +302,22 @@ export class BackgroundSummarizerService {
    * @param result 摘要结果
    * @returns 压缩后的消息数组
    */
-  applySummary(messages: any[], result: BackgroundSummaryResult): any[] {
-    // 验证：消息数组可能在摘要过程中发生了变化
-    // 但只要长度 ≥ 原始长度，且旧消息仍然可以被替换，就可以应用
-    if (messages.length < result.originalLength) {
-      console.warn(`[后台摘要] 消息数组变短了 (${messages.length} < ${result.originalLength})，跳过应用`);
-      return messages;
+  applySummary(turnManager: TurnManager, result: BackgroundSummaryResult): { messages: any[]; success: boolean } {
+    const summary = this.validateAndTruncateSummary(result.summary);
+    const success = turnManager.applySummary(
+      result.coveredTurnIds,
+      result.anchorTurnId,
+      summary,
+      result.source,
+      result.anchorRoundId,
+      result.historyRevision
+    );
+    if (success) {
+      console.log(`[后台摘要] 已写回 Turn 历史：覆盖 ${result.coveredTurnIds.length} 个 turn，锚点 ${result.anchorRoundId ?? result.anchorTurnId}`);
+    } else {
+      console.warn(`[后台摘要] 写回 Turn 历史失败：摘要与当前历史不一致，覆盖 ${result.coveredTurnIds.length} 个 turn`);
     }
-
-    // 统一验证/截断摘要长度
-    result.summary = this.validateAndTruncateSummary(result.summary);
-
-    const summaryMessage = {
-      role: 'system',
-      content: `<conversation-summary>\n${result.summary}\n</conversation-summary>\n\n以上是之前对话历史的摘要。请基于这些上下文继续对话。`
-    };
-
-    // 新消息 = [摘要, ...摘要后新增的消息(如果有), ...保留的原始消息]
-    // 摘要覆盖的范围：messages[0..originalLength - preservedCount)
-    const preserveStart = result.originalLength - result.preservedCount;
-    // 摘要完成后新增的消息：messages[originalLength..]
-    const newMessages = messages.slice(result.originalLength);
-    const preserved = messages.slice(preserveStart, result.originalLength);
-
-    const compressed = [summaryMessage, ...preserved, ...newMessages];
-
-    console.log(`[后台摘要] 已应用：${result.summarizedCount} 条消息摘要为 1 条，保留 ${result.preservedCount} 条 + ${newMessages.length} 条新增`);
-
-    return compressed;
+    return { messages: turnManager.buildMessages(), success };
   }
 
   /**
@@ -340,45 +345,120 @@ export class BackgroundSummarizerService {
    * 但使用独立的 LLM 调用（不影响后台 _activeSubscription）。
    * 超时 30s（前台需快速返回，不能像后台那样等 60s）。
    *
+   * 参考 Copilot 的 Full → Simple 降级链：
+   * 1. 优先使用 LLM 生成高质量摘要（Full mode）
+   * 2. LLM 失败/超时时，降级为纯文本压缩（Simple mode）
+   *    而非直接抛异常让上层回退到优先级裁剪
+   *
    * @returns 压缩后的消息数组 [summaryMessage, ...preservedMessages]
    */
   async foregroundSummarize(
     messages: any[],
+    turnManager: TurnManager,
     sessionId: string,
     llmConfig?: any,
     selectModel?: string
   ): Promise<any[]> {
-    const preserveCount = this.findPreservePoint(messages);
-    const toSummarize = messages.slice(0, messages.length - preserveCount);
-    const toPreserve = messages.slice(messages.length - preserveCount);
-
-    if (toSummarize.length === 0) {
+    const plan = this.buildSummaryPlan(messages, turnManager);
+    if (!plan) {
       return messages;
     }
 
-    const conversationText = this.buildConversationText(toSummarize);
-    const userPrompt = SUMMARIZATION_USER_PROMPT_TEMPLATE.replace('{conversation}', conversationText);
-    const summaryMessages = [
-      { role: 'system', content: SUMMARIZATION_SYSTEM_PROMPT },
-      { role: 'user', content: userPrompt }
+    // Full mode: LLM 摘要
+    try {
+      const conversationText = this.buildConversationText(plan.toSummarizeMessages);
+      const userPrompt = SUMMARIZATION_USER_PROMPT_TEMPLATE.replace('{conversation}', conversationText);
+      const summaryMessages = [
+        { role: 'system', content: SUMMARIZATION_SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt }
+      ];
+
+      let summary = await this.callLLMForeground(sessionId, summaryMessages, llmConfig, selectModel);
+
+      if (!summary) {
+        throw new Error('LLM 摘要返回空结果');
+      }
+
+      summary = this.validateAndTruncateSummary(summary);
+
+      const result: BackgroundSummaryResult = {
+        summary,
+        coveredTurnIds: plan.coveredTurnIds,
+        anchorTurnId: plan.anchorTurnId,
+        anchorRoundId: plan.anchorRoundId,
+        summarizedMessageCount: plan.toSummarizeMessages.length,
+        source: 'foreground',
+        timestamp: Date.now(),
+        historyRevision: plan.historyRevision,
+      };
+
+      console.log(`[前台摘要] Full mode: 将 ${plan.toSummarizeMessages.length} 条消息收敛为 LLM 摘要，覆盖 ${plan.coveredTurnIds.length} 个 turn`);
+      return this.applySummary(turnManager, result).messages;
+    } catch (fullModeError) {
+      // Simple mode fallback: 纯文本压缩（参考 Copilot SummarizedConversationHistory 降级链）
+      console.warn(`[前台摘要] Full mode 失败，降级为 Simple mode:`, fullModeError);
+      return this.simpleFallback(plan, turnManager);
+    }
+  }
+
+  /**
+   * Simple mode 降级 — 纯文本压缩（不依赖 LLM）
+   *
+   * 参考 Copilot 的 Simple mode：当 Full mode（LLM 摘要）失效时，
+   * 用纯文本压缩替代：对旧历史的工具结果截断到 50%，
+   * 并生成一份结构化的纯文本摘要替换最旧的 Turn。
+   *
+   * 比单纯的优先级裁剪（Layer 2）更好：
+   * - 优先级裁剪直接丢弃整个 Turn，丢失全部上下文
+   * - Simple mode 保留 Turn 结构但压缩内容，保留更多信息
+   */
+  private simpleFallback(plan: SummaryPlan, turnManager: TurnManager): any[] {
+    // 构建纯文本摘要：提取每个被覆盖 Turn 的关键信息
+    const lines: string[] = [
+      '<conversation-summary>',
+      '## Summary (auto-generated, Simple mode)',
+      '',
     ];
 
-    // 前台使用独立 LLM 调用（30s 超时，不影响 _activeSubscription）
-    let summary = await this.callLLMForeground(sessionId, summaryMessages, llmConfig, selectModel);
-
-    if (!summary) {
-      throw new Error('LLM 摘要返回空结果');
+    for (const msg of plan.toSummarizeMessages) {
+      if (msg.role === 'user') {
+        const content = (msg.content || '').substring(0, 500);
+        lines.push(`**User**: ${content}${msg.content?.length > 500 ? '...' : ''}`);
+      } else if (msg.role === 'assistant') {
+        const content = (msg.content || '')
+          .replace(/<think>[\s\S]*?<\/think>/g, '')
+          .replace(/```aily-state[\s\S]*?```/g, '')
+          .replace(/```aily-mermaid[\s\S]*?```/g, '')
+          .substring(0, 800);
+        if (content.trim()) {
+          lines.push(`**Assistant**: ${content}${msg.content?.length > 800 ? '...' : ''}`);
+        }
+        if (msg.tool_calls) {
+          const toolNames = msg.tool_calls.map((tc: any) => tc.function?.name || 'unknown').join(', ');
+          lines.push(`  [Called tools: ${toolNames}]`);
+        }
+      } else if (msg.role === 'tool') {
+        const truncContent = (msg.content || '').substring(0, 200);
+        lines.push(`  [Tool ${msg.name || 'unknown'} result]: ${truncContent}${msg.content?.length > 200 ? '...' : ''}`);
+      }
     }
 
-    summary = this.validateAndTruncateSummary(summary);
+    lines.push('', '</conversation-summary>');
+    const simpleSummary = lines.join('\n');
 
-    const summaryMessage = {
-      role: 'system',
-      content: `<conversation-summary>\n${summary}\n</conversation-summary>\n\n以上是之前对话历史的摘要。请基于这些上下文继续对话。`
+    const result: BackgroundSummaryResult = {
+      summary: simpleSummary,
+      coveredTurnIds: plan.coveredTurnIds,
+      anchorTurnId: plan.anchorTurnId,
+      anchorRoundId: plan.anchorRoundId,
+      summarizedMessageCount: plan.toSummarizeMessages.length,
+      source: 'foreground',
+      timestamp: Date.now(),
+      historyRevision: plan.historyRevision,
     };
 
-    console.log(`[前台摘要] 将 ${toSummarize.length} 条消息摘要为 1 条，保留最近 ${preserveCount} 条`);
-    return [summaryMessage, ...toPreserve];
+    console.log(`[前台摘要] Simple mode: 纯文本压缩 ${plan.toSummarizeMessages.length} 条消息，覆盖 ${plan.coveredTurnIds.length} 个 turn`);
+    return this.applySummary(turnManager, result).messages;
   }
 
   // ==================== 内部实现 ====================
@@ -388,6 +468,7 @@ export class BackgroundSummarizerService {
    */
   private startBackground(
     messages: any[],
+    turnManager: TurnManager,
     sessionId: string,
     llmConfig?: any,
     selectModel?: string
@@ -398,13 +479,13 @@ export class BackgroundSummarizerService {
     // 快照消息数组（不修改原数组）
     const snapshot = [...messages];
 
-    this._pendingPromise = this.executeSummarization(snapshot, sessionId, llmConfig, selectModel)
+    this._pendingPromise = this.executeSummarization(snapshot, turnManager, sessionId, llmConfig, selectModel)
       .then(result => {
         if (this._state === BackgroundSummarizationState.InProgress) {
           this._result = result;
           this._state = BackgroundSummarizationState.Completed;
           this.stateSubject.next(this._state);
-          console.log(`[后台摘要] 完成：${result.summarizedCount} 条消息已摘要`);
+          console.log(`[后台摘要] 完成：${result.summarizedMessageCount} 条消息已摘要，覆盖 ${result.coveredTurnIds.length} 个 turn`);
         }
         return result;
       })
@@ -423,20 +504,18 @@ export class BackgroundSummarizerService {
    */
   private async executeSummarization(
     messages: any[],
+    turnManager: TurnManager,
     sessionId: string,
     llmConfig?: any,
     selectModel?: string
   ): Promise<BackgroundSummaryResult> {
-    // 找到保留点
-    const preserveCount = this.findPreservePoint(messages);
-    const toSummarize = messages.slice(0, messages.length - preserveCount);
-
-    if (toSummarize.length === 0) {
+    const plan = this.buildSummaryPlan(messages, turnManager);
+    if (!plan) {
       throw new Error('没有可摘要的历史');
     }
 
     // 构建摘要请求文本（截断避免摘要请求本身过大）
-    const conversationText = this.buildConversationText(toSummarize);
+    const conversationText = this.buildConversationText(plan.toSummarizeMessages);
     const userPrompt = SUMMARIZATION_USER_PROMPT_TEMPLATE.replace('{conversation}', conversationText);
 
     const summaryMessages = [
@@ -457,11 +536,71 @@ export class BackgroundSummarizerService {
 
     return {
       summary,
-      summarizedCount: toSummarize.length,
-      preservedCount: preserveCount,
-      originalLength: messages.length,
+      coveredTurnIds: plan.coveredTurnIds,
+      anchorTurnId: plan.anchorTurnId,
+      anchorRoundId: plan.anchorRoundId,
+      summarizedMessageCount: plan.toSummarizeMessages.length,
+      source: 'background',
       timestamp: Date.now(),
+      historyRevision: plan.historyRevision,
     };
+  }
+
+  private buildSummaryPlan(messages: any[], turnManager: TurnManager): SummaryPlan | null {
+    const visibleSpans = [...turnManager.turnSpans] as TurnSpan[];
+    const turns = turnManager.turnsSnapshot;
+    if (visibleSpans.length <= 1) {
+      return null;
+    }
+
+    const preserveStartSpanIndex = this.findPreserveStartSpanIndex(visibleSpans);
+    if (preserveStartSpanIndex <= 0) {
+      return null;
+    }
+
+    const anchorSpan = visibleSpans[preserveStartSpanIndex - 1];
+    if (!anchorSpan) {
+      return null;
+    }
+
+    const coveredTurnIds = turns
+      .slice(0, anchorSpan.turnIndex + 1)
+      .map(turn => turn.id);
+
+    const toSummarizeMessages = messages.slice(0, anchorSpan.endIdx);
+    if (!coveredTurnIds.length || !toSummarizeMessages.length) {
+      return null;
+    }
+
+    return {
+      coveredTurnIds,
+      anchorTurnId: anchorSpan.turnId,
+      anchorRoundId: turns[anchorSpan.turnIndex]?.response?.toolCallRounds.at(-1)?.id,
+      toSummarizeMessages,
+      historyRevision: turnManager.revision,
+    };
+  }
+
+  private findPreserveStartSpanIndex(spans: TurnSpan[]): number {
+    const minPreserveMessages = 6;
+    let preservedMessages = 0;
+    let preserveStart = spans.length;
+
+    for (let i = spans.length - 1; i >= 0; i--) {
+      const span = spans[i];
+      preservedMessages += span.endIdx - span.startIdx;
+      preserveStart = i;
+
+      if (preservedMessages >= minPreserveMessages) {
+        break;
+      }
+
+      if (preservedMessages > Math.ceil(spans.length / 2)) {
+        break;
+      }
+    }
+
+    return preserveStart;
   }
 
   /**
@@ -652,40 +791,6 @@ export class BackgroundSummarizerService {
    * 找到保留最近消息的起始点
    * 至少保留最后一个完整的 user → assistant → tool 交互周期
    */
-  private findPreservePoint(messages: any[]): number {
-    const minPreserve = 6;
-
-    if (messages.length <= minPreserve) {
-      return messages.length;
-    }
-
-    let preserveCount = 0;
-    let foundUser = false;
-
-    for (let i = messages.length - 1; i >= 0; i--) {
-      preserveCount++;
-
-      if (messages[i].role === 'user') {
-        foundUser = true;
-        if (preserveCount >= minPreserve) {
-          break;
-        }
-      }
-
-      // 安全上限：不超过消息总数的一半
-      if (preserveCount > messages.length / 2) {
-        break;
-      }
-    }
-
-    // 如果没找到 user 消息，至少保留 minPreserve 条
-    if (!foundUser) {
-      preserveCount = Math.min(minPreserve, messages.length);
-    }
-
-    return preserveCount;
-  }
-
   /**
    * 取消所有正在进行的摘要（前台 + 后台）
    * 供外部在 stop() 时调用，避免用户取消后摘要仍消耗资源

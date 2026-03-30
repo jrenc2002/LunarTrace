@@ -227,10 +227,10 @@ export async function cloneRepositoryTool(args: CloneRepositoryArgs): Promise<To
 
   const fs = AilyHost.get().fs;
   const pathUtil = AilyHost.get().path;
-  const projectRoot = AilyHost.get().project.projectRootPath || AilyHost.get().project.currentProjectPath;
+  const projectRoot = AilyHost.get().project.currentProjectPath;
 
   if (!projectRoot) {
-    return { is_error: true, content: '无法确定项目根目录，请先打开项目' };
+    return { is_error: true, content: '无法确定项目目录，请先打开项目' };
   }
 
   // 2. 确定目标目录

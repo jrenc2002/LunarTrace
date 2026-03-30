@@ -35,6 +35,10 @@
     (mouseenter)="onDialogMouseEnter()"
     (mouseleave)="onDialogMouseLeave()"
     (click)="canEditUserMessage && !isEditing ? onUserMessageClick() : null"
+    nz-tooltip
+    [nzTooltipTitle]="(canEditUserMessage && !isEditing) ? ('AILY_CHAT.CLICK_TO_EDIT' | translate) : ''"
+    nzTooltipPlacement="bottom"
+    [nzTooltipOverlayStyle]="{ marginTop: '-10px', fontSize: '12px' }"
   >
     @if (canRenderCheckpointAnchor) {
       <div class="checkpoint-action-row" [class.expanded]="showCheckpointAnchor">
@@ -135,9 +139,6 @@
           </x-markdown>
         }
       </div>
-      @if (canEditUserMessage && showActions) {
-        <div class="click-to-edit-hint">点击编辑</div>
-      }
     }
 
     @if (doing || content==='[thinking...]') {
@@ -157,8 +158,11 @@
         <div class="msg-action-btn" [class.active]="feedbackState === 'unhelpful'" (click)="onFeedback('unhelpful'); $event.stopPropagation()" title="没帮助">
           <i class="fa-light fa-thumbs-down"></i>
         </div>
+        @if (turnModelName && showActions) {
+          <span class="msg-model-label" title="本轮使用模型">{{ turnModelName }}</span>
+        }
       </div>
-    } @else if (canShowLimitActions) {
+    } @else if (canShowLimitActions && showActions) {
       <div class="msg-actions">
         <div class="msg-action-btn" (click)="onCopyContent(); $event.stopPropagation()" title="复制">
           <i class="fa-light fa-copy"></i>
@@ -169,6 +173,9 @@
         <div class="msg-action-btn" [class.active]="feedbackState === 'unhelpful'" (click)="onFeedback('unhelpful'); $event.stopPropagation()" title="没帮助">
           <i class="fa-light fa-thumbs-down"></i>
         </div>
+        @if (turnModelName) {
+          <span class="msg-model-label" title="本轮使用模型">{{ turnModelName }}</span>
+        }
       </div>
     }
   </div>

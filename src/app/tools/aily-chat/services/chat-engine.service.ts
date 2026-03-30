@@ -46,6 +46,7 @@ import { SessionLifecycleHelper } from '../helpers/session-lifecycle.helper';
 import { StreamProcessorHelper } from '../helpers/stream-processor.helper';
 import { ToolCallLoopHelper } from '../helpers/tool-call-loop.helper';
 import { TurnManager } from '../core/turn-manager';
+import { AilyChatHookService } from './chat-hook.service';
 
 @Injectable()
 export class ChatEngineService {
@@ -55,6 +56,10 @@ export class ChatEngineService {
   readonly session = new SessionLifecycleHelper(this);
   readonly stream = new StreamProcessorHelper(this);
   readonly turnLoop = new ToolCallLoopHelper(this);
+
+  // ==================== Hook 系统 — 参考 Copilot IChatHookService ====================
+  /** 中心化 Hook 注册与执行引擎，支持 PreToolUse/PostToolUse/Stop 等生命周期拦截 */
+  readonly hookService = new AilyChatHookService();
 
   // ==================== Turn 结构化存储（source of truth） ====================
   /** Copilot 风格 Turn[] 存储管理器，唯一 source of truth */
@@ -570,9 +575,6 @@ Do not create non-existent boards and libraries.
 
   showAiWritingNotice(isWaiting: boolean): void {
     if (isWaiting) {
-      if (AilyHost.get().electron?.isWindowMinimized()) {
-        AilyHost.get().electron?.notify('Aily', 'Blockly图形需要窗口权限', { timeoutType: 'never' });
-      }
       this._aiNoticeShown = true;
       AilyHost.get().notice?.update({
         title: 'AI正在操作', state: 'doing', showProgress: false, setTimeout: 0,
@@ -712,8 +714,8 @@ Do not create non-existent boards and libraries.
         this.toolCallingIteration = 0;
         // 创建新的 AbortController 用于本轮工具执行中止
         this.abortController = new AbortController();
-        // // Turn 开始前自动导出 ABS，确保磁盘态与图形工作区同步
-        // this.ensureAbsExport();
+        // Turn 开始前自动导出 ABS，确保磁盘态与图形工作区同步
+        this.ensureAbsExport();
         // 同步自动保存配置
         this.editCheckpointService.autoSaveEdits = this.ailyChatConfigService.autoSaveEdits;
         // 启动新 turn 的 checkpoint
@@ -864,7 +866,8 @@ Do not create non-existent boards and libraries.
       const budget = this.contextBudgetService.getSnapshot();
       this.contextBudgetService.backgroundSummarizer.checkAndTrigger(
         this.conversationMessages, budget.maxContextTokens, budget.currentTokens,
-        this.sessionId, this.turnLoop.getCurrentLLMConfig(), this.currentModel?.model || undefined
+        this.sessionId, this.turnManager,
+        this.turnLoop.getCurrentLLMConfig(), this.currentModel?.model || undefined
       );
     }
 
@@ -943,6 +946,8 @@ Do not create non-existent boards and libraries.
     if (oldSessionId && newSessionId && oldSessionId !== newSessionId) {
       this.chatHistoryService.migrateSessionId(oldSessionId, newSessionId);
     }
+    // 切换模型后立即更新上下文窗口大小 + 预算快照
+    this.contextBudgetService?.updateModelContextSize(model.model || null);
     this.contextBudgetService?.updateBudget(this.conversationMessages, this.turnLoop.getCurrentTools());
   }
 
@@ -1267,8 +1272,8 @@ Do not create non-existent boards and libraries.
     // 添加新的助手消息占位
     this.msg.appendMessage('aily', '[thinking...]');
 
-    // // Turn 开始前自动导出 ABS，确保磁盘态与图形工作区同步
-    // this.ensureAbsExport();
+    // Turn 开始前自动导出 ABS，确保磁盘态与图形工作区同步
+    this.ensureAbsExport();
     // 同步自动保存配置
     this.editCheckpointService.autoSaveEdits = this.ailyChatConfigService.autoSaveEdits;
     // 创建新的 checkpoint

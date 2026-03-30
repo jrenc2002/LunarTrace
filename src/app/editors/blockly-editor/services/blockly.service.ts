@@ -388,8 +388,8 @@ export class BlocklyService {
           delete (Blockly as any).JavaScript.forBlock[blockType];
         }
       });
-      this.loadedGenerators.delete(scriptSrc);
     }
+    this.loadedGenerators.delete(scriptSrc);
 
     // 查找并移除相关脚本标签
     const scripts = document.getElementsByTagName('script');

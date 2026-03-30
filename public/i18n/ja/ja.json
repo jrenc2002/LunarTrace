@@ -326,6 +326,7 @@
         "MERMAID_ARCH_CANCEL": "キャンセル",
         "MERMAID_COPY_FAILED": "コピーに失敗しました",
         "MERMAID_SAVE_FAILED": "保存に失敗しました",
+        "CLICK_TO_EDIT": "クリックして編集",
         "ONBOARDING": {
             "STEP1_TITLE": "入力ボックス",
             "STEP1_DESC": "ここに質問やAIに手伝ってもらいたいタスクを入力してください。Enterで送信、Ctrl+Enterで改行",

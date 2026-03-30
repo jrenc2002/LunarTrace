@@ -326,6 +326,7 @@
         "MERMAID_ARCH_CANCEL": "Abbrechen",
         "MERMAID_COPY_FAILED": "Kopieren fehlgeschlagen",
         "MERMAID_SAVE_FAILED": "Speichern fehlgeschlagen",
+        "CLICK_TO_EDIT": "Zum Bearbeiten klicken",
         "ONBOARDING": {
             "STEP1_TITLE": "Eingabefeld",
             "STEP1_DESC": "Geben Sie hier Ihre Fragen oder Aufgaben ein, bei denen die KI helfen soll. Enter zum Senden, Ctrl+Enter für neue Zeile",

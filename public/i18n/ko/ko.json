@@ -322,6 +322,7 @@
         "MERMAID_ARCH_CANCEL": "취소",
         "MERMAID_COPY_FAILED": "복사 실패",
         "MERMAID_SAVE_FAILED": "저장 실패",
+        "CLICK_TO_EDIT": "클릭하여 편집",
         "ONBOARDING": {
             "STEP1_TITLE": "입력 상자",
             "STEP1_DESC": "여기에 질문이나 AI가 도와줄 작업을 입력하세요. Enter로 전송, Ctrl+Enter로 줄바꿈",
