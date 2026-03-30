@@ -589,7 +589,14 @@
         "UNINSTALLING_CURRENT_BOARD": "Aktuelles Board wird deinstalliert...",
         "INSTALLING_NEW_BOARD": "Neues Board wird installiert...",
         "UPDATING_PROJECT_CONFIG": "Projektkonfiguration wird aktualisiert...",
-        "BOARD_SWITCH_FAILED": "Board-Wechsel fehlgeschlagen: "
+        "BOARD_SWITCH_FAILED": "Board-Wechsel fehlgeschlagen: ",
+        "LOCK_CONFLICT_TITLE": "Project already open",
+        "LOCK_CONFLICT_MESSAGE": "Another window or version may be editing this project.",
+        "LOCK_CONFLICT_CONTENT": "Another instance may be editing this project.\nPID: {{pid}}\nVersion: {{version}}",
+        "LOCK_CANCEL": "Cancel",
+        "LOCK_FOCUS_OTHER": "Bring to front",
+        "LOCK_FORCE_OPEN": "Open anyway",
+        "LOCK_ACQUIRE_FAILED": "Could not acquire project lock. Please try again."
     },
     "NOTIFICATION": {
         "STOP": "Stoppen",

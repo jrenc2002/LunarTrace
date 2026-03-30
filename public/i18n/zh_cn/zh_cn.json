@@ -654,7 +654,14 @@
         "UNINSTALLING_CURRENT_BOARD": "正在卸载当前开发板...",
         "INSTALLING_NEW_BOARD": "正在安装新开发板...",
         "UPDATING_PROJECT_CONFIG": "正在更新项目配置...",
-        "BOARD_SWITCH_FAILED": "开发板切换失败: "
+        "BOARD_SWITCH_FAILED": "开发板切换失败: ",
+        "LOCK_CONFLICT_TITLE": "项目已在其他窗口打开",
+        "LOCK_CONFLICT_MESSAGE": "另一窗口或版本可能正在编辑此项目。",
+        "LOCK_CONFLICT_CONTENT": "其他实例可能正在编辑此项目。\n进程 PID：{{pid}}\n版本：{{version}}",
+        "LOCK_CANCEL": "取消",
+        "LOCK_FOCUS_OTHER": "切换到已打开的窗口",
+        "LOCK_FORCE_OPEN": "仍要打开",
+        "LOCK_ACQUIRE_FAILED": "无法获取项目锁，请重试"
     },
     "NOTIFICATION": {
         "STOP": "终止",

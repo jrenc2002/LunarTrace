@@ -154,6 +154,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.send("window-close-confirmed");
     },
   },
+  projectLock: {
+    tryAcquire: (projectPath, options) =>
+      ipcRenderer.invoke("project-lock-try", {
+        projectPath,
+        force: options && options.force,
+      }),
+    release: (projectPath) => ipcRenderer.invoke("project-lock-release", { projectPath }),
+    focusProcess: (pid) => ipcRenderer.invoke("project-lock-focus", { pid }),
+  },
   subWindow: (() => {
     // 立即监听 window-init-data，缓存数据，避免 Angular 组件注册监听前数据丢失
     let _cachedInitData = null;

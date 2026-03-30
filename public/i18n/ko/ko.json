@@ -585,7 +585,14 @@
         "UNINSTALLING_CURRENT_BOARD": "현재 보드 제거 중...",
         "INSTALLING_NEW_BOARD": "새 보드 설치 중...",
         "UPDATING_PROJECT_CONFIG": "프로젝트 구성 업데이트 중...",
-        "BOARD_SWITCH_FAILED": "보드 전환 실패: "
+        "BOARD_SWITCH_FAILED": "보드 전환 실패: ",
+        "LOCK_CONFLICT_TITLE": "Project already open",
+        "LOCK_CONFLICT_MESSAGE": "Another window or version may be editing this project.",
+        "LOCK_CONFLICT_CONTENT": "Another instance may be editing this project.\nPID: {{pid}}\nVersion: {{version}}",
+        "LOCK_CANCEL": "Cancel",
+        "LOCK_FOCUS_OTHER": "Bring to front",
+        "LOCK_FORCE_OPEN": "Open anyway",
+        "LOCK_ACQUIRE_FAILED": "Could not acquire project lock. Please try again."
     },
     "NOTIFICATION": {
         "STOP": "중지",

@@ -18,6 +18,7 @@ import { NewProjectData } from '../pages/project-new/project-new.component';
 import { WorkflowService } from './workflow.service';
 import { TranslateService } from '@ngx-translate/core';
 import { NoticeService } from './notice.service';
+import { NzModalRef, NzModalService } from 'ng-zorro-antd/modal';
 
 interface ProjectPackageData {
   name: string;
@@ -76,7 +77,8 @@ export class ProjectService {
     private platformService: PlatformService,
     private workflowService: WorkflowService,
     private translate: TranslateService,
-    private noticeService: NoticeService
+    private noticeService: NoticeService,
+    private modal: NzModalService
   ) {
   }
 
@@ -180,6 +182,33 @@ export class ProjectService {
       this.removeRecentlyProject({ path: projectPath })
       return this.message.error(this.translate.instant('PROJECT.PATH_NOT_EXIST'));
     }
+
+    if (this.electronService.isElectron && window['projectLock']) {
+      let r = await window['projectLock'].tryAcquire(projectPath);
+      if (!r.ok && r.conflict && r.holder) {
+        const action = await this.promptProjectLockConflict(r.holder);
+        if (action === 'cancel') {
+          this.stateSubject.next('default');
+          return;
+        }
+        if (action === 'focus') {
+          await window['projectLock'].focusProcess(r.holder.pid);
+          this.stateSubject.next('default');
+          return;
+        }
+        r = await window['projectLock'].tryAcquire(projectPath, { force: true });
+        if (!r.ok) {
+          this.message.error(this.translate.instant('PROJECT.LOCK_ACQUIRE_FAILED'));
+          this.stateSubject.next('default');
+          return;
+        }
+      } else if (!r.ok) {
+        this.message.error(this.translate.instant('PROJECT.LOCK_ACQUIRE_FAILED'));
+        this.stateSubject.next('default');
+        return;
+      }
+    }
+
     this.stateSubject.next('loading');
 
     // 更新当前项目路径和包数据
@@ -257,6 +286,13 @@ export class ProjectService {
   }
 
   async close() {
+    if (this.electronService.isElectron && this.currentProjectPath && window['projectLock']) {
+      try {
+        await window['projectLock'].release(this.currentProjectPath);
+      } catch (e) {
+        console.warn('project-lock release:', e);
+      }
+    }
     this.currentProjectPath = '';
     this.currentPackageData = {
       name: 'aily blockly',
@@ -265,6 +301,52 @@ export class ProjectService {
     this.uiService.closeTerminal();
     // this.currentProjectPath = (await window['env'].get("AILY_PROJECT_PATH")).replace('%HOMEPATH%\\Documents', window['path'].getUserDocuments());
     this.router.navigate(['/main/guide'], { replaceUrl: true });
+  }
+
+  /** 项目已被其他实例占用时的操作：取消 / 前置其他进程 / 强制打开 */
+  private promptProjectLockConflict(holder: {
+    pid: number;
+    execPath?: string;
+    appVersion?: string;
+  }): Promise<'cancel' | 'focus' | 'force'> {
+    let modalRef: NzModalRef;
+    modalRef = this.modal.create({
+      nzTitle: this.translate.instant('PROJECT.LOCK_CONFLICT_TITLE'),
+      nzContent: this.translate.instant('PROJECT.LOCK_CONFLICT_CONTENT', {
+        version: holder.appVersion || '-',
+        pid: String(holder.pid),
+      }),
+      nzMaskClosable: false,
+      nzClosable: true,
+      nzWidth: 480,
+      nzStyle: {
+        backgroundColor: '#1f1f1f',
+        paddingBottom: '0',
+      },
+      nzFooter: [
+        {
+          label: this.translate.instant('PROJECT.LOCK_CANCEL'),
+          onClick: () => modalRef.close('cancel'),
+        },
+        {
+          label: this.translate.instant('PROJECT.LOCK_FOCUS_OTHER'),
+          type: 'primary',
+          onClick: () => modalRef.close('focus'),
+        },
+        // 不需要强制打开选项
+        // {
+        //   label: this.translate.instant('PROJECT.LOCK_FORCE_OPEN'),
+        //   type: 'primary',
+        //   danger: true,
+        //   onClick: () => modalRef.close('force'),
+        // },
+      ],
+    });
+    return new Promise((resolve) => {
+      modalRef.afterClose.subscribe((result) => {
+        resolve((result as 'cancel' | 'focus' | 'force') || 'cancel');
+      });
+    });
   }
 
   // 通过ConfigService存储最近打开的项目

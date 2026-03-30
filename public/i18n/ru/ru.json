@@ -589,7 +589,14 @@
         "UNINSTALLING_CURRENT_BOARD": "Удаление текущей платы...",
         "INSTALLING_NEW_BOARD": "Установка новой платы...",
         "UPDATING_PROJECT_CONFIG": "Обновление конфигурации проекта...",
-        "BOARD_SWITCH_FAILED": "Ошибка смены платы: "
+        "BOARD_SWITCH_FAILED": "Ошибка смены платы: ",
+        "LOCK_CONFLICT_TITLE": "Project already open",
+        "LOCK_CONFLICT_MESSAGE": "Another window or version may be editing this project.",
+        "LOCK_CONFLICT_CONTENT": "Another instance may be editing this project.\nPID: {{pid}}\nVersion: {{version}}",
+        "LOCK_CANCEL": "Cancel",
+        "LOCK_FOCUS_OTHER": "Bring to front",
+        "LOCK_FORCE_OPEN": "Open anyway",
+        "LOCK_ACQUIRE_FAILED": "Could not acquire project lock. Please try again."
     },
     "NOTIFICATION": {
         "STOP": "Остановить",
