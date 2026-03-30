@@ -16,6 +16,8 @@ import { injectTodoReminder } from '../tools';
 import { getMemoryPromptSnippet } from '../tools/memoryTool';
 import {
   getPreferredHttpErrorMessage as _getPreferredHttpErrorMessage,
+  isTransientNetworkError as _isTransientNetworkError,
+  isLikelySessionLostError as _isLikelySessionLostError,
 } from '../services/http-error-handler.service';
 import {
   BLOCK_TOOLS,
@@ -38,6 +40,15 @@ export class StreamProcessorHelper {
 
   /** 合并同帧内多次 scrollToBottom，避免与 chat-engine 子代理 progress 类似的高频滚动导致卡顿 */
   private streamScrollRafId: number | null = null;
+
+  /** 流连接网络错误自动重试计数 */
+  private streamNetworkRetryCount = 0;
+  private static readonly MAX_STREAM_NETWORK_RETRIES = 2;
+  private static readonly STREAM_RETRY_INITIAL_DELAY = 4000; // ms — 首次重连多等一会，服务通常需要 3-5s 重启
+  private static readonly STREAM_RETRY_BASE_DELAY = 3000; // ms — 后续重连基础延迟
+
+  /** 会话丢失重建是否已尝试（每次用户发起的新连接重置） */
+  private sessionRebuildAttempted = false;
 
   /**
    * 构建瞬态上下文消息（不存储到 Turn 中）。
@@ -90,9 +101,15 @@ export class StreamProcessorHelper {
     this.engine.isWaiting = false;
   }
 
-  streamConnect(statelessMode: boolean = false): void {
-    console.log('发起流连接，statelessMode:', statelessMode);
+  streamConnect(statelessMode: boolean = false, _isNetworkRetry: boolean = false): void {
+    console.log('发起流连接，statelessMode:', statelessMode, _isNetworkRetry ? `(网络重试 #${this.streamNetworkRetryCount})` : '');
     if (!this.engine.sessionId) { console.warn('无法建立流连接：sessionId 为空'); return; }
+
+    // 用户发起的新连接重置重试计数；自动重试保持计数
+    if (!_isNetworkRetry) {
+      this.streamNetworkRetryCount = 0;
+      this.sessionRebuildAttempted = false;
+    }
 
     if (this.streamScrollRafId != null) {
       cancelAnimationFrame(this.streamScrollRafId);
@@ -645,17 +662,65 @@ export class StreamProcessorHelper {
       },
       error: (err) => {
         console.warn('流连接出错:', err);
-        if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
-          this.engine.list[this.engine.list.length - 1].state = 'done';
+
+        // 会话丢失检测（如服务重启后 500 "An unexpected error occurred"）
+        // 重建会话后重新连接，仅尝试一次
+        if (
+          _isLikelySessionLostError(err) &&
+          !this.sessionRebuildAttempted &&
+          !this.engine.isCancelled
+        ) {
+          this.sessionRebuildAttempted = true;
+          console.warn('[streamConnect] 检测到会话可能丢失，尝试重建会话...');
+          this.engine.session.ensureServerSession().then(() => {
+            if (!this.engine.isCancelled && this.engine.isWaiting) {
+              console.log('[streamConnect] 会话重建成功，重新连接...');
+              this.streamConnect(statelessMode, true);
+            }
+          }).catch(rebuildErr => {
+            console.warn('[streamConnect] 会话重建失败:', rebuildErr);
+            this._emitStreamError(err);
+          });
+          return;
         }
-        const httpErrorText = _getPreferredHttpErrorMessage(err);
-        const errorClosingTags = this.engine.msg.getClosingTagsForOpenBlocks();
-        this.engine.msg.appendMessage('aily', `${errorClosingTags}\n\`\`\`aily-state\n{\n  "state": "warn",\n  "text": "${this.engine.msg.makeJsonSafe(httpErrorText)}",\n  "id": "network-error-${Date.now()}"\n}\n\`\`\`\n\n\`\`\`aily-button\n[{"text":"重试","action":"retry","type":"primary"}]\n\`\`\`\n\n`);
-        this.engine.isWaiting = false;
-        this.engine.list[this.engine.list.length - 1].state = 'done';
-        // 应用延迟的模型/模式切换
-        this.engine.applyPendingSwitch();
+
+        // 瞬态网络错误自动重试（如 TypeError: network / Failed to fetch）
+        if (
+          _isTransientNetworkError(err) &&
+          this.streamNetworkRetryCount < StreamProcessorHelper.MAX_STREAM_NETWORK_RETRIES &&
+          !this.engine.isCancelled
+        ) {
+          this.streamNetworkRetryCount++;
+          const delay = this.streamNetworkRetryCount === 1
+            ? StreamProcessorHelper.STREAM_RETRY_INITIAL_DELAY
+            : StreamProcessorHelper.STREAM_RETRY_BASE_DELAY * Math.pow(2, this.streamNetworkRetryCount - 2);
+          console.warn(`[streamConnect] 网络错误，${delay}ms 后第 ${this.streamNetworkRetryCount} 次自动重连...`);
+          setTimeout(() => {
+            if (!this.engine.isCancelled && this.engine.isWaiting) {
+              this.streamConnect(statelessMode, true);
+            }
+          }, delay);
+          return;
+        }
+
+        this._emitStreamError(err);
       }
     });
+  }
+
+  /** 向用户展示流错误信息并结束等待状态 */
+  private _emitStreamError(err: any): void {
+    if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
+      this.engine.list[this.engine.list.length - 1].state = 'done';
+    }
+    const httpErrorText = _getPreferredHttpErrorMessage(err);
+    const errorClosingTags = this.engine.msg.getClosingTagsForOpenBlocks();
+    this.engine.msg.appendMessage('aily', `${errorClosingTags}\n\`\`\`aily-state\n{\n  "state": "warn",\n  "text": "${this.engine.msg.makeJsonSafe(httpErrorText)}",\n  "id": "network-error-${Date.now()}"\n}\n\`\`\`\n\n\`\`\`aily-button\n[{"text":"重试","action":"retry","type":"primary"}]\n\`\`\`\n\n`);
+    this.engine.isWaiting = false;
+    if (this.engine.list.length > 0) {
+      this.engine.list[this.engine.list.length - 1].state = 'done';
+    }
+    // 应用延迟的模型/模式切换
+    this.engine.applyPendingSwitch();
   }
 }

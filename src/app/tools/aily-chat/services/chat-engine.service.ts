@@ -752,8 +752,8 @@ Do not create non-existent boards and libraries.
       },
       error: (error) => {
         console.warn('发送消息失败:', error);
-        if (error.status === 502 && retryCount > 0) {
-          setTimeout(() => { this.sendMessageWithRetry(sessionId, text, sender, clear, retryCount - 1); }, 1000);
+        if ((error.status === 502 || error.status === 503 || error.status === 504) && retryCount > 0) {
+          setTimeout(() => { this.sendMessageWithRetry(sessionId, text, sender, clear, retryCount - 1); }, 1500);
         } else {
           this.isWaiting = false;
           let errorMessage = '发送消息失败';

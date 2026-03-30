@@ -24,7 +24,7 @@ function getInitialRegistryUrl(): string {
 }
 
 // 动态获取服务器地址，优先使用缓存的值
-function getServerUrl(): string {
+export function getServerUrl(): string {
   if (_cachedServerUrl !== null) {
     return _cachedServerUrl;
   }

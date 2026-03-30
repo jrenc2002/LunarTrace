@@ -9,6 +9,7 @@ import { AilyHost } from '../core/host';
 import { SkillRegistry } from '../core/skill-registry';
 import { clearSessionApprovals } from '../core/tool-approval';
 import { markContentAsHistory as _markContentAsHistory } from '../services/content-sanitizer.service';
+import { isTransientNetworkError } from '../services/http-error-handler.service';
 
 export class SessionLifecycleHelper {
   constructor(private engine: ChatEngineService) {}
@@ -206,6 +207,10 @@ export class SessionLifecycleHelper {
     });
   }
 
+  private static readonly SESSION_RETRY_MAX = 3;
+  private static readonly SESSION_RETRY_INITIAL_DELAY = 3000; // ms — 首次重试多等一会
+  private static readonly SESSION_RETRY_BASE_DELAY = 2000; // ms
+
   async ensureServerSession(): Promise<void> {
     const savedTurns = this.engine.turnManager.serialize();
     const savedIteration = this.engine.toolCallingIteration;
@@ -213,22 +218,49 @@ export class SessionLifecycleHelper {
     const savedPath = this.engine.chatService.currentSessionPath;
     const savedList = [...this.engine.list];
     const oldSessionId = this.engine.sessionId;
-    try { await this.startSession(); } catch (err) {
-      console.warn('[AilyChat] 重新注册服务端会话失败:', err);
-      this.engine.turnManager.deserialize(savedTurns);
-      this.engine.toolCallingIteration = savedIteration;
-      this.engine.list = savedList;
-      throw err;
+
+    let lastErr: any;
+    for (let attempt = 0; attempt <= SessionLifecycleHelper.SESSION_RETRY_MAX; attempt++) {
+      try {
+        // 重试前恢复状态，避免 startSession 内部副作用累积
+        if (attempt > 0) {
+          this.engine.turnManager.deserialize(savedTurns);
+          this.engine.toolCallingIteration = savedIteration;
+          this.engine.list = [...savedList];
+          this.engine.isSessionStarting = false;
+        }
+        await this.startSession();
+        // 成功 — 恢复保存的状态
+        this.engine.turnManager.deserialize(savedTurns);
+        this.engine.toolCallingIteration = savedIteration;
+        this.engine.chatService.currentSessionTitle = savedTitle;
+        this.engine.chatService.currentSessionPath = savedPath;
+        this.engine.list = savedList;
+        const newSessionId = this.engine.sessionId;
+        if (oldSessionId && newSessionId && oldSessionId !== newSessionId) {
+          this.engine.chatHistoryService.migrateSessionId(oldSessionId, newSessionId);
+        }
+        return;
+      } catch (err) {
+        lastErr = err;
+        if (isTransientNetworkError(err) && attempt < SessionLifecycleHelper.SESSION_RETRY_MAX) {
+          const delay = attempt === 0
+            ? SessionLifecycleHelper.SESSION_RETRY_INITIAL_DELAY
+            : SessionLifecycleHelper.SESSION_RETRY_BASE_DELAY * Math.pow(2, attempt - 1);
+          console.warn(`[ensureServerSession] 瞬态错误 (${(err as any)?.status || 'unknown'})，${delay}ms 后第 ${attempt + 1} 次重试...`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        break;
+      }
     }
+
+    // 所有重试均失败
+    console.warn('[AilyChat] 重新注册服务端会话失败:', lastErr);
     this.engine.turnManager.deserialize(savedTurns);
     this.engine.toolCallingIteration = savedIteration;
-    this.engine.chatService.currentSessionTitle = savedTitle;
-    this.engine.chatService.currentSessionPath = savedPath;
     this.engine.list = savedList;
-    const newSessionId = this.engine.sessionId;
-    if (oldSessionId && newSessionId && oldSessionId !== newSessionId) {
-      this.engine.chatHistoryService.migrateSessionId(oldSessionId, newSessionId);
-    }
+    throw lastErr;
   }
 
   closeSession(): void {

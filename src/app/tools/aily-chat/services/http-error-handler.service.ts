@@ -29,6 +29,7 @@ function isGenericTransportErrorText(text: string): boolean {
     /\bstatus(?:\s+code)?\s*[:=]?\s*\d{3}\b/i,
     /\bnetwork\s*error\b/i,
     /\bnetworkerror\b/i,
+    /^network$/i,
     /\bfailed to fetch\b/i,
     /\bload failed\b/i,
     /\btimeout of \d+ms exceeded\b/i,
@@ -153,6 +154,7 @@ export function extractHttpStatusCode(err: any): number {
     joined.includes('failed to fetch') ||
     joined.includes('networkerror') ||
     joined.includes('network error') ||
+    /\bnetwork\b/.test(joined) ||
     joined.includes('load failed') ||
     joined.includes('timeout')
   ) {
@@ -161,3 +163,111 @@ export function extractHttpStatusCode(err: any): number {
 
   return 0;
 }
+
+/**
+ * 判断错误是否为瞬态网络错误（适合自动重试）。
+ *
+ * 覆盖场景：
+ * - TypeError: network / Failed to fetch / Load failed（浏览器 fetch 网络断开）
+ * - AbortError 除外（用户主动取消不应重试）
+ * - 无 HTTP 状态码或状态码为 0 的错误
+ * - HTTP 502/503/504 且 message 含 DNS/连接类关键词（服务重启后短暂不可达）
+ */
+export function isTransientNetworkError(err: any): boolean {
+  if (!err) return false;
+  if ((err as Error)?.name === 'AbortError') return false;
+
+  // TypeError (message 包含 network / failed to fetch / load failed)
+  if (err instanceof TypeError) {
+    const msg = (err.message || '').toLowerCase();
+    if (
+      msg === 'network' ||
+      msg.includes('failed to fetch') ||
+      msg.includes('load failed') ||
+      msg.includes('network error') ||
+      msg.includes('networkerror')
+    ) {
+      return true;
+    }
+  }
+
+  const status = extractHttpStatusCode(err);
+
+  // 502/503/504 且 message 含连接/DNS 类关键词 → 服务暂时不可达
+  if (status === 502 || status === 503 || status === 504) {
+    const detail = extractErrorDetailMessage(err);
+    const msg = (err?.message || '').toLowerCase();
+    const combined = `${detail} ${msg}`.toLowerCase();
+    if (TRANSIENT_CONNECTIVITY_PATTERNS.some(p => p.test(combined))) {
+      return true;
+    }
+  }
+
+  // 无状态码(0) 代表网络层失败
+  if (status === 0) {
+    const detail = extractErrorDetailMessage(err);
+    // 有明确业务错误信息的不算瞬态网络错误
+    if (detail && !isGenericTransportErrorText(detail)) return false;
+    return true;
+  }
+
+  return false;
+}
+
+/** 匹配 DNS/连接层瞬态错误消息的模式 */
+const TRANSIENT_CONNECTIVITY_PATTERNS: RegExp[] = [
+  /name resolution failed/i,
+  /dns/i,
+  /econnrefused/i,
+  /econnreset/i,
+  /enotfound/i,
+  /connection refused/i,
+  /connection reset/i,
+  /socket hang up/i,
+  /service(?:.*?)unavailable/i,
+  /invalid response.*upstream/i,
+  /upstream/i,
+  /bad gateway/i,
+  /gateway timeout/i,
+];
+
+/**
+ * 判断 HTTP 错误是否很可能由服务端会话丢失引起（如服务重启后旧 sessionId 失效）。
+ *
+ * 典型表现：
+ * - 404 + code 21001（服务端明确返回 session not found）
+ * - 500 + 通用错误消息（"An unexpected error occurred" / "Internal Server Error" 等）
+ *   服务端在处理无效 session 时抛出未捕获异常
+ *
+ * 不匹配有明确业务语义的 500（如 message 包含 token/rate/quota 等关键词）。
+ */
+export function isLikelySessionLostError(err: any): boolean {
+  if (!err) return false;
+  const status = extractHttpStatusCode(err);
+  const code = err?.code ?? err?.error?.code;
+
+  // 明确的 session not found
+  if (status === 404 && code === 21001) return true;
+
+  // 500 + 通用/空消息 → 很可能是会话丢失导致的未处理异常
+  if (status === 500) {
+    const detail = extractErrorDetailMessage(err);
+    if (!detail) return true; // 无消息体
+    return SESSION_LOST_GENERIC_PATTERNS.some(p => p.test(detail));
+  }
+
+  return false;
+}
+
+/** 服务端会话丢失时常见的通用错误消息 */
+const SESSION_LOST_GENERIC_PATTERNS: RegExp[] = [
+  /^an unexpected error occurred$/i,
+  /^internal server error$/i,
+  /^unknown error$/i,
+  /^unexpected error$/i,
+  /^server error$/i,
+  /session.*not found/i,
+  /session.*expired/i,
+  /session.*invalid/i,
+  /session.*does not exist/i,
+];
