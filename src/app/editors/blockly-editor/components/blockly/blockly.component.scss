@@ -19,9 +19,24 @@
                 width: 40px;
             }
 
-            .blocklyToolboxContents {
-                .blocklyTreeSeparator {
-                    display: none;
+            // 分隔线：任意层级都可匹配
+            .blocklyTreeSeparator {
+                display: none;
+            }
+
+            // 仅根级 toolbox 容器（可折叠分类内会再嵌套 .blocklyToolboxContents，需用 > 限定）
+            > .blocklyToolboxContents {
+                // 仅根级第一个分类（搜索框）：取消选中灰底；嵌套子分类仍用下方通用样式
+                > .blocklyToolboxCategory:first-child {
+                    .blocklyTreeSelected {
+                        background: transparent !important;
+                    }
+
+                    .blocklyTreeRow {
+                        &:hover {
+                            background: transparent !important;
+                        }
+                    }
                 }
             }
 
@@ -54,17 +69,6 @@
                         justify-content: center;
                     }
 
-                }
-
-                // 搜索框例外
-                &:first-child {
-                    .blocklyTreeSelected {
-                        background: transparent !important;
-
-                        &:hover {
-                            background: transparent !important;
-                        }
-                    }
                 }
 
                 &:last-child {
