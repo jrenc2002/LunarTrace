@@ -36,6 +36,9 @@ import {
 export class StreamProcessorHelper {
   constructor(private engine: ChatEngineService) {}
 
+  /** 合并同帧内多次 scrollToBottom，避免与 chat-engine 子代理 progress 类似的高频滚动导致卡顿 */
+  private streamScrollRafId: number | null = null;
+
   /**
    * 构建瞬态上下文消息（不存储到 Turn 中）。
    *
@@ -90,6 +93,11 @@ export class StreamProcessorHelper {
   streamConnect(statelessMode: boolean = false): void {
     console.log('发起流连接，statelessMode:', statelessMode);
     if (!this.engine.sessionId) { console.warn('无法建立流连接：sessionId 为空'); return; }
+
+    if (this.streamScrollRafId != null) {
+      cancelAnimationFrame(this.streamScrollRafId);
+      this.streamScrollRafId = null;
+    }
 
     if (this.engine.messageSubscription) { this.engine.messageSubscription.unsubscribe(); this.engine.messageSubscription = null; }
     this.engine.pendingUserInput = false;
@@ -600,7 +608,12 @@ export class StreamProcessorHelper {
               }
             }
           }
-          this.engine.scrollManager.scrollToBottom();
+          if (this.streamScrollRafId === null) {
+            this.streamScrollRafId = requestAnimationFrame(() => {
+              this.streamScrollRafId = null;
+              this.engine.scrollManager.scrollToBottom();
+            });
+          }
         } catch (e) {
           this.engine.msg.appendMessage('aily', `\n\`\`\`aily-error\n{\n  "message": "服务异常，请稍后重试。"\n}\n\`\`\`\n\n\`\`\`aily-button\n[{"text":"重试","action":"retry","type":"primary"}]\n\`\`\`\n\n`);
           this.engine.stop();

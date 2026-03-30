@@ -503,6 +503,7 @@ export class ChatService {
     return new Observable(observer => {
       let aborted = false;
       let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+      const abortCtrl = new AbortController();
 
       // 获取 token 并添加 Authorization 头部
       AilyHost.get().auth.getToken!().then(token => {
@@ -513,7 +514,7 @@ export class ChatService {
           headers['Authorization'] = `Bearer ${token}`;
         }
 
-        fetch(`${ChatAPI.streamConnect}/${sessionId}`, { headers })
+        fetch(`${ChatAPI.streamConnect}/${sessionId}`, { headers, signal: abortCtrl.signal })
           .then(async response => {
           if (aborted) return;
 
@@ -568,12 +569,12 @@ export class ChatService {
               observer.complete();
             }
           } catch (error) {
-            if (!aborted) {
-              observer.error(error);
-            }
+            if ((error as Error)?.name === 'AbortError' || aborted) return;
+            observer.error(error);
           }
         })
         .catch(error => {
+          if ((error as Error)?.name === 'AbortError') return;
           if (!aborted) {
             observer.error(error);
           }
@@ -587,6 +588,7 @@ export class ChatService {
       // 返回清理函数，在取消订阅时调用
       return () => {
         aborted = true;
+        abortCtrl.abort();
         if (reader) {
           reader.cancel().catch(() => {});
         }
@@ -624,6 +626,7 @@ export class ChatService {
     return new Observable(observer => {
       let aborted = false;
       let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+      const abortCtrl = new AbortController();
 
       const payload: any = {
         session_id: sessionId,
@@ -666,10 +669,12 @@ export class ChatService {
           headers['X-Debug-Force-Error'] = debugForceErrorCode;
         }
 
+        const requestBody = JSON.stringify(payload);
         fetch(`${ChatAPI.chatRequest}/${sessionId}`, {
           method: 'POST',
           headers,
-          body: JSON.stringify(payload)
+          body: requestBody,
+          signal: abortCtrl.signal
         })
           .then(async response => {
             if (aborted) return;
@@ -687,7 +692,8 @@ export class ChatService {
                     const retryResp = await fetch(`${ChatAPI.chatRequest}/${sessionId}`, {
                       method: 'POST',
                       headers,
-                      body: JSON.stringify(payload)
+                      body: requestBody,
+                      signal: abortCtrl.signal
                     });
                     if (aborted) return;
                     if (!retryResp.ok) {
@@ -758,12 +764,12 @@ export class ChatService {
                 observer.complete();
               }
             } catch (error) {
-              if (!aborted) {
-                observer.error(error);
-              }
+              if ((error as Error)?.name === 'AbortError' || aborted) return;
+              observer.error(error);
             }
           })
           .catch(error => {
+            if ((error as Error)?.name === 'AbortError') return;
             if (!aborted) {
               observer.error(error);
             }
@@ -777,6 +783,7 @@ export class ChatService {
       // 返回清理函数，在取消订阅时调用
       return () => {
         aborted = true;
+        abortCtrl.abort();
         if (reader) {
           reader.cancel().catch(() => {});
         }
