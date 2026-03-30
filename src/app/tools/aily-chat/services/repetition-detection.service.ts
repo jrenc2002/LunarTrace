@@ -395,7 +395,12 @@ export class RepetitionDetectionService {
       return thinkSentenceResult;
     }
 
-    return this.checkParagraphCycleRepetitionOn(this.thinkTokens, this.THINK_DETECTION_PROFILE);
+    const thinkParagraphResult = this.checkParagraphCycleRepetitionOn(this.thinkTokens, this.THINK_DETECTION_PROFILE);
+    if (thinkParagraphResult.isRepetitive) {
+      return thinkParagraphResult;
+    }
+
+    return this.checkSentenceFrequencyRepetition(this.thinkTokens, this.THINK_DETECTION_PROFILE);
   }
 
   // ==================== 工具调用重复检测 ====================
@@ -1869,8 +1874,8 @@ export class RepetitionDetectionService {
 
     const normalized = sentences.map(s => this.normalizeSentence(s));
 
-    // 尝试不同的块大小（2~10 句为一个块）
-    const maxBlockSize = Math.min(10, Math.floor(normalized.length / 3));
+    // 尝试不同的块大小（2~20 句为一个块）
+    const maxBlockSize = Math.min(20, Math.floor(normalized.length / 3));
 
     for (let blockSize = 2; blockSize <= maxBlockSize; blockSize++) {
       // 取末尾 blockSize 个句子作为模式块
@@ -1906,6 +1911,50 @@ export class RepetitionDetectionService {
           isRepetitive: true,
           pattern: `${blockSize} 句段落块连续循环 ${matchCount} 次: "${displaySentence}"...`,
           suggestion: '检测到相同段落的循环重复输出。'
+        };
+      }
+    }
+
+    return { isRepetitive: false };
+  }
+
+  // -------------------- Layer 2.75: 句子频率重复 --------------------
+
+  /**
+   * 检测同一句子在缓冲区中出现过多次数（非连续）
+   * 场景：模型在 think 中反复输出包含相同句子的段落，但每次周围上下文略有不同
+   * 与 Layer 2 不同点：Layer 2 检测连续相同句子（AAA），本层检测散布在不同位置的相同句子
+   */
+  private checkSentenceFrequencyRepetition(
+    tokens: string[],
+    profile: NarrativeDetectionProfile
+  ): RepetitionCheckResult {
+    const text = this.extractNarrativeText(tokens.join(''));
+    const sentences = this.splitIntoSentences(text);
+
+    // 至少需要足够的句子才有统计意义
+    const frequencyThreshold = profile.paragraphRepeatThreshold + 1; // think=4, prose=4
+    if (sentences.length < frequencyThreshold * 2) {
+      return { isRepetitive: false };
+    }
+
+    const frequency = new Map<string, number>();
+    for (const s of sentences) {
+      const norm = this.normalizeSentence(s);
+      // 跳过过短的句子（避免常见短语误报如"好的"、"让我继续"）
+      if (norm.length < 15) {
+        continue;
+      }
+      frequency.set(norm, (frequency.get(norm) || 0) + 1);
+    }
+
+    for (const [sentence, count] of frequency) {
+      if (count >= frequencyThreshold) {
+        const display = sentence.length > 30 ? sentence.substring(0, 30) + '...' : sentence;
+        return {
+          isRepetitive: true,
+          pattern: `相同句子出现 ${count} 次: "${display}"`,
+          suggestion: '检测到同一内容在不同位置反复出现。'
         };
       }
     }

@@ -174,7 +174,7 @@ export function generateApprovalMessage(toolName: string, args: any): { title: s
     case 'switch_board':
       return {
         title: '切换开发板',
-        message: `即将切换开发板为：${args?.board || args?.boardId || '(未知)'}`
+        message: `即将切换开发板为：${args?.board || args?.boardId || args?.board_name || '(未知)'}`
       };
     case 'set_board_config':
       return {
