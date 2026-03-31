@@ -43,8 +43,11 @@ export class ChatService {
   /** 由 ChatEngineService 同步：是否正在等待 AI 响应 */
   isWaiting = false;
 
-  /** ReplaySubject(1) 缓冲最后一条消息，确保晚订阅的 ChatEngineService 能收到 */
-  private textSubject = new ReplaySubject<ChatTextMessage>(1);
+  /**
+   * ReplaySubject(1) 仅用于“聊天面板尚未挂载时”暂存最近一条外部消息。
+   * 消息被 ChatEngineService 消费后会立即清空，避免重新打开面板时重复自动发送。
+   */
+  private textSubject = new ReplaySubject<ChatTextMessage | null>(1);
   private static instance: ChatService;
 
   private async readHttpErrorBody(response: Response): Promise<any> {
@@ -213,8 +216,20 @@ export class ChatService {
   /**
    * 获取文本消息的Observable，供聊天组件订阅
    */
-  getTextMessages(): Observable<ChatTextMessage> {
+  getTextMessages(): Observable<ChatTextMessage | null> {
     return this.textSubject.asObservable();
+  }
+
+  /**
+   * 清空已消费的外部消息缓冲，避免 ReplaySubject 在新订阅时重放旧消息。
+   */
+  clearBufferedTextMessage(timestamp?: number): void {
+    if (timestamp == null) {
+      this.textSubject.next(null);
+      return;
+    }
+
+    this.textSubject.next(null);
   }
 
   /**
@@ -670,7 +685,10 @@ export class ChatService {
           headers['X-Debug-Force-Error'] = debugForceErrorCode;
         }
 
-        const requestBody = JSON.stringify(payload);
+        const buildRequestBody = (effectiveSessionId: string) => JSON.stringify({
+          ...payload,
+          session_id: effectiveSessionId,
+        });
 
         const MAX_NETWORK_RETRIES = 3;
         const RETRY_BASE_DELAY = 2000; // ms
@@ -678,7 +696,10 @@ export class ChatService {
 
         const attemptFetch = async (attempt: number): Promise<void> => {
           try {
-            const response = await fetch(`${ChatAPI.chatRequest}/${sessionId}`, {
+            let effectiveSessionId = sessionId;
+            let requestBody = buildRequestBody(effectiveSessionId);
+
+            const response = await fetch(`${ChatAPI.chatRequest}/${effectiveSessionId}`, {
               method: 'POST',
               headers,
               body: requestBody,
@@ -697,7 +718,9 @@ export class ChatService {
                   console.warn(`[chatRequest] 检测到会话可能丢失 (HTTP ${response.status})，重建会话...`);
                   await this.startSession(mode, tools as any, maxCount, llmConfig, selectModel).toPromise();
                   if (aborted) return;
-                  const retryResp = await fetch(`${ChatAPI.chatRequest}/${sessionId}`, {
+                  effectiveSessionId = this.currentSessionId || sessionId;
+                  requestBody = buildRequestBody(effectiveSessionId);
+                  const retryResp = await fetch(`${ChatAPI.chatRequest}/${effectiveSessionId}`, {
                     method: 'POST',
                     headers,
                     body: requestBody,

@@ -261,7 +261,11 @@ export class ChatEngineService {
     // 订阅外部文本消息（ChatService 内部 Subject）
     this.textMessageSubscription = this.chatService.getTextMessages().subscribe(
       message => {
+        if (!message) {
+          return;
+        }
         this.receiveTextFromExternal(message.text, message.options);
+        this.chatService.clearBufferedTextMessage(message.timestamp);
       }
     );
 
