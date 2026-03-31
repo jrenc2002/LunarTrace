@@ -25,6 +25,7 @@ import {
 } from '../services/stream-constants';
 import { searchDeferredTools, getDeferredToolsListing } from '../tools/tools';
 import { SkillRegistry } from '../core/skill-registry';
+import { ChatPerformanceTracer } from '../services/chat-perf-tracer';
 import { loadSkillHandler } from '../tools/loadSkillTool';
 import { PromptPipeline } from '../core/prompt-pipeline';
 import { PromptBuildContext } from '../core/prompt-elements';
@@ -37,9 +38,6 @@ import {
 
 export class StreamProcessorHelper {
   constructor(private engine: ChatEngineService) {}
-
-  /** 合并同帧内多次 scrollToBottom，避免与 chat-engine 子代理 progress 类似的高频滚动导致卡顿 */
-  private streamScrollRafId: number | null = null;
 
   /** 流连接网络错误自动重试计数 */
   private streamNetworkRetryCount = 0;
@@ -95,9 +93,7 @@ export class StreamProcessorHelper {
   finalizeUserInput(): void {
     this.engine.pendingUserInput = false;
     this.engine.streamCompleted = false;
-    if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
-      this.engine.list[this.engine.list.length - 1].state = 'done';
-    }
+    this.engine.viewAdapter.markLastMessageDone();
     this.engine.isWaiting = false;
   }
 
@@ -111,11 +107,6 @@ export class StreamProcessorHelper {
       this.sessionRebuildAttempted = false;
     }
 
-    if (this.streamScrollRafId != null) {
-      cancelAnimationFrame(this.streamScrollRafId);
-      this.streamScrollRafId = null;
-    }
-
     if (this.engine.messageSubscription) { this.engine.messageSubscription.unsubscribe(); this.engine.messageSubscription = null; }
     this.engine.pendingUserInput = false;
     this.engine.streamCompleted = false;
@@ -126,8 +117,7 @@ export class StreamProcessorHelper {
     let apiMessages: any[] | undefined;
     if (statelessMode) {
       // ========== 声明式 Prompt 管线 ==========
-      // 通过 PromptPipeline 组合消息，自动管理预算和优先级裁剪。
-      // 参考 Copilot PromptRenderer.render() 的声明式组合模式。
+      const _pipelineSpan = ChatPerformanceTracer.begin('PromptPipeline.render');
       const pipeline = new PromptPipeline();
       pipeline.registerAll([
         new ContextInjectionProvider(
@@ -148,6 +138,7 @@ export class StreamProcessorHelper {
       const result = pipeline.render(buildContext, tokenBudget);
 
       apiMessages = result.messages;
+      ChatPerformanceTracer.end(_pipelineSpan, 'PromptPipeline.render', `${result.totalTokens}tok, ${result.evictedCount}evicted`);
 
       // 更新 budget 中的瞬态上下文 token 计量（兼容旧路径）
       const contextElement = result.elementBreakdown.find(e => e.id === 'context-injection');
@@ -173,6 +164,9 @@ export class StreamProcessorHelper {
         )
       : (this.engine.debug ? this.engine.chatService.debugStream(this.engine.sessionId) : this.engine.chatService.streamConnect(this.engine.sessionId));
 
+    // SSE 回调在 Angular Zone 外执行 — 避免每个 SSE token 触发 CD
+    // list 变更通过 viewAdapter._runInZone() 重新进入 Zone
+    this.engine.ngZone.runOutsideAngular(() => {
     this.engine.messageSubscription = source$.subscribe({
       next: async (data: any) => {
         if (!this.engine.isWaiting) return;
@@ -180,28 +174,29 @@ export class StreamProcessorHelper {
 
         const messageSource = this.engine.currentMessageSource || 'mainAgent';
         if (messageSource !== this.engine.currentMessageSource) {
-          if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
-            this.engine.list[this.engine.list.length - 1].state = 'done';
-          }
+          this.engine.viewAdapter.markLastMessageDone();
         }
         this.engine.currentMessageSource = messageSource;
 
         try {
           if (data.type === 'ModelClientStreamingChunkEvent') {
             if (data.content) {
+              ChatPerformanceTracer.mark('sse_chunk', data.content.length > 30 ? data.content.slice(0, 30) + '...' : data.content);
               const streamRepetitionCheck = this.engine.repetitionDetectionService.checkStreamRepetition(data.content);
               // 同步 think 状态（由服务内部状态机驱动，支持跨 token 标签拆分）
               if (streamRepetitionCheck.thinkTransition === 'entered') { this.engine.insideThink = true; }
               if (streamRepetitionCheck.thinkTransition === 'exited') { this.engine.insideThink = false; }
               if (streamRepetitionCheck.isRepetitive) {
                 console.warn('[重复检测] 流式文本重复:', streamRepetitionCheck.pattern);
-                this.engine.msg.appendMessage('aily', data.content, messageSource);
+                this.engine.msg.appendStreaming('aily', data.content, messageSource);
+                this.engine.viewAdapter.flushNow(); // flush before reading list for closingTags
                 const closingTags = this.engine.msg.getClosingTagsForOpenBlocks();
                 this.engine.msg.appendMessage('aily', `${closingTags}\n\`\`\`aily-state\n{\n  "status": "warning",\n  "text": "模型已经处理了一段时间，请问需要继续吗？",\n  "id": "repetition-check-${Date.now()}"\n}\n\`\`\`\n\n\`\`\`aily-button\n[{"text":"继续","action":"retry","type":"primary"}]\n\`\`\`\n\n`);
                 this.engine.stop();
                 return;
               }
-              this.engine.msg.appendMessage('aily', data.content, messageSource);
+              // ★ 核心优化：流式 token 走 rAF 批处理，每帧合并一次而非每 token 触发 Angular CD
+              this.engine.msg.appendStreaming('aily', data.content, messageSource);
               if (statelessMode) { this.engine.currentTurnAssistantContent += data.content; }
 
               if (!this.engine.insideThink && this.engine.msg.checkAndTruncateAilyButtonBlock()) {
@@ -241,13 +236,16 @@ export class StreamProcessorHelper {
               this.engine.msg.appendMessage('aily', `\n\n\n\`\`\`aily-state\n{\n  "state": "done",\n  "text": "${data.content}",\n  "id": "${data.id}"\n}\n\`\`\`\n\n\n`, messageSource);
             }
           } else if (data.type === 'error') {
-            if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
-              this.engine.list[this.engine.list.length - 1].state = 'done';
-            }
+            this.engine.viewAdapter.markLastMessageDone();
             const errorClosingTags = this.engine.msg.getClosingTagsForOpenBlocks();
             this.engine.msg.appendMessage('aily', `${errorClosingTags}\n\`\`\`aily-error\n{\n  "message": "${this.engine.msg.makeJsonSafe(data.message || '未知错误')}"\n}\n\`\`\`\n\n\`\`\`aily-button\n[{"text":"重试","action":"retry","type":"primary"}]\n\`\`\`\n\n`, messageSource);
-            this.engine.isWaiting = false;
+            this.engine.ngZone.run(() => { this.engine.isWaiting = false; });
           } else if (data.type === 'tool_call_request') {
+            const _tcSpan = ChatPerformanceTracer.begin('tool_call_request', data.tool_name);
+            // ★ P0-perf: 工具请求到达前强制 flush 所有 pending 内容（含 </think>），
+            // 避免 silent 工具（如 todo_write_tool）跳过 startToolCall → _immediateFlushAndRun，
+            // 导致 </think> 留在 pendingChunks 直到下一帧才渲染。
+            this.engine.viewAdapter.flushNow();
             this.engine.repetitionDetectionService.markBoundary('tool_call');
 
             // 内部工具（服务端已执行，前端仅展示）
@@ -275,9 +273,7 @@ export class StreamProcessorHelper {
               // this.engine.msg.startToolCall(data.tool_id, data.tool_name, `正在执行 ${subagentDisplayName}...`);
               const agentSource = data.agent_name || 'subAgent';
               if (this.engine.currentMessageSource !== agentSource) {
-                if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
-                  this.engine.list[this.engine.list.length - 1].state = 'done';
-                }
+                this.engine.viewAdapter.markLastMessageDone();
                 this.engine.currentMessageSource = agentSource;
               }
               this.engine.activeToolExecutions++;
@@ -288,7 +284,7 @@ export class StreamProcessorHelper {
                   console.log(`[Subagent] ✅ ${data.tool_name} 完成 (${elapsed}s)`, '\n  返回值:', result?.length > 500 ? result.slice(0, 500) + `...(共${result.length}字符)` : result);
                   // this.engine.msg.completeToolCall(data.tool_id, data.tool_name, ToolCallState.DONE, `${subagentDisplayName} 完成`);
                   if (this.engine.currentMessageSource !== 'mainAgent') {
-                    if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') { this.engine.list[this.engine.list.length - 1].state = 'done'; }
+                    this.engine.viewAdapter.markLastMessageDone();
                     this.engine.currentMessageSource = 'mainAgent';
                   }
                   this.engine.pendingToolResults.push({ tool_id: data.tool_id, tool_name: data.tool_name, content: result, is_error: false });
@@ -300,7 +296,7 @@ export class StreamProcessorHelper {
                   console.error(`[Subagent] ❌ ${data.tool_name} 失败 (${elapsed}s)`, '\n  错误:', errMsg);
                   // this.engine.msg.completeToolCall(data.tool_id, data.tool_name, ToolCallState.ERROR, errMsg);
                   if (this.engine.currentMessageSource !== 'mainAgent') {
-                    if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') { this.engine.list[this.engine.list.length - 1].state = 'done'; }
+                    this.engine.viewAdapter.markLastMessageDone();
                     this.engine.currentMessageSource = 'mainAgent';
                   }
                   this.engine.pendingToolResults.push({ tool_id: data.tool_id, tool_name: data.tool_name, content: errMsg, is_error: true });
@@ -429,9 +425,7 @@ export class StreamProcessorHelper {
 
                   // 切换消息来源到子代理
                   if (this.engine.currentMessageSource !== agentSource) {
-                    if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
-                      this.engine.list[this.engine.list.length - 1].state = 'done';
-                    }
+                    this.engine.viewAdapter.markLastMessageDone();
                     this.engine.currentMessageSource = agentSource;
                   }
 
@@ -449,9 +443,7 @@ export class StreamProcessorHelper {
                       const elapsed = ((Date.now() - subagentStartTime) / 1000).toFixed(1);
                       console.log(`[Subagent] ✅ run_subagent(${toolArgs.agent}) 完成 (${elapsed}s)`);
                       if (this.engine.currentMessageSource !== 'mainAgent') {
-                        if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
-                          this.engine.list[this.engine.list.length - 1].state = 'done';
-                        }
+                        this.engine.viewAdapter.markLastMessageDone();
                         this.engine.currentMessageSource = 'mainAgent';
                       }
                       this.engine.pendingToolResults.push({ tool_id: data.tool_id, tool_name: data.tool_name, content: result, is_error: false });
@@ -462,9 +454,7 @@ export class StreamProcessorHelper {
                       const errMsg = error?.message || `${agentDisplayName} 执行失败`;
                       console.error(`[Subagent] ❌ run_subagent(${toolArgs.agent}) 失败 (${elapsed}s):`, errMsg);
                       if (this.engine.currentMessageSource !== 'mainAgent') {
-                        if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
-                          this.engine.list[this.engine.list.length - 1].state = 'done';
-                        }
+                        this.engine.viewAdapter.markLastMessageDone();
                         this.engine.currentMessageSource = 'mainAgent';
                       }
                       this.engine.pendingToolResults.push({ tool_id: data.tool_id, tool_name: data.tool_name, content: errMsg, is_error: true });
@@ -591,6 +581,7 @@ export class StreamProcessorHelper {
                 content: toolContent, resultText: this.engine.msg.makeJsonSafe(resultText),
                 is_error: toolResult?.is_error ?? false
               });
+              ChatPerformanceTracer.end(_tcSpan, 'tool_call_request', data.tool_name);
               this.engine.turnLoop.onToolExecutionComplete();
             } else {
               this.engine.send('tool', JSON.stringify({
@@ -625,12 +616,7 @@ export class StreamProcessorHelper {
               }
             }
           }
-          if (this.streamScrollRafId === null) {
-            this.streamScrollRafId = requestAnimationFrame(() => {
-              this.streamScrollRafId = null;
-              this.engine.scrollManager.scrollToBottom();
-            });
-          }
+          // 滚动统一由 viewAdapter 的 rAF flush 回调处理（流式 + 非流式均通过 appendMessage→appendImmediate 触发 flush）
         } catch (e) {
           this.engine.msg.appendMessage('aily', `\n\`\`\`aily-error\n{\n  "message": "服务异常，请稍后重试。"\n}\n\`\`\`\n\n\`\`\`aily-button\n[{"text":"重试","action":"retry","type":"primary"}]\n\`\`\`\n\n`);
           this.engine.stop();
@@ -648,11 +634,11 @@ export class StreamProcessorHelper {
           return;
         }
 
-        if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
-          this.engine.list[this.engine.list.length - 1].state = 'done';
-        }
-        this.engine.isWaiting = false;
-        this.engine.isCompleted = true;
+        this.engine.viewAdapter.markLastMessageDone();
+        this.engine.ngZone.run(() => {
+          this.engine.isWaiting = false;
+          this.engine.isCompleted = true;
+        });
         this.engine.session.saveCurrentSession();
         if (!AilyHost.get().electron?.isWindowFocused()) {
           AilyHost.get().electron?.notify('Aily', '对话已完成');
@@ -706,20 +692,17 @@ export class StreamProcessorHelper {
         this._emitStreamError(err);
       }
     });
+    }); // end runOutsideAngular
   }
 
   /** 向用户展示流错误信息并结束等待状态 */
   private _emitStreamError(err: any): void {
-    if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
-      this.engine.list[this.engine.list.length - 1].state = 'done';
-    }
+    this.engine.viewAdapter.markLastMessageDone();
     const httpErrorText = _getPreferredHttpErrorMessage(err);
     const errorClosingTags = this.engine.msg.getClosingTagsForOpenBlocks();
     this.engine.msg.appendMessage('aily', `${errorClosingTags}\n\`\`\`aily-state\n{\n  "state": "warn",\n  "text": "${this.engine.msg.makeJsonSafe(httpErrorText)}",\n  "id": "network-error-${Date.now()}"\n}\n\`\`\`\n\n\`\`\`aily-button\n[{"text":"重试","action":"retry","type":"primary"}]\n\`\`\`\n\n`);
-    this.engine.isWaiting = false;
-    if (this.engine.list.length > 0) {
-      this.engine.list[this.engine.list.length - 1].state = 'done';
-    }
+    this.engine.ngZone.run(() => { this.engine.isWaiting = false; });
+    this.engine.viewAdapter.markLastMessageDone();
     // 应用延迟的模型/模式切换
     this.engine.applyPendingSwitch();
   }

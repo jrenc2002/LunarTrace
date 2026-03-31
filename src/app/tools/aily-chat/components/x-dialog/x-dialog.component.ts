@@ -9,6 +9,8 @@ import {
   ViewChild,
   ElementRef,
   AfterViewChecked,
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -20,6 +22,7 @@ import { AilyChatCodeComponent } from './aily-chat-code.component';
 import { ChatAPI } from '../../core/api-endpoints';
 import { AilyHost } from '../../core/host';
 import { EditCheckpointService } from '../../services/edit-checkpoint.service';
+import { ChatPerformanceTracer } from '../../services/chat-perf-tracer';
 import { ResourceItem } from '../../core/chat-types';
 
 @Component({
@@ -28,6 +31,7 @@ import { ResourceItem } from '../../core/chat-types';
   styleUrls: ['./x-dialog.component.scss'],
   standalone: true,
   imports: [CommonModule, FormsModule, TranslateModule, NzToolTipModule, XMarkdownComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class XDialogComponent implements OnChanges, AfterViewChecked {
   @Input() role = 'user';
@@ -83,6 +87,17 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   streamContent = signal('');
   streamingConfig = signal<StreamingOption>({ hasNextChunk: false, enableAnimation: false });
   readonly componentMap: ComponentMap = { code: AilyChatCodeComponent };
+
+  // ★ 节流式 preprocess：流式期间最多每 rAF 帧处理一次，避免每次 content push 都 O(n)
+  private _preprocessRafId: number | null = null;
+  private _pendingContent: string | null = null;
+  // ★ filterToolCalls 缓存：避免每次 preprocess 都全量 split + parse
+  private _ftcCacheInput = '';
+  private _ftcCacheOutput = '';
+  private _ftcToolMap = new Map<string, ToolCallEntry>();
+  // ★ filterThinkTags 缓存：避免流式中每帧重新 btoa(encodeURIComponent()) 全部 think 内容
+  private _fttCacheInput = '';
+  private _fttCacheOutput = '';
   /** 是否显示操作栏 */
   showActions = false;
   /** 反馈状态 */
@@ -94,7 +109,7 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   editResources: ResourceItem[] = [];
   showEditAddList = false;
 
-  constructor(private editCheckpointService: EditCheckpointService) {}
+  constructor(private editCheckpointService: EditCheckpointService, private cdr: ChangeDetectorRef) {}
 
   /** 是否可显示操作栏（非 doing 的最后一条 aily 消息） */
   get canShowActions(): boolean {
@@ -241,6 +256,7 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
     );
     if (!exists) {
       this.editResources.push(item);
+      this.cdr.markForCheck();
     }
   }
 
@@ -392,27 +408,46 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
     }
 
     if (changes['doing'] || changes['content']) {
-      const thinkExecuting = this.isThinkExecuting(this.content || '');
-      this.streamingConfig.set({
-        hasNextChunk: thinkExecuting ? false : this.doing,
-        // enableAnimation: this.doing,
-        // animationConfig: { fadeDuration: 150, easing: 'ease-in-out' },
-      });
-      // 流式结束时重新预处理，以便 normalizeAilyMermaid 将 aily-mermaid 转为 JSON 对象
-      if (!this.doing) {
-        const processed = this.preprocess(this.content || '');
-        if (processed !== this.lastRaw) {
-          this.lastRaw = processed;
-          this.appendContent(processed);
+      const hasNextChunk = this.doing && !this.isThinkExecuting(this.content || '');
+      this.streamingConfig.set({ hasNextChunk });
+
+      const content = this.content || '';
+
+      if (this.doing && changes['content'] && !changes['doing']) {
+        // ★ 流式期间：节流到 rAF 帧边界，确保正确性（始终走 preprocess）
+        // 同一帧内多次 content push 只执行最后一次，与 viewAdapter rAF 批处理对齐
+        this._pendingContent = content;
+        if (this._preprocessRafId === null) {
+          ChatPerformanceTracer.mark('preprocess_rAF_scheduled');
+          this._preprocessRafId = requestAnimationFrame(() => {
+            this._preprocessRafId = null;
+            if (this._pendingContent !== null) {
+              const _ps = ChatPerformanceTracer.begin('preprocess_rAF_exec');
+              this._doFullPreprocess(this._pendingContent);
+              this._pendingContent = null;
+              ChatPerformanceTracer.end(_ps, 'preprocess_rAF_exec');
+            }
+          });
         }
+        return;
       }
+
+      // 非流式或 doing 变化：立即全量预处理（状态转换、流式结束等关键时刻）
+      if (this._preprocessRafId !== null) {
+        cancelAnimationFrame(this._preprocessRafId);
+        this._preprocessRafId = null;
+        this._pendingContent = null;
+      }
+      ChatPerformanceTracer.mark('preprocess_immediate', `doing=${this.doing}`);
+      this._doFullPreprocess(content);
     }
-    if (changes['content']) {
-      const processed = this.preprocess(this.content || '');
-      if (processed !== this.lastRaw) {
-        this.lastRaw = processed;
-        this.appendContent(processed);
-      }
+  }
+
+  private _doFullPreprocess(content: string): void {
+    const processed = this.preprocess(content);
+    if (processed !== this.lastRaw) {
+      this.lastRaw = processed;
+      this.appendContent(processed);
     }
   }
 
@@ -476,23 +511,32 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   }
 
   /**
-   * 工具调用渲染：
-   * 1. 扫描全部内容，构建 tool_id → 最终状态 的映射（Phase 1）
-   * 2. 将每个 tool_call_request 行替换为对应状态的 aily-state 代码块（Phase 2）
-   * 3. 移除内部事件行（ToolCallRequestEvent / ToolCallExecutionEvent / ToolCallSummaryMessage）
-   *
-   * 由于 x-markdown 使用增量 DOM 更新，当同一位置的 aily-state 状态改变
-   * （doing → done/error）时，只更新对应节点，不会重复追加块。
+   * 工具调用渲染（增量优化版）：
+   * - 缓存上次结果，仅处理新增部分
+   * - 合并两次 split 为一次，单遍扫描 + 替换
+   * - toolMap 持久化复用，仅增加新条目
    */
   private filterToolCalls(content: string): string {
-    // Phase 1: 扫描所有 JSON 行，建立 tool_id → 最终状态 映射
-    const toolMap = new Map<string, ToolCallEntry>();
+    // 快速路径：内容完全没变，直接返回缓存
+    if (content === this._ftcCacheInput) return this._ftcCacheOutput;
 
-    for (const line of content.split('\n')) {
-      const json = tryJsonParse(line.trim());
+    const toolMap = this._ftcToolMap;
+    // 如果内容不是在缓存基础上追加（如回退/替换），重置 toolMap
+    if (!content.startsWith(this._ftcCacheInput)) {
+      toolMap.clear();
+    }
+
+    // 单次 split，Phase 1+2 共用行数组
+    const lines = content.split('\n');
+    let hasToolEvents = false;
+
+    // Phase 1: 扫描所有 JSON 行，更新 tool_id → 最终状态映射
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trim();
+      const json = tryJsonParse(trimmed);
       if (!json) continue;
+      hasToolEvents = true;
 
-      // 单个工具调用请求（streaming 中逐个产生）
       if (json.type === 'tool_call_request' && json.tool_id) {
         if (!toolMap.has(json.tool_id)) {
           toolMap.set(json.tool_id, {
@@ -500,11 +544,7 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
             text: buildToolText(json.tool_name, json.tool_args),
           });
         }
-        continue;
-      }
-
-      // 工具执行结果事件：更新对应 tool_id 的状态
-      if (json.type === 'ToolCallExecutionEvent' && Array.isArray(json.content)) {
+      } else if (json.type === 'ToolCallExecutionEvent' && Array.isArray(json.content)) {
         for (const item of json.content) {
           const callId: string = item.call_id || item.id;
           if (callId && toolMap.has(callId)) {
@@ -514,57 +554,103 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
       }
     }
 
-    // Phase 2: 逐行替换
-    return content.split('\n').map(line => {
-      const json = tryJsonParse(line.trim());
-      if (!json) return line;
+    // 快速路径：没有任何工具事件行，直接返回原内容
+    if (!hasToolEvents && toolMap.size === 0) {
+      this._ftcCacheInput = content;
+      this._ftcCacheOutput = content;
+      return content;
+    }
+
+    // Phase 2: 逐行替换（复用同一行数组，原地构建结果）
+    let result = '';
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trim();
+      const json = tryJsonParse(trimmed);
+      if (!json) {
+        result += (i > 0 ? '\n' : '') + lines[i];
+        continue;
+      }
 
       if (json.type === 'tool_call_request' && json.tool_id) {
         const entry = toolMap.get(json.tool_id);
-        if (!entry) return '';
-        const stateData = { state: entry.state, text: entry.text };
-        return '```aily-state\n' + JSON.stringify(stateData) + '\n```';
+        if (!entry) {
+          // empty line
+        } else {
+          const stateData = { state: entry.state, text: entry.text };
+          result += (i > 0 ? '\n' : '') + '```aily-state\n' + JSON.stringify(stateData) + '\n```';
+        }
+        continue;
       }
 
-      if (TOOL_EVENT_TYPES.has(json.type)) return '';
+      if (TOOL_EVENT_TYPES.has(json.type)) continue;
 
-      return line;
-    }).join('\n');
+      result += (i > 0 ? '\n' : '') + lines[i];
+    }
+
+    this._ftcCacheInput = content;
+    this._ftcCacheOutput = result;
+    return result;
   }
 
   /**
    * 将 <think>...</think> 转换为 aily-think 代码块
    * 由 AilyChatCodeComponent 负责渲染
+   * 优化：使用 indexOf 跳过大段非标签文本 + 结果缓存避免每帧重新编码
    */
   private filterThinkTags(content: string): string {
-    let result = '';
-    let i = 0;
-    let inThink = false;
-    let buf = '';
+    // 快速路径：内容完全没变
+    if (content === this._fttCacheInput) return this._fttCacheOutput;
+    // 快速路径：没有 <think> 标签
+    if (!content.includes('<think>')) {
+      this._fttCacheInput = content;
+      this._fttCacheOutput = content;
+      return content;
+    }
 
-    while (i < content.length) {
-      if (!inThink && content.startsWith('<think>', i)) {
-        inThink = true; buf = ''; i += 7; continue;
+    const parts: string[] = [];
+    let pos = 0;
+
+    while (pos < content.length) {
+      const thinkStart = content.indexOf('<think>', pos);
+      if (thinkStart === -1) {
+        // 没有更多 <think>，直接追加剩余内容
+        parts.push(content.slice(pos));
+        pos = content.length;
+        break;
       }
-      if (inThink && content.startsWith('</think>', i)) {
-        inThink = false;
-        if (buf.trim()) {
-          const encoded = btoa(encodeURIComponent(buf.trim()));
-          result += '\n```aily-think\n' + JSON.stringify({ content: encoded, isComplete: true, encoded: true }) + '\n```\n';
+
+      // 追加 <think> 之前的内容
+      if (thinkStart > pos) {
+        parts.push(content.slice(pos, thinkStart));
+      }
+
+      const bodyStart = thinkStart + 7; // '<think>'.length
+      const thinkEnd = content.indexOf('</think>', bodyStart);
+
+      if (thinkEnd === -1) {
+        // 未闭合的 <think>：流式中显示 loading，流式结束标记为完成
+        const buf = content.slice(bodyStart).trim();
+        if (buf) {
+          const encoded = btoa(encodeURIComponent(buf));
+          const isComplete = !this.doing;
+          parts.push('\n```aily-think\n' + JSON.stringify({ content: encoded, isComplete, encoded: true }) + '\n```\n');
         }
-        buf = ''; i += 8; continue;
+        pos = content.length;
+        break;
       }
-      if (inThink) buf += content[i]; else result += content[i];
-      i++;
+
+      // 完整的 <think>...</think> 块
+      const buf = content.slice(bodyStart, thinkEnd).trim();
+      if (buf) {
+        const encoded = btoa(encodeURIComponent(buf));
+        parts.push('\n```aily-think\n' + JSON.stringify({ content: encoded, isComplete: true, encoded: true }) + '\n```\n');
+      }
+      pos = thinkEnd + 8; // '</think>'.length
     }
 
-    // think 块尚未闭合：流式中显示 loading，流式结束（含用户中断）标记为完成
-    if (inThink && buf.trim()) {
-      const encoded = btoa(encodeURIComponent(buf.trim()));
-      const isComplete = !this.doing;
-      result += '\n```aily-think\n' + JSON.stringify({ content: encoded, isComplete, encoded: true }) + '\n```\n';
-    }
-
+    const result = parts.join('');
+    this._fttCacheInput = content;
+    this._fttCacheOutput = result;
     return result;
   }
 

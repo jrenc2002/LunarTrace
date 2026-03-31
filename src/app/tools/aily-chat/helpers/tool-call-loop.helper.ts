@@ -10,6 +10,7 @@ import { ToolCallState } from '../core/chat-types';
 import { AilyHost } from '../core/host';
 import { isDeferredTool } from '../tools/tools';
 import { formatHookContext } from '../services/chat-hook.service';
+import { ChatPerformanceTracer } from '../services/chat-perf-tracer';
 
 export class ToolCallLoopHelper {
   /** 发送前准备好的消息（瞬态，仅承载未持久化的普通裁剪结果） */
@@ -82,7 +83,8 @@ export class ToolCallLoopHelper {
   // ==================== turn 发起 ====================
 
   async startChatTurn(): Promise<void> {
-    if (this.engine.isCancelled) { this.engine.isWaiting = false; return; }
+    const _turnSpan = ChatPerformanceTracer.begin('startChatTurn', `iter=${this.engine.toolCallingIteration}`);
+    if (this.engine.isCancelled) { this.engine.isWaiting = false; ChatPerformanceTracer.end(_turnSpan, 'startChatTurn', 'cancelled'); return; }
 
     const toolCallLimit = this.engine.ailyChatConfigService.maxCount;
     if (this.engine.toolCallingIteration >= toolCallLimit) {
@@ -113,9 +115,13 @@ export class ToolCallLoopHelper {
 
     this.engine.contextBudgetService.updateModelContextSize(this.engine.currentModel?.model || null);
     // P0-perf: 直接调用 buildMessages() 一次并缓存，避免通过 conversationMessages getter 重复触发
+    const _bmSpan = ChatPerformanceTracer.begin('buildMessages');
     const cachedMessages = this.engine.turnManager.buildMessages();
+    ChatPerformanceTracer.end(_bmSpan, 'buildMessages', `${cachedMessages.length} msgs`);
     // Method C: 异步 token 计数，长文本卸载到 Worker 避免阻塞 UI
+    const _budgetSpan = ChatPerformanceTracer.begin('updateBudgetAsync');
     await this.engine.contextBudgetService.updateBudgetAsync(cachedMessages, this.getCurrentTools());
+    ChatPerformanceTracer.end(_budgetSpan, 'updateBudgetAsync');
 
     const preCompressBudget = this.engine.contextBudgetService.getSnapshot();
 
@@ -154,11 +160,14 @@ export class ToolCallLoopHelper {
     try {
       // P0-perf: 复用 cachedMessages，不再重复调用 buildMessages()
       const turnSpans = this.engine.turnManager.turnSpans;
+      const _compressSpan = ChatPerformanceTracer.begin('compressIfNeeded');
       const compressed = await this.engine.contextBudgetService.compressIfNeeded(
         cachedMessages, this.engine.sessionId, this.engine.turnManager,
         this.getCurrentLLMConfig(), this.engine.currentModel?.model || undefined,
-        turnSpans
+        turnSpans,
+        preCompressBudget.messagesTokens
       );
+      ChatPerformanceTracer.end(_compressSpan, 'compressIfNeeded');
       // compress 可能修改了 turnManager 内部状态，获取最新的 canonical messages
       const canonicalMessages = this.engine.turnManager.buildMessages();
       this._preparedMessages = compressed === canonicalMessages ? null : compressed;
@@ -200,14 +209,16 @@ export class ToolCallLoopHelper {
     }
 
     // 压缩期间用户可能已取消，再次检查
-    if (this.engine.isCancelled) { this.engine.isWaiting = false; return; }
+    if (this.engine.isCancelled) { this.engine.isWaiting = false; ChatPerformanceTracer.end(_turnSpan, 'startChatTurn', 'cancelled_post_compress'); return; }
 
+    ChatPerformanceTracer.end(_turnSpan, 'startChatTurn', 'streamConnect');
     this.engine.stream.streamConnect(true);
   }
 
   // ==================== 循环迭代 ====================
 
   continueToolCallingLoop(): void {
+    ChatPerformanceTracer.mark('continueToolCallingLoop', `iter=${this.engine.toolCallingIteration}`);
     // Turn 结构化存储：记录本轮工具调用
     if (this.engine.currentTurnToolCalls.length > 0) {
       this.engine.turnManager.addToolCallRound(
@@ -238,6 +249,7 @@ export class ToolCallLoopHelper {
   // ==================== 完成回调 ====================
 
   onToolExecutionComplete(): void {
+    ChatPerformanceTracer.mark('onToolExecutionComplete', `active=${this.engine.activeToolExecutions - 1}, sseComplete=${this.engine.sseStreamCompleted}`);
     this.engine.activeToolExecutions--;
     // 取消后不再触发循环迭代（stop() 已负责保存已完成的结果）
     if (this.engine.isCancelled) return;
@@ -319,11 +331,11 @@ export class ToolCallLoopHelper {
       }
     }
 
-    if (this.engine.list.length > 0 && this.engine.list[this.engine.list.length - 1].role === 'aily') {
-      this.engine.list[this.engine.list.length - 1].state = 'done';
-    }
-    this.engine.isWaiting = false;
-    this.engine.isCompleted = true;
+    this.engine.viewAdapter.markLastMessageDone();
+    this.engine.ngZone.run(() => {
+      this.engine.isWaiting = false;
+      this.engine.isCompleted = true;
+    });
     this.engine.session.saveCurrentSession();
     if (!AilyHost.get().electron?.isWindowFocused()) {
       AilyHost.get().electron?.notify('Aily', '对话已完成');

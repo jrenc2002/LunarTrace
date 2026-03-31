@@ -1,12 +1,13 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, ReplaySubject } from 'rxjs';
+import { Observable, ReplaySubject, Subscription } from 'rxjs';
 import { MCPTool } from './mcp.service';
 import { ChatAPI } from '../core/api-endpoints';
 import { AilyChatConfigService, ModelConfigOption } from './aily-chat-config.service';
 import { AilyHost } from '../core/host';
 import { isTransientNetworkError, isLikelySessionLostError } from './http-error-handler.service';
 import { asyncJsonStringify } from '../core/async-json-stringify';
+import { ChatKernelProxy } from './chat-kernel-proxy';
 
 // 使用 ModelConfigOption 作为统一的模型配置类型，保留 ModelConfig 别名以兼容旧代码
 export type ModelConfig = ModelConfigOption;
@@ -40,6 +41,9 @@ export class ChatService {
   currentSessionPath = '';
 
   titleIsGenerating = false;
+
+  /** SSE Worker 代理 — 将 fetch + JSON.stringify + SSE 解析移至 Worker 线程 */
+  readonly sseProxy = new ChatKernelProxy();
 
   /** 由 ChatEngineService 同步：是否正在等待 AI 响应 */
   isWaiting = false;
@@ -504,6 +508,7 @@ export class ChatService {
     // 使用 Observable 构造函数，确保只有在订阅时才开始执行
     return new Observable(observer => {
       let aborted = false;
+      let workerSub: Subscription | null = null;
       let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
       const abortCtrl = new AbortController();
 
@@ -511,12 +516,25 @@ export class ChatService {
       AilyHost.get().auth.getToken!().then(token => {
         if (aborted) return;
 
-        const headers: HeadersInit = {};
+        const headers: Record<string, string> = {};
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         }
 
-        fetch(`${ChatAPI.streamConnect}/${sessionId}`, { headers, signal: abortCtrl.signal })
+        const url = `${ChatAPI.streamConnect}/${sessionId}`;
+
+        // ★ Worker 路径：fetch + SSE 解析在 Worker 线程执行
+        if (this.sseProxy.isReady) {
+          workerSub = this.sseProxy.sseFetch(url, 'GET', headers).subscribe({
+            next: data => { if (!aborted) observer.next(data); },
+            complete: () => { if (!aborted) observer.complete(); },
+            error: err => { if (!aborted) observer.error(err); },
+          });
+          return;
+        }
+
+        // ★ 降级：主线程直接 fetch（原始实现）
+        fetch(url, { headers, signal: abortCtrl.signal })
           .then(async response => {
           if (aborted) return;
 
@@ -590,6 +608,7 @@ export class ChatService {
       // 返回清理函数，在取消订阅时调用
       return () => {
         aborted = true;
+        workerSub?.unsubscribe();
         abortCtrl.abort();
         if (reader) {
           reader.cancel().catch(() => {});
@@ -627,6 +646,7 @@ export class ChatService {
   ): Observable<any> {
     return new Observable(observer => {
       let aborted = false;
+      let workerSub: Subscription | null = null;
       let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
       const abortCtrl = new AbortController();
 
@@ -661,7 +681,7 @@ export class ChatService {
           debugForceErrorCode = '';
         }
 
-        const headers: HeadersInit = {
+        const headers: Record<string, string> = {
           'Content-Type': 'application/json'
         };
         if (token) {
@@ -671,6 +691,20 @@ export class ChatService {
           headers['X-Debug-Force-Error'] = debugForceErrorCode;
         }
 
+        const url = `${ChatAPI.chatRequest}/${sessionId}`;
+
+        // ★ Worker 路径：JSON.stringify + fetch + SSE 解析均在 Worker 线程
+        // 替代 asyncJsonStringify（payload 直接传给 Worker，Worker 内部 JSON.stringify）
+        if (this.sseProxy.isReady) {
+          workerSub = this.sseProxy.sseFetch(url, 'POST', headers, payload).subscribe({
+            next: data => { if (!aborted) observer.next(data); },
+            complete: () => { if (!aborted) observer.complete(); },
+            error: err => { if (!aborted) observer.error(err); },
+          });
+          return;
+        }
+
+        // ★ 降级：主线程直接 fetch（原始实现，含完整重试逻辑）
         // P0: 将 JSON 序列化移至 Web Worker，避免 100KB+ payload 阻塞主线程
         const requestBody = await asyncJsonStringify(payload);
         if (aborted) return;
@@ -811,6 +845,7 @@ export class ChatService {
       // 返回清理函数，在取消订阅时调用
       return () => {
         aborted = true;
+        workerSub?.unsubscribe();
         abortCtrl.abort();
         if (reader) {
           reader.cancel().catch(() => {});

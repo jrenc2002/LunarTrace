@@ -91,12 +91,20 @@ export function truncateToolResult(content: string, toolName?: string, maxChars?
 
 /**
  * 在 text 中查找 TERMINATE 前缀的起始位置
+ *
+ * ★ 优化：只需检查 text 尾部是否是 target 的前缀。
+ * 原实现 O(n²)（对每个位置 slice + startsWith），现在 O(target_len)。
+ * 例如 text="...TER", target="TERMINATE" → 返回 text.length-3
  */
 export function findTerminatePrefixStart(text: string, target: string): number {
-  for (let i = 0; i < text.length; i++) {
-    const suffix = text.slice(i);
+  // 只需要检查 text 尾部最多 target.length-1 个字符是否是 target 的前缀
+  // （完整的 target 在文本中间由 _doAppendMessage 的 terminateTemp 机制处理）
+  const maxCheck = Math.min(text.length, target.length - 1);
+  for (let suffixLen = maxCheck; suffixLen >= 1; suffixLen--) {
+    const start = text.length - suffixLen;
+    const suffix = text.substring(start);
     if (target.startsWith(suffix)) {
-      return i;
+      return start;
     }
   }
   return -1;
