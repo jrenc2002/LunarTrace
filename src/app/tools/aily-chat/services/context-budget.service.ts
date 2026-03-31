@@ -104,6 +104,45 @@ export function estimateMessagesTokens(messages: any[]): number {
 }
 
 /**
+ * 异步估算单条消息的 token 数
+ * content 和 tool_call arguments（大字段）走 Worker 异步计数，
+ * role/name/id 等短字段保持同步。
+ */
+export async function estimateMessageTokensAsync(message: any): Promise<number> {
+  const overhead = 4;
+  let tokens = overhead;
+  if (message.role) tokens += estimateTokenCount(message.role);
+  if (message.content) tokens += await estimateTokenCountAsync(message.content);
+  if (message.name) tokens += estimateTokenCount(message.name);
+
+  if (message.tool_calls && Array.isArray(message.tool_calls)) {
+    for (const tc of message.tool_calls) {
+      tokens += 4;
+      if (tc.id) tokens += estimateTokenCount(tc.id);
+      if (tc.function?.name) tokens += estimateTokenCount(tc.function.name);
+      if (tc.function?.arguments) {
+        const args = typeof tc.function.arguments === 'string'
+          ? tc.function.arguments
+          : JSON.stringify(tc.function.arguments);
+        tokens += await estimateTokenCountAsync(args);
+      }
+    }
+  }
+
+  return tokens;
+}
+
+/**
+ * 异步估算消息数组的总 token 数
+ * 所有消息并行计算，长文本卸载到 Worker。
+ */
+export async function estimateMessagesTokensAsync(messages: any[]): Promise<number> {
+  if (!messages || messages.length === 0) return 0;
+  const results = await Promise.all(messages.map(msg => estimateMessageTokensAsync(msg)));
+  return results.reduce((a, b) => a + b, 0) + 2;
+}
+
+/**
  * 估算工具定义数组的 token 数
  * 每个工具定义会被序列化为 JSON schema 格式发送给 LLM
  */
@@ -482,6 +521,25 @@ export class ContextBudgetService {
     }
 
     const messagesTokens = estimateMessagesTokens(messages);
+    this._emitSnapshot(messagesTokens, messages.length, tools);
+  }
+
+  /**
+   * 异步更新上下文预算（Method C 优化）
+   * 长文本 token 计数卸载到 Worker，避免阻塞 UI 主线程。
+   * 用于工具调用循环等热路径。
+   */
+  async updateBudgetAsync(messages: any[], tools?: any[]): Promise<void> {
+    if (tools) {
+      this.updateToolsTokens(tools);
+    }
+
+    const messagesTokens = await estimateMessagesTokensAsync(messages);
+    this._emitSnapshot(messagesTokens, messages.length, tools);
+  }
+
+  /** 内部：根据已计算的 messagesTokens 发布 snapshot */
+  private _emitSnapshot(messagesTokens: number, messageCount: number, _tools?: any[]): void {
     const systemTokens = this._cachedSystemTokens;
     const toolsTokens = this._cachedToolsTokens;
     const contextTokens = this._cachedContextTokens;
@@ -494,9 +552,8 @@ export class ContextBudgetService {
       compressionThreshold: this.compressionThreshold,
       summarizationThreshold: this.summarizationThreshold,
       usagePercent: Math.min(100, Math.round((currentTokens / max) * 100)),
-      messageCount: messages.length,
+      messageCount,
       updatedAt: Date.now(),
-      // 分项明细
       systemTokens,
       toolsTokens,
       contextTokens,

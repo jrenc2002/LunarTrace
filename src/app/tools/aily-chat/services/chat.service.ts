@@ -6,6 +6,7 @@ import { ChatAPI } from '../core/api-endpoints';
 import { AilyChatConfigService, ModelConfigOption } from './aily-chat-config.service';
 import { AilyHost } from '../core/host';
 import { isTransientNetworkError, isLikelySessionLostError } from './http-error-handler.service';
+import { asyncJsonStringify } from '../core/async-json-stringify';
 
 // 使用 ModelConfigOption 作为统一的模型配置类型，保留 ModelConfig 别名以兼容旧代码
 export type ModelConfig = ModelConfigOption;
@@ -664,7 +665,7 @@ export class ChatService {
         payload.agent = agent;
       }
 
-      AilyHost.get().auth.getToken!().then(token => {
+      AilyHost.get().auth.getToken!().then(async (token) => {
         if (aborted) return;
 
         // 调试异常注入：在控制台设置 localStorage.ailyChatDebugForceError 后自动附带请求头
@@ -685,7 +686,8 @@ export class ChatService {
           headers['X-Debug-Force-Error'] = debugForceErrorCode;
         }
 
-        const buildRequestBody = (effectiveSessionId: string) => JSON.stringify({
+        // P0: 将 JSON 序列化移至 Web Worker，避免 100KB+ payload 阻塞主线程
+        const buildRequestBody = (effectiveSessionId: string) => asyncJsonStringify({
           ...payload,
           session_id: effectiveSessionId,
         });
@@ -697,7 +699,8 @@ export class ChatService {
         const attemptFetch = async (attempt: number): Promise<void> => {
           try {
             let effectiveSessionId = sessionId;
-            let requestBody = buildRequestBody(effectiveSessionId);
+            let requestBody = await buildRequestBody(effectiveSessionId);
+            if (aborted) return;
 
             const response = await fetch(`${ChatAPI.chatRequest}/${effectiveSessionId}`, {
               method: 'POST',
@@ -719,7 +722,7 @@ export class ChatService {
                   await this.startSession(mode, tools as any, maxCount, llmConfig, selectModel).toPromise();
                   if (aborted) return;
                   effectiveSessionId = this.currentSessionId || sessionId;
-                  requestBody = buildRequestBody(effectiveSessionId);
+                  requestBody = await buildRequestBody(effectiveSessionId);
                   const retryResp = await fetch(`${ChatAPI.chatRequest}/${effectiveSessionId}`, {
                     method: 'POST',
                     headers,

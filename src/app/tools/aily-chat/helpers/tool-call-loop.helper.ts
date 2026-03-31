@@ -112,7 +112,10 @@ export class ToolCallLoopHelper {
     }
 
     this.engine.contextBudgetService.updateModelContextSize(this.engine.currentModel?.model || null);
-    this.engine.contextBudgetService.updateBudget(this.engine.conversationMessages, this.getCurrentTools());
+    // P0-perf: 直接调用 buildMessages() 一次并缓存，避免通过 conversationMessages getter 重复触发
+    const cachedMessages = this.engine.turnManager.buildMessages();
+    // Method C: 异步 token 计数，长文本卸载到 Worker 避免阻塞 UI
+    await this.engine.contextBudgetService.updateBudgetAsync(cachedMessages, this.getCurrentTools());
 
     const preCompressBudget = this.engine.contextBudgetService.getSnapshot();
 
@@ -149,13 +152,14 @@ export class ToolCallLoopHelper {
     }
 
     try {
-      const currentMessages = this.engine.turnManager.buildMessages();
+      // P0-perf: 复用 cachedMessages，不再重复调用 buildMessages()
       const turnSpans = this.engine.turnManager.turnSpans;
       const compressed = await this.engine.contextBudgetService.compressIfNeeded(
-        currentMessages, this.engine.sessionId, this.engine.turnManager,
+        cachedMessages, this.engine.sessionId, this.engine.turnManager,
         this.getCurrentLLMConfig(), this.engine.currentModel?.model || undefined,
         turnSpans
       );
+      // compress 可能修改了 turnManager 内部状态，获取最新的 canonical messages
       const canonicalMessages = this.engine.turnManager.buildMessages();
       this._preparedMessages = compressed === canonicalMessages ? null : compressed;
       if (showCompressionState) {
@@ -226,8 +230,9 @@ export class ToolCallLoopHelper {
     }
 
     this.engine.toolCallingIteration++;
-    this.engine.contextBudgetService.updateBudget(this.engine.conversationMessages, this.getCurrentTools());
-    this.startChatTurn();
+    // P0-perf: yield 一帧让 UI 更新（显示 pending 状态），再执行重计算
+    // 移除了此处的 updateBudget（startChatTurn 开头会做同样的调用）
+    setTimeout(() => this.startChatTurn(), 0);
   }
 
   // ==================== 完成回调 ====================
@@ -241,7 +246,7 @@ export class ToolCallLoopHelper {
     }
   }
 
-  finalizeStatelessTurn(): void {
+  async finalizeStatelessTurn(): Promise<void> {
     if (this.engine.pendingToolResults.length > 0 && !this.engine.isCancelled) {
       this.continueToolCallingLoop();
     } else {
@@ -251,7 +256,7 @@ export class ToolCallLoopHelper {
         this.engine.hookService.executeStop({
           stopHookActive: this._stopHookActive,
           toolCallingIteration: this.engine.toolCallingIteration,
-        }).then(stopResult => {
+        }).then(async (stopResult) => {
           if (stopResult.shouldContinue && stopResult.reasons && stopResult.reasons.length > 0) {
             // 参考 Copilot: 将 Hook 原因格式化为 user 消息，注入下轮
             this._stopHookReason = formatHookContext(stopResult.reasons);
@@ -270,28 +275,31 @@ export class ToolCallLoopHelper {
             return;
           }
           // Hook 未阻止，正常完成
-          this._doFinalize();
-        }).catch(err => {
+          await this._doFinalize();
+        }).catch(async (err) => {
           console.error('[Hook] Stop hook 执行异常，正常完成:', err);
-          this._doFinalize();
+          await this._doFinalize();
         });
         return;
       }
 
-      this._doFinalize();
+      await this._doFinalize();
     }
   }
 
   /**
    * 实际完成逻辑（从 finalizeStatelessTurn 抽取，供 Hook 流程复用）
    */
-  private _doFinalize(): void {
+  private async _doFinalize(): Promise<void> {
     // Turn 结构化存储：最终 assistant 响应
     this.engine.turnManager.finalizeTurn(this.engine.currentTurnAssistantContent || '');
-    this.engine.contextBudgetService.updateBudget(this.engine.conversationMessages, this.getCurrentTools());
+    // P0-perf: 构建一次 messages 并复用，避免通过 getter 重复触发 buildMessages()
+    const finalMessages = this.engine.turnManager.buildMessages();
+    // Method C: 异步 token 计数
+    await this.engine.contextBudgetService.updateBudgetAsync(finalMessages, this.getCurrentTools());
     const budget = this.engine.contextBudgetService.getSnapshot();
     this.engine.contextBudgetService.backgroundSummarizer.checkAndTrigger(
-      this.engine.conversationMessages, budget.maxContextTokens, budget.currentTokens,
+      finalMessages, budget.maxContextTokens, budget.currentTokens,
       this.engine.sessionId, this.engine.turnManager,
       this.getCurrentLLMConfig(), this.engine.currentModel?.model || undefined
     );
