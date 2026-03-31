@@ -6,6 +6,7 @@ import { ChatAPI } from '../core/api-endpoints';
 import { AilyChatConfigService, ModelConfigOption } from './aily-chat-config.service';
 import { AilyHost } from '../core/host';
 import { isTransientNetworkError, isLikelySessionLostError } from './http-error-handler.service';
+import { asyncJsonStringify } from '../core/async-json-stringify';
 
 // 使用 ModelConfigOption 作为统一的模型配置类型，保留 ModelConfig 别名以兼容旧代码
 export type ModelConfig = ModelConfigOption;
@@ -649,7 +650,7 @@ export class ChatService {
         payload.agent = agent;
       }
 
-      AilyHost.get().auth.getToken!().then(token => {
+      AilyHost.get().auth.getToken!().then(async (token) => {
         if (aborted) return;
 
         // 调试异常注入：在控制台设置 localStorage.ailyChatDebugForceError 后自动附带请求头
@@ -670,7 +671,9 @@ export class ChatService {
           headers['X-Debug-Force-Error'] = debugForceErrorCode;
         }
 
-        const requestBody = JSON.stringify(payload);
+        // P0: 将 JSON 序列化移至 Web Worker，避免 100KB+ payload 阻塞主线程
+        const requestBody = await asyncJsonStringify(payload);
+        if (aborted) return;
 
         const MAX_NETWORK_RETRIES = 3;
         const RETRY_BASE_DELAY = 2000; // ms
