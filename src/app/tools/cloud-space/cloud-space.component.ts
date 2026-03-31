@@ -250,7 +250,7 @@ export class CloudSpaceComponent {
     // -x!package-lock.json: 排除 package-lock.json
     // -x!project.7z: 排除自身
     // 注意：在某些shell环境下，!可能需要转义或引用，这里使用引号包裹排除项
-    let packCommand = `${this.platformService.za7} a -t7z -mx=9 "${archivePath}" * "-x!node_modules" "-x!.chat" "-x!.history" "-x!.temp" "-x!package-lock.json" "-x!project.7z"`;
+    let packCommand = `${this.platformService.za7} a -t7z -mx=9 "${archivePath}" * "-x!node_modules" "-x!.chat" "-x!.history" "-x!.temp" "-x!.aily" "-x!.aily_checkpoints" "-x!.chat_history" "-x!package-lock.json" "-x!project.7z" "-x!project.abi.backup" "-x!project.abs"`;
     
     // console.log('执行打包命令:', packCommand);
     const result = await this.cmdService.runAsync(packCommand, prjPath, false);
