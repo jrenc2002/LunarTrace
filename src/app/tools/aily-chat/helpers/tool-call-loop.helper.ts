@@ -112,7 +112,9 @@ export class ToolCallLoopHelper {
     }
 
     this.engine.contextBudgetService.updateModelContextSize(this.engine.currentModel?.model || null);
-    this.engine.contextBudgetService.updateBudget(this.engine.conversationMessages, this.getCurrentTools());
+    // P0-perf: 直接调用 buildMessages() 一次并缓存，避免通过 conversationMessages getter 重复触发
+    const cachedMessages = this.engine.turnManager.buildMessages();
+    this.engine.contextBudgetService.updateBudget(cachedMessages, this.getCurrentTools());
 
     const preCompressBudget = this.engine.contextBudgetService.getSnapshot();
 
@@ -149,13 +151,14 @@ export class ToolCallLoopHelper {
     }
 
     try {
-      const currentMessages = this.engine.turnManager.buildMessages();
+      // P0-perf: 复用 cachedMessages，不再重复调用 buildMessages()
       const turnSpans = this.engine.turnManager.turnSpans;
       const compressed = await this.engine.contextBudgetService.compressIfNeeded(
-        currentMessages, this.engine.sessionId, this.engine.turnManager,
+        cachedMessages, this.engine.sessionId, this.engine.turnManager,
         this.getCurrentLLMConfig(), this.engine.currentModel?.model || undefined,
         turnSpans
       );
+      // compress 可能修改了 turnManager 内部状态，获取最新的 canonical messages
       const canonicalMessages = this.engine.turnManager.buildMessages();
       this._preparedMessages = compressed === canonicalMessages ? null : compressed;
       if (showCompressionState) {
@@ -226,8 +229,9 @@ export class ToolCallLoopHelper {
     }
 
     this.engine.toolCallingIteration++;
-    this.engine.contextBudgetService.updateBudget(this.engine.conversationMessages, this.getCurrentTools());
-    this.startChatTurn();
+    // P0-perf: yield 一帧让 UI 更新（显示 pending 状态），再执行重计算
+    // 移除了此处的 updateBudget（startChatTurn 开头会做同样的调用）
+    setTimeout(() => this.startChatTurn(), 0);
   }
 
   // ==================== 完成回调 ====================
@@ -288,10 +292,12 @@ export class ToolCallLoopHelper {
   private _doFinalize(): void {
     // Turn 结构化存储：最终 assistant 响应
     this.engine.turnManager.finalizeTurn(this.engine.currentTurnAssistantContent || '');
-    this.engine.contextBudgetService.updateBudget(this.engine.conversationMessages, this.getCurrentTools());
+    // P0-perf: 构建一次 messages 并复用，避免通过 getter 重复触发 buildMessages()
+    const finalMessages = this.engine.turnManager.buildMessages();
+    this.engine.contextBudgetService.updateBudget(finalMessages, this.getCurrentTools());
     const budget = this.engine.contextBudgetService.getSnapshot();
     this.engine.contextBudgetService.backgroundSummarizer.checkAndTrigger(
-      this.engine.conversationMessages, budget.maxContextTokens, budget.currentTokens,
+      finalMessages, budget.maxContextTokens, budget.currentTokens,
       this.engine.sessionId, this.engine.turnManager,
       this.getCurrentLLMConfig(), this.engine.currentModel?.model || undefined
     );
