@@ -114,7 +114,8 @@ export class ToolCallLoopHelper {
     this.engine.contextBudgetService.updateModelContextSize(this.engine.currentModel?.model || null);
     // P0-perf: 直接调用 buildMessages() 一次并缓存，避免通过 conversationMessages getter 重复触发
     const cachedMessages = this.engine.turnManager.buildMessages();
-    this.engine.contextBudgetService.updateBudget(cachedMessages, this.getCurrentTools());
+    // Method C: 异步 token 计数，长文本卸载到 Worker 避免阻塞 UI
+    await this.engine.contextBudgetService.updateBudgetAsync(cachedMessages, this.getCurrentTools());
 
     const preCompressBudget = this.engine.contextBudgetService.getSnapshot();
 
@@ -245,7 +246,7 @@ export class ToolCallLoopHelper {
     }
   }
 
-  finalizeStatelessTurn(): void {
+  async finalizeStatelessTurn(): Promise<void> {
     if (this.engine.pendingToolResults.length > 0 && !this.engine.isCancelled) {
       this.continueToolCallingLoop();
     } else {
@@ -255,7 +256,7 @@ export class ToolCallLoopHelper {
         this.engine.hookService.executeStop({
           stopHookActive: this._stopHookActive,
           toolCallingIteration: this.engine.toolCallingIteration,
-        }).then(stopResult => {
+        }).then(async (stopResult) => {
           if (stopResult.shouldContinue && stopResult.reasons && stopResult.reasons.length > 0) {
             // 参考 Copilot: 将 Hook 原因格式化为 user 消息，注入下轮
             this._stopHookReason = formatHookContext(stopResult.reasons);
@@ -274,27 +275,28 @@ export class ToolCallLoopHelper {
             return;
           }
           // Hook 未阻止，正常完成
-          this._doFinalize();
-        }).catch(err => {
+          await this._doFinalize();
+        }).catch(async (err) => {
           console.error('[Hook] Stop hook 执行异常，正常完成:', err);
-          this._doFinalize();
+          await this._doFinalize();
         });
         return;
       }
 
-      this._doFinalize();
+      await this._doFinalize();
     }
   }
 
   /**
    * 实际完成逻辑（从 finalizeStatelessTurn 抽取，供 Hook 流程复用）
    */
-  private _doFinalize(): void {
+  private async _doFinalize(): Promise<void> {
     // Turn 结构化存储：最终 assistant 响应
     this.engine.turnManager.finalizeTurn(this.engine.currentTurnAssistantContent || '');
     // P0-perf: 构建一次 messages 并复用，避免通过 getter 重复触发 buildMessages()
     const finalMessages = this.engine.turnManager.buildMessages();
-    this.engine.contextBudgetService.updateBudget(finalMessages, this.getCurrentTools());
+    // Method C: 异步 token 计数
+    await this.engine.contextBudgetService.updateBudgetAsync(finalMessages, this.getCurrentTools());
     const budget = this.engine.contextBudgetService.getSnapshot();
     this.engine.contextBudgetService.backgroundSummarizer.checkAndTrigger(
       finalMessages, budget.maxContextTokens, budget.currentTokens,
