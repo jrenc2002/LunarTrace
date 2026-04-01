@@ -103,7 +103,8 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
   private _frozenHtmlCache = '';       // 对应的渲染后 HTML
   private _frozenParser: MarkdownParser | null = null;
   private _frozenRenderer: MarkdownRenderer | null = null;
-  private static readonly FREEZE_THRESHOLD = 4000; // 超过此长度启用分片
+  private static readonly FREEZE_THRESHOLD = 1500; // 超过此长度启用分片
+  private static readonly ACTIVE_TAIL_MAX_RATIO = 0.6; // activeTail 不应超过 processedLen 的 60%
   // ★ filterToolCalls 缓存：避免每次 preprocess 都全量 split + parse
   private _ftcCacheInput = '';
   private _ftcCacheOutput = '';
@@ -526,8 +527,6 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
    */
   private _setStreamContent(processed: string): void {
     if (!this.doing || processed.length < XDialogComponent.FREEZE_THRESHOLD) {
-      // 短内容 / 非流式：全量交给 x-markdown（无 frozen）
-      // 非流式时清除 frozen（final render 让 x-markdown 处理全部内容以正确注入动态组件）
       if (!this.doing && this._frozenMarkdown) {
         this._frozenMarkdown = '';
         this._frozenHtmlCache = '';
@@ -539,7 +538,6 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
 
     // ★ 增量冻结：只有当 processed 在当前 frozen 基础上追加时才增量处理
     if (this._frozenMarkdown && processed.startsWith(this._frozenMarkdown)) {
-      // frozen 部分不变，只更新 active tail
       const activeTail = processed.slice(this._frozenMarkdown.length);
       this.streamContent.set(activeTail);
       return;
@@ -556,19 +554,62 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
     const frozenPart = processed.slice(0, splitPos);
     const activeTail = processed.slice(splitPos);
 
+    // ★ 关键修复：不允许在 aily-think 代码块内分割（防 content disorder）
+    // 当 frozen 末尾处于 ```aily-think 开头的代码块内时，
+    // 说明这个 think 块还未闭合（isComplete: false），需将其整体移入 active tail
+    // 否则 frozen HTML 永不过期（think store 持续追加，但 frozen 不更新），
+    // 导致最终渲染时内容乱序（frozen 显示旧内容 + active tail 追加新内容）。
+    let adjustedFrozen = frozenPart;
+    let adjustedActive = activeTail;
+    while (true) {
+      const frozenTail = adjustedFrozen.length > 20 ? adjustedFrozen.slice(-20) : adjustedFrozen;
+      // 检查 frozen 末尾是否处于 ```aily-think 开头的代码块内（未闭合）
+      const isInsideOpenThinkBlock = frozenTail.includes('```aily-think') &&
+        !frozenTail.includes('```\n') && !frozenTail.includes('```\r');
+      if (!isInsideOpenThinkBlock) break;
+      // frozen 在 aily-think 代码块内闭合点之前：向前找 \n\n，将其作为新的分割点
+      const safePos = adjustedFrozen.lastIndexOf('\n\n', adjustedFrozen.length - 20);
+      if (safePos <= 0) break;
+      adjustedFrozen = processed.slice(0, safePos);
+      adjustedActive = processed.slice(safePos);
+    }
+
+    // ★ 关键修复：如果 activeTail 超过 processedLen 的 60%，说明冻结点太保守
+    // 重新找：目标是在 processed 中间附近找一个安全的 \n\n（不超过中间点）
+    if (adjustedActive.length > processed.length * XDialogComponent.ACTIVE_TAIL_MAX_RATIO) {
+      const midpoint = processed.length * 0.5;
+      // 找 midpoint 之前最近的 \n\n
+      const midSearch = processed.lastIndexOf('\n\n', midpoint);
+      if (midSearch > 200) {
+        // 验证这段不是代码块内
+        let fenceCount = 0;
+        let sp = 0;
+        while (true) {
+          const idx = processed.indexOf('```', sp);
+          if (idx === -1 || idx >= midSearch) break;
+          fenceCount++;
+          sp = idx + 3;
+        }
+        if (fenceCount % 2 === 0) {
+          adjustedFrozen = processed.slice(0, midSearch);
+          adjustedActive = processed.slice(midSearch);
+        }
+      }
+    }
+
     // 只有当 frozen 部分变化时才重新渲染
-    if (frozenPart !== this._frozenMarkdown) {
-      this._frozenMarkdown = frozenPart;
+    if (adjustedFrozen !== this._frozenMarkdown) {
+      this._frozenMarkdown = adjustedFrozen;
       if (!this._frozenParser) {
         this._frozenParser = new MarkdownParser();
         this._frozenRenderer = new MarkdownRenderer({ components: this.componentMap });
       }
-      const html = this._frozenParser.parse(frozenPart);
+      const html = this._frozenParser.parse(adjustedFrozen);
       this._frozenHtmlCache = this._frozenRenderer!.render(html);
       this.frozenHtml.set(this.sanitizer.bypassSecurityTrustHtml(this._frozenHtmlCache));
     }
 
-    this.streamContent.set(activeTail);
+    this.streamContent.set(adjustedActive);
   }
 
   /**

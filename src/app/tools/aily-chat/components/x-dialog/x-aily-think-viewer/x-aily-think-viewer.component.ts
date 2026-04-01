@@ -6,6 +6,7 @@ import {
   AfterViewChecked,
   OnChanges,
   SimpleChanges,
+  OnDestroy,
   signal,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -32,7 +33,7 @@ import { getThinkContent } from '../../../core/think-content-store';
       </div>
       @if (thinkExpanded) {
         <div class="ac-think-body" #thinkBody (scroll)="onThinkBodyScroll($event)">
-          @if (thinkContent) {
+          @if (markdownContent()) {
             <x-markdown
               [content]="markdownContent()"
               [streaming]="streamingConfig()"
@@ -156,7 +157,7 @@ import { getThinkContent } from '../../../core/think-content-store';
     `,
   ],
 })
-export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges {
+export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges, OnDestroy {
   @Input() data: {
     content?: string;
     encoded?: boolean;
@@ -176,36 +177,115 @@ export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges {
   private thinkStickToBottom = true;
   private readonly thinkScrollBottomThresholdPx = 48;
 
-  ngOnChanges(changes: SimpleChanges): void {
-    if (changes['data']) {
-      if (!this.data) return;
-      const prevData = changes['data'].previousValue as { isComplete?: boolean } | null | undefined;
-      const prevStreaming = prevData && prevData.isComplete === false;
-      if (this.data.isComplete === false && !prevStreaming) {
-        this.thinkStickToBottom = true;
-      }
-      let raw = '';
-      if (this.data.ref) {
-        raw = getThinkContent(this.data.ref);
-      } else if (this.data.encoded && this.data.content) {
-        try {
-          raw = decodeURIComponent(atob(this.data.content));
-        } catch {
-          raw = this.data.content;
-        }
-      } else {
-        raw = this.data.content || '';
-      }
-      const prev = this.thinkContent;
-      this.thinkContent = raw;
+  // ===== Throttle state =====
+  private _pendingRaw: string | null = null;
+  private _throttleTimerId: ReturnType<typeof setTimeout> | null = null;
+  private _lastRenderedRawLen = 0;
 
-      // 流式中对未闭合的 markdown 结构补全闭合标签
-      const displayContent = this.data.isComplete ? raw : raw + getClosingTagsForOpenBlocks(raw);
-      this.markdownContent.set(displayContent);
-      this.streamingConfig.set({ hasNextChunk: !this.data.isComplete });
-      if (raw.length > prev.length) this.shouldScrollThink = true;
-      this.thinkExpanded = !this.data.isComplete;
+  ngOnChanges(changes: SimpleChanges): void {
+    if (!changes['data'] || !this.data) return;
+
+    const prevData = changes['data'].previousValue as { isComplete?: boolean } | null | undefined;
+    const prevStreaming = prevData && prevData.isComplete === false;
+
+    // 首次进入流式：重置滚动状态
+    if (this.data.isComplete === false && !prevStreaming) {
+      this.thinkStickToBottom = true;
     }
+
+    // 获取原始内容
+    let raw = '';
+    if (this.data.ref) {
+      raw = getThinkContent(this.data.ref);
+    } else if (this.data.encoded && this.data.content) {
+      try {
+        raw = decodeURIComponent(atob(this.data.content));
+      } catch {
+        raw = this.data.content;
+      }
+    } else {
+      raw = this.data.content || '';
+    }
+
+    this.thinkContent = raw;
+
+    // ★ 关键修复：isComplete 变化时立即渲染（不做节流）
+    if (this.data.isComplete === true && prevStreaming) {
+      this._cancelThrottle();
+      this._renderNow(raw, true);
+      this.thinkExpanded = false;
+      return;
+    }
+
+    if (!this.data.isComplete) {
+      this.thinkExpanded = true;
+      this.shouldScrollThink = true;
+      // ★ 关键修复：流式期间使用节流
+      this._scheduleRender(raw);
+    }
+  }
+
+  /**
+   * ★ 核心修复：节流渲染
+   *
+   * 问题：每个 think chunk 都触发 ngOnChanges → markdownContent.set() → x-markdown 全量 parse
+   * 日志显示 2715 次 set()，平均每次 ~10ms，大量重复 work
+   *
+   * 修复：
+   * - 存储最新 raw → _pendingRaw
+   * - 如果距上次渲染增长 <500 bytes，跳过（batch 进 pending）
+   * - 已在 pending 时不再重复 schedule
+   * - 100ms 后在 rAF 中渲染
+   *
+   * 效果：think 内容每 100ms 最多 render 一次，每次只处理 500+ bytes 增量
+   */
+  private _scheduleRender(raw: string): void {
+    const rawLen = raw.length;
+    const prevRendered = this._lastRenderedRawLen;
+
+    // 立即渲染的条件：
+    // 1. 距上次渲染增长了 500+ bytes
+    // 2. 这是第一次渲染（_lastRenderedRawLen === 0）
+    // 3. 内容已完成（isComplete）
+    if (rawLen >= prevRendered + 500 || prevRendered === 0) {
+      this._cancelThrottle();
+      this._renderNow(raw, false);
+      return;
+    }
+
+    this._pendingRaw = raw;
+
+    if (this._throttleTimerId !== null) return; // 已有 pending
+
+    this._throttleTimerId = setTimeout(() => {
+      this._throttleTimerId = null;
+      if (this._pendingRaw !== null) {
+        const pending = this._pendingRaw;
+        this._pendingRaw = null;
+        this._renderNow(pending, false);
+      }
+    }, 100);
+  }
+
+  private _cancelThrottle(): void {
+    if (this._throttleTimerId !== null) {
+      clearTimeout(this._throttleTimerId);
+      this._throttleTimerId = null;
+    }
+    this._pendingRaw = null;
+  }
+
+  private _renderNow(raw: string, isFinal: boolean): void {
+    if (!raw) {
+      this.markdownContent.set('');
+      this._lastRenderedRawLen = 0;
+      return;
+    }
+
+    // 非完成状态：追加闭合标签（修复流式过程中的 markdown 截断）
+    const displayContent = isFinal ? raw : raw + getClosingTagsForOpenBlocks(raw);
+    this.markdownContent.set(displayContent);
+    this._lastRenderedRawLen = raw.length;
   }
 
   onThinkBodyScroll(event: Event): void {
@@ -223,5 +303,9 @@ export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges {
       }
       this.shouldScrollThink = false;
     }
+  }
+
+  ngOnDestroy(): void {
+    this._cancelThrottle();
   }
 }
