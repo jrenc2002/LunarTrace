@@ -158,7 +158,6 @@ export class AilyChatComponent implements OnDestroy {
 
   bottomHeight = 180;
   showSettings = false;
-  activeCheckpointAnchorIndex: number | null = null;
 
   constructor(
     private uiService: UiService,
@@ -239,10 +238,6 @@ export class AilyChatComponent implements OnDestroy {
 
     // 初始化引擎（订阅、路径等）
     this.engine.init(this.chatTextarea);
-  }
-
-  onCheckpointHoverChange(anchorIndex: number | null): void {
-    this.activeCheckpointAnchorIndex = anchorIndex;
   }
 
   // ===== 编辑消息事件处理 =====

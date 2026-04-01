@@ -40,6 +40,8 @@
   //scroll-behavior: smooth;
   min-height: 0;
   /* 确保flex子项可以收缩 */
+  position: relative;
+  z-index: 10;
 
   .dialogs {
     padding: 0 10px 10px 0;
