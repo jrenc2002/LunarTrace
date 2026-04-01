@@ -104,7 +104,6 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
   private _frozenParser: MarkdownParser | null = null;
   private _frozenRenderer: MarkdownRenderer | null = null;
   private static readonly FREEZE_THRESHOLD = 1500; // 超过此长度启用分片
-  private static readonly ACTIVE_TAIL_MAX_RATIO = 0.6; // activeTail 不应超过 processedLen 的 60%
   // ★ filterToolCalls 缓存：避免每次 preprocess 都全量 split + parse
   private _ftcCacheInput = '';
   private _ftcCacheOutput = '';
@@ -543,59 +542,25 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
       return;
     }
 
+    // ★ 关键约束：流式 think (isComplete:false) 必须在 active tail 中
+    // frozen 是静态 HTML，无法轮询 store 获取最新 think 内容
+    // 找到第一个 isComplete:false 的 think 块位置作为冻结上限
+    const freezeCeiling = this._findFirstStreamingThinkPos(processed);
+
     // 寻找安全分割点：在代码块外的最后一个 \n\n
-    const splitPos = this._findSafeSplitPoint(processed);
+    const splitPos = this._findSafeSplitPoint(processed, freezeCeiling);
     if (splitPos <= 0) {
       // 找不到安全分割点，退回全量模式
+      // ★ 必须清除 frozenHtml，否则旧 frozen + 全量 streamContent = 重复渲染
+      this._frozenMarkdown = '';
+      this._frozenHtmlCache = '';
+      this.frozenHtml.set('');
       this.streamContent.set(processed);
       return;
     }
 
-    const frozenPart = processed.slice(0, splitPos);
-    const activeTail = processed.slice(splitPos);
-
-    // ★ 关键修复：不允许在 aily-think 代码块内分割（防 content disorder）
-    // 当 frozen 末尾处于 ```aily-think 开头的代码块内时，
-    // 说明这个 think 块还未闭合（isComplete: false），需将其整体移入 active tail
-    // 否则 frozen HTML 永不过期（think store 持续追加，但 frozen 不更新），
-    // 导致最终渲染时内容乱序（frozen 显示旧内容 + active tail 追加新内容）。
-    let adjustedFrozen = frozenPart;
-    let adjustedActive = activeTail;
-    while (true) {
-      const frozenTail = adjustedFrozen.length > 20 ? adjustedFrozen.slice(-20) : adjustedFrozen;
-      // 检查 frozen 末尾是否处于 ```aily-think 开头的代码块内（未闭合）
-      const isInsideOpenThinkBlock = frozenTail.includes('```aily-think') &&
-        !frozenTail.includes('```\n') && !frozenTail.includes('```\r');
-      if (!isInsideOpenThinkBlock) break;
-      // frozen 在 aily-think 代码块内闭合点之前：向前找 \n\n，将其作为新的分割点
-      const safePos = adjustedFrozen.lastIndexOf('\n\n', adjustedFrozen.length - 20);
-      if (safePos <= 0) break;
-      adjustedFrozen = processed.slice(0, safePos);
-      adjustedActive = processed.slice(safePos);
-    }
-
-    // ★ 关键修复：如果 activeTail 超过 processedLen 的 60%，说明冻结点太保守
-    // 重新找：目标是在 processed 中间附近找一个安全的 \n\n（不超过中间点）
-    if (adjustedActive.length > processed.length * XDialogComponent.ACTIVE_TAIL_MAX_RATIO) {
-      const midpoint = processed.length * 0.5;
-      // 找 midpoint 之前最近的 \n\n
-      const midSearch = processed.lastIndexOf('\n\n', midpoint);
-      if (midSearch > 200) {
-        // 验证这段不是代码块内
-        let fenceCount = 0;
-        let sp = 0;
-        while (true) {
-          const idx = processed.indexOf('```', sp);
-          if (idx === -1 || idx >= midSearch) break;
-          fenceCount++;
-          sp = idx + 3;
-        }
-        if (fenceCount % 2 === 0) {
-          adjustedFrozen = processed.slice(0, midSearch);
-          adjustedActive = processed.slice(midSearch);
-        }
-      }
-    }
+    const adjustedFrozen = processed.slice(0, splitPos);
+    const adjustedActive = processed.slice(splitPos);
 
     // 只有当 frozen 部分变化时才重新渲染
     if (adjustedFrozen !== this._frozenMarkdown) {
@@ -617,14 +582,54 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
   }
 
   /**
+   * 找到 processed 中第一个 isComplete:false 的 aily-think 代码块位置。
+   * 返回该代码块之前的 \n 位置，作为冻结上限。
+   * 如果没有流式 think，返回 -1（不限制）。
+   */
+  private _findFirstStreamingThinkPos(text: string): number {
+    const marker = '```aily-think\n';
+    let searchPos = 0;
+    while (searchPos < text.length) {
+      const blockStart = text.indexOf(marker, searchPos);
+      if (blockStart === -1) return -1;
+      const jsonStart = blockStart + marker.length;
+      const blockEnd = text.indexOf('\n```', jsonStart);
+      if (blockEnd === -1) {
+        // 未闭合的代码块 — 视为流式
+        return blockStart > 0 ? blockStart : 0;
+      }
+      const jsonStr = text.slice(jsonStart, blockEnd).trim();
+      try {
+        const data = JSON.parse(jsonStr);
+        if (data.isComplete === false) {
+          return blockStart > 0 ? blockStart : 0;
+        }
+      } catch { /* 解析失败，跳过 */ }
+      searchPos = blockEnd + 4; // skip \n```
+    }
+    return -1;
+  }
+
+  /**
    * 在 processed markdown 中找到安全的分割点。
    * 安全 = 在代码块外的 \n\n 位置。
    * 返回分割位置（split 之前的内容不包含未闭合代码块）。
    * 留至少 2KB 给 active tail。
    */
-  private _findSafeSplitPoint(text: string): number {
+  /**
+   * 在 processed markdown 中找到安全的分割点。
+   * 安全 = 在代码块外的 \n\n 位置，且不超过 freezeCeiling（流式 think 位置）。
+   * 留至少 2KB 给 active tail。
+   */
+  private _findSafeSplitPoint(text: string, freezeCeiling: number = -1): number {
     const minTail = 2000;
-    const searchEnd = text.length - minTail;
+    let searchEnd = text.length - minTail;
+    if (searchEnd <= 0) return -1;
+
+    // ★ 流式 think 约束：冻结上限不能超过第一个 isComplete:false 的 think 位置
+    if (freezeCeiling >= 0 && freezeCeiling < searchEnd) {
+      searchEnd = freezeCeiling;
+    }
     if (searchEnd <= 0) return -1;
 
     // 从 searchEnd 向前找最近的 \n\n
