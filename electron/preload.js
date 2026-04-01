@@ -642,6 +642,28 @@ contextBridge.exposeInMainWorld("electronAPI", {
   base64: {
     atob: (b64String) => Buffer.from(b64String, 'base64').toString('binary'),
   },
+  // OpenOCD API - STM32/GD32 调试器检测与固件烧录
+  openocd: {
+    detectAll: () => ipcRenderer.invoke("openocd-detect-all"),
+    detectStlink: () => ipcRenderer.invoke("openocd-detect-stlink"),
+    detectDaplink: () => ipcRenderer.invoke("openocd-detect-daplink"),
+    /**
+     * 烧录固件
+     * @param {Object} options
+     * @param {string} options.firmwarePath - 固件文件路径 (.hex/.bin/.elf)
+     * @param {string} options.target - 目标芯片 (如 stm32f1x, stm32f4x, gd32e23x)
+     * @param {string} [options.interface] - 调试器接口 "stlink" | "cmsis-dap"，默认 "stlink"
+     * @param {string} [options.transport] - 传输协议 "swd" | "jtag"，默认 "swd"
+     * @param {number} [options.speed] - 适配器速度 kHz，默认 4000
+     * @param {number} [options.baseAddress] - .bin 文件的基地址，默认 0x08000000
+     * @param {boolean} [options.verify] - 烧录后校验，默认 true
+     * @param {boolean} [options.reset] - 烧录后复位，默认 true
+     * @param {boolean} [options.eraseAll] - 全片擦除，默认 false
+     * @param {number} [options.timeout] - 超时时间 ms，默认 60000
+     * @returns {Promise<{success: boolean, output?: string, error?: string}>}
+     */
+    flash: (options) => ipcRenderer.invoke("openocd-flash", options),
+  },
   // 日志 API - 将渲染进程的日志发送到主进程记录
   log: {
     error: (message, error) => {
