@@ -1924,9 +1924,9 @@ export class ConnectionGraphService {
     try {
       const ref = this.parsePinmapId(pinmapId);
       const packagePath = resolvedPackagePath;
-      // 兼容新旧路径：优先使用已存在的位置，新建时使用根目录（旧版）
+      // 兼容新旧路径：优先使用已存在的位置，新建时统一写入 pinmaps/ 子目录
       const catalogPath = this.resolveCatalogPath(packagePath)
-        || this.electronService.pathJoin(packagePath, 'pinmap_catalog.json');
+        || this.electronService.pathJoin(packagePath, 'pinmaps', 'pinmap_catalog.json');
 
       let catalog: PinmapCatalog;
 
