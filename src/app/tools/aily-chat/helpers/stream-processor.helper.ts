@@ -195,6 +195,13 @@ export class StreamProcessorHelper {
                 this.engine.stop();
                 return;
               }
+              // 大小软警告：不中断流，在流式内容中注入提示
+              if (streamRepetitionCheck.sizeWarning) {
+                console.warn('[大小警告]', streamRepetitionCheck.sizeWarning);
+                this.engine.msg.appendStreaming('aily', `${data.content}\n\n\`\`\`aily-state\n{\n  "status": "warning",\n  "text": "${streamRepetitionCheck.sizeWarning}",\n  "id": "size-warn-${Date.now()}"\n}\n\`\`\`\n\n`, messageSource);
+                if (statelessMode) { this.engine.currentTurnAssistantContent += data.content; }
+                return;
+              }
               // ★ 核心优化：流式 token 走 rAF 批处理，每帧合并一次而非每 token 触发 Angular CD
               this.engine.msg.appendStreaming('aily', data.content, messageSource);
               if (statelessMode) { this.engine.currentTurnAssistantContent += data.content; }
