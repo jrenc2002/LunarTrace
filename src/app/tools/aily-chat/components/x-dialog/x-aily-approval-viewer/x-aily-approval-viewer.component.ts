@@ -29,12 +29,10 @@ import { CommonModule } from '@angular/common';
             @if (dropdownOpen) {
               <div class="aa-dropdown" [style.top.px]="dropdownTop" [style.left.px]="dropdownLeft">
                 <button class="aa-dropdown-item" (click)="onApprove('session')">
-                  <i class="fa-solid fa-wrench aa-dropdown-icon"></i>
                   始终允许此会话中的此工具
                 </button>
                 <div class="aa-dropdown-divider"></div>
                 <button class="aa-dropdown-item" (click)="onApprove('session-safe')">
-                  <i class="fa-solid fa-shield-halved aa-dropdown-icon"></i>
                   允许此会话中的所有工具及命令（删除除外）
                 </button>
               </div>
