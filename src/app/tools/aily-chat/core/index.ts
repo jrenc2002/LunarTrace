@@ -13,7 +13,11 @@ export {
   registerToolApprovalCallback,
   unregisterToolApprovalCallback,
   approveToolForSession,
+  enableSessionSafeMode,
   clearSessionApprovals,
+  isReadOnlyCommand,
+  isDestructiveOperation,
+  isDestructiveCommand,
 } from './tool-approval';
 export type { ToolApprovalRequest, ToolApprovalResult, ToolApprovalCallback } from './tool-approval';
 

@@ -28,7 +28,15 @@ import { CommonModule } from '@angular/common';
             </button>
             @if (dropdownOpen) {
               <div class="aa-dropdown" [style.top.px]="dropdownTop" [style.left.px]="dropdownLeft">
-                <button class="aa-dropdown-item" (click)="onApprove('session')">后续自动允许</button>
+                <button class="aa-dropdown-item" (click)="onApprove('session')">
+                  <i class="fa-solid fa-wrench aa-dropdown-icon"></i>
+                  始终允许此会话中的此工具
+                </button>
+                <div class="aa-dropdown-divider"></div>
+                <button class="aa-dropdown-item" (click)="onApprove('session-safe')">
+                  <i class="fa-solid fa-shield-halved aa-dropdown-icon"></i>
+                  允许此会话中的所有工具及命令（删除除外）
+                </button>
               </div>
             }
           </div>
@@ -141,6 +149,8 @@ import { CommonModule } from '@angular/common';
       white-space: nowrap;
     }
     .aa-dropdown-item:hover { background: rgba(255,255,255,0.06); color: #e0e0e0; }
+    .aa-dropdown-icon { width: 14px; margin-right: 6px; font-size: 11px; color: #888; }
+    .aa-dropdown-divider { height: 1px; background: #3a3a3a; margin: 2px 0; }
 
     .aa-btn-reject {
       padding: 4px 14px;
@@ -205,9 +215,10 @@ export class XAilyApprovalViewerComponent implements OnChanges {
       this.resolved = !!this.data.resolved;
       this.approved = !!this.data.approved;
       if (this.resolved) {
-        this.resolvedText = this.approved
-          ? (this.data.scope === 'session' ? `已批准（后续自动允许）: ${this.title}` : `已批准: ${this.title}`)
-          : `已拒绝: ${this.title}`;
+        const scopeLabel = this.data.scope === 'session-safe' ? '已批准（自动允许所有非破坏性操作）'
+          : this.data.scope === 'session' ? `已批准（后续自动允许）`
+          : '已批准';
+        this.resolvedText = this.approved ? `${scopeLabel}: ${this.title}` : `已拒绝: ${this.title}`;
       }
     }
   }
@@ -223,11 +234,14 @@ export class XAilyApprovalViewerComponent implements OnChanges {
     this.cdr.markForCheck();
   }
 
-  onApprove(scope: 'once' | 'session'): void {
+  onApprove(scope: 'once' | 'session' | 'session-safe'): void {
     this.resolved = true;
     this.approved = true;
     this.dropdownOpen = false;
-    this.resolvedText = scope === 'session' ? `已批准（后续自动允许）: ${this.title}` : `已批准: ${this.title}`;
+    const scopeLabel = scope === 'session-safe' ? '已批准（自动允许所有非破坏性操作）'
+      : scope === 'session' ? '已批准（后续自动允许）'
+      : '已批准';
+    this.resolvedText = `${scopeLabel}: ${this.title}`;
     this.cdr.markForCheck();
     document.dispatchEvent(new CustomEvent('aily-approval-result', {
       detail: { toolCallId: this.toolCallId, approved: true, scope }

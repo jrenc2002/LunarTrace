@@ -9,7 +9,7 @@ import type { ChatEngineService } from '../services/chat-engine.service';
 import { ToolCallState } from '../core/chat-types';
 import { AilyHost } from '../core/host';
 import { ToolRegistry } from '../core/tool-registry';
-import { toolRequiresApproval, requestToolApproval, approveToolForSession } from '../core/tool-approval';
+import { toolRequiresApproval, requestToolApproval, approveToolForSession, enableSessionSafeMode } from '../core/tool-approval';
 import { SubagentSessionService } from '../services/subagent-session.service';
 import { validateRunSubagentArgs, getSubagentDefinition } from '../tools/runSubagentTool';
 import { injectTodoReminder } from '../tools';
@@ -418,6 +418,8 @@ export class StreamProcessorHelper {
                     }
                     if (approval.scope === 'session') {
                       approveToolForSession('run_subagent');
+                    } else if (approval.scope === 'session-safe') {
+                      enableSessionSafeMode();
                     }
                   }
 

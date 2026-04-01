@@ -37,7 +37,7 @@ import { TOOLS } from '../tools/tools';
 import { syncAbsFileHandler } from '../tools/syncAbsFileTool';
 import { registerAskUserCallback, unregisterAskUserCallback, AskUserQuestion, AskUserFullResponse, AskUserAnswer } from '../tools/askUserTool';
 import { cleanupAllTerminalSessions } from '../tools/terminalSessionTool';
-import { toolRequiresApproval, requestToolApproval, registerToolApprovalCallback, unregisterToolApprovalCallback, approveToolForSession, clearSessionApprovals, ToolApprovalRequest, ToolApprovalResult } from '../core/tool-approval';
+import { toolRequiresApproval, requestToolApproval, registerToolApprovalCallback, unregisterToolApprovalCallback, approveToolForSession, enableSessionSafeMode, clearSessionApprovals, ToolApprovalRequest, ToolApprovalResult } from '../core/tool-approval';
 
 import { AILY_CHAT_ONBOARDING_CONFIG } from '../../../configs/onboarding.config';
 
@@ -493,7 +493,7 @@ export class ChatEngineService {
 
     // ── 工具审批拦截 ──
     // 对需要审批的工具，等待用户确认后再执行（审批 UI 由 aily-approval 块提供，不需要额外 aily-state）
-    if (toolRequiresApproval(toolName)) {
+    if (toolRequiresApproval(toolName, toolArgs)) {
       const approval = await requestToolApproval(toolCallId, toolName, toolArgs);
       if (!approval.approved) {
         const rejectReason = approval.reason || '用户拒绝执行';
@@ -510,6 +510,8 @@ export class ChatEngineService {
       // 用户已批准，处理会话级授权
       if (approval.scope === 'session') {
         approveToolForSession(toolName);
+      } else if (approval.scope === 'session-safe') {
+        enableSessionSafeMode();
       }
       // 批准后显示正常执行状态
       if (displayMode === 'toolCall') {
@@ -1546,7 +1548,7 @@ Do not create non-existent boards and libraries.
   /**
    * 外部调用：用户批准工具执行。
    */
-  approveToolExecution(toolCallId: string, scope: 'once' | 'session' = 'once'): void {
+  approveToolExecution(toolCallId: string, scope: 'once' | 'session' | 'session-safe' = 'once'): void {
     if (this._resolveToolApproval) {
       document.dispatchEvent(new CustomEvent('aily-approval-result', {
         detail: { toolCallId, approved: true, scope }

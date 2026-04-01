@@ -34,8 +34,8 @@ export interface ToolApprovalResult {
   approved: boolean;
   /** 用户拒绝时的原因（可选） */
   reason?: string;
-  /** 许可范围：once=仅本次, session=本会话后续自动允许 */
-  scope?: 'once' | 'session';
+  /** 许可范围：once=仅本次, session=本会话后续自动允许同名工具, session-safe=自动允许所有非破坏性操作 */
+  scope?: 'once' | 'session' | 'session-safe';
 }
 
 /** UI 层注册的审批回调 */
@@ -104,13 +104,206 @@ const TOOLS_REQUIRING_APPROVAL = new Set<string>([
 /** 本会话中已被用户授予「后续自动允许」的工具名称集合 */
 const _sessionApprovedTools = new Set<string>();
 
+/** 本会话中是否启用了「自动允许所有非破坏性操作」模式 */
+let _sessionSafeMode = false;
+
+// ============================
+// 只读命令检测
+// ============================
+
+/**
+ * 只读/查询类命令的首词白名单。
+ * 这些命令只进行读取或查询，不会修改文件系统或安装软件。
+ */
+const READ_ONLY_COMMANDS = new Set<string>([
+  // 文件/目录查看
+  'ls', 'dir', 'cat', 'type', 'head', 'tail', 'less', 'more',
+  'find', 'fd', 'locate', 'tree',
+  // 文本搜索
+  'grep', 'rg', 'ag', 'ack', 'findstr', 'select-string',
+  // 系统信息
+  'echo', 'pwd', 'cd', 'which', 'where', 'whoami', 'hostname',
+  'uname', 'env', 'printenv', 'set', 'date', 'uptime', 'df', 'du',
+  'wc', 'sort', 'uniq', 'diff', 'cmp', 'file', 'stat', 'readlink',
+  // 网络查询
+  'ping', 'nslookup', 'dig', 'host', 'curl', 'wget',
+  // 版本/帮助
+  'man', 'help', 'info',
+  // PowerShell 只读 cmdlet（小写匹配）
+  'get-childitem', 'get-content', 'get-item', 'get-location',
+  'get-process', 'get-service', 'get-command', 'get-help',
+  'get-member', 'get-variable', 'get-alias', 'get-history',
+  'get-date', 'get-host', 'get-culture', 'get-module',
+  'get-executionpolicy', 'get-itemproperty', 'test-path',
+  'test-connection', 'resolve-path', 'measure-object',
+  'select-object', 'where-object', 'format-table', 'format-list',
+  'out-string', 'write-output', 'write-host',
+]);
+
+/**
+ * 带版本/帮助后缀的命令模式。
+ * 匹配 `xxx --version`, `xxx -v`, `xxx --help`, `xxx -h`
+ */
+const VERSION_HELP_PATTERN = /^\S+\s+(-v|--version|-h|--help|version)\s*$/i;
+
+/**
+ * 带只读子命令的 Git 命令
+ */
+const GIT_READ_ONLY_SUBCOMMANDS = new Set([
+  'status', 'log', 'diff', 'show', 'branch', 'tag', 'remote',
+  'stash list', 'describe', 'shortlog', 'rev-parse', 'ls-files',
+  'ls-tree', 'cat-file', 'config --list', 'config --get',
+]);
+
+/**
+ * 带只读子命令的 npm/yarn/pnpm 命令
+ */
+const PKG_READ_ONLY_SUBCOMMANDS = new Set([
+  'list', 'ls', 'info', 'view', 'show', 'search', 'outdated',
+  'audit', 'why', 'config list', 'config get', 'bin', 'prefix',
+  'root', 'help', 'version',
+]);
+
+/**
+ * 带只读子命令的 pip/python 命令
+ */
+const PIP_READ_ONLY_SUBCOMMANDS = new Set([
+  'list', 'show', 'freeze', 'check', 'search', 'config list',
+  'config get', 'help', 'debug',
+]);
+
+/**
+ * 判断命令是否为只读/查询类命令。
+ * 只读命令不会修改系统状态，可以安全地自动放行。
+ */
+export function isReadOnlyCommand(command: string): boolean {
+  if (!command?.trim()) return false;
+
+  const trimmed = command.trim();
+
+  // 版本/帮助查询一律放行
+  if (VERSION_HELP_PATTERN.test(trimmed)) return true;
+
+  // 提取首个命令词（处理路径前缀和引号）
+  // 处理形如 "C:\path\to\cmd.exe" arg 或 /usr/bin/cmd arg 的情况
+  const firstToken = trimmed
+    .replace(/^["']([^"']+)["']\s*/, '$1 ')  // 去除引号包裹
+    .split(/\s+/)[0]                          // 取第一个词
+    .replace(/^.*[/\\]/, '')                  // 去除路径前缀
+    .replace(/\.exe$/i, '')                   // 去除 .exe 后缀
+    .toLowerCase();
+
+  // 直接匹配只读命令白名单
+  if (READ_ONLY_COMMANDS.has(firstToken)) return true;
+
+  // Git 子命令检测
+  if (firstToken === 'git') {
+    const rest = trimmed.substring(trimmed.indexOf('git') + 3).trim().toLowerCase();
+    for (const sub of GIT_READ_ONLY_SUBCOMMANDS) {
+      if (rest.startsWith(sub)) return true;
+    }
+    return false;
+  }
+
+  // npm/yarn/pnpm 子命令检测
+  if (['npm', 'yarn', 'pnpm', 'npx'].includes(firstToken)) {
+    const rest = trimmed.substring(trimmed.indexOf(firstToken) + firstToken.length).trim().toLowerCase();
+    for (const sub of PKG_READ_ONLY_SUBCOMMANDS) {
+      if (rest.startsWith(sub)) return true;
+    }
+    return false;
+  }
+
+  // pip/pip3/python 子命令检测
+  if (['pip', 'pip3'].includes(firstToken)) {
+    const rest = trimmed.substring(trimmed.indexOf(firstToken) + firstToken.length).trim().toLowerCase();
+    for (const sub of PIP_READ_ONLY_SUBCOMMANDS) {
+      if (rest.startsWith(sub)) return true;
+    }
+    return false;
+  }
+  if (['python', 'python3', 'node'].includes(firstToken)) {
+    // python -c "..." 和 node -e "..." 不算只读
+    const rest = trimmed.substring(trimmed.indexOf(firstToken) + firstToken.length).trim();
+    if (/^(-V|--version|-h|--help)\s*$/.test(rest)) return true;
+    return false;
+  }
+
+  return false;
+}
+
+// ============================
+// 破坏性操作检测
+// ============================
+
+/** 永远需要审批的工具（即使在 session-safe 模式下） */
+const ALWAYS_REQUIRE_APPROVAL = new Set<string>([
+  'delete_file',
+  'delete_folder',
+]);
+
+/**
+ * 破坏性命令关键词。
+ * 当命令包含这些模式时，即使在 session-safe 模式下也不能自动放行。
+ */
+const DESTRUCTIVE_CMD_PATTERNS = [
+  /\brm\s/i, /\brm$/i,
+  /\brmdir\b/i,
+  /\bdel\s/i, /\bdel$/i,
+  /\bRemove-Item\b/i,
+  /\bRemove-/i,
+  /\bformat\s/i,
+  /\bdrop\s/i,
+  /\btruncate\s/i,
+  /\b--force\b/i, /\b-rf\b/i, /\b-fr\b/i,
+  /\bgit\s+(push|reset\s+--hard|clean\s+-[fd])/i,
+  /\bgit\s+branch\s+-[dD]/i,
+] as const;
+
+/**
+ * 判断命令行命令是否为破坏性操作。
+ */
+export function isDestructiveCommand(command: string): boolean {
+  if (!command?.trim()) return false;
+  return DESTRUCTIVE_CMD_PATTERNS.some(p => p.test(command));
+}
+
+/**
+ * 判断工具+参数组合是否为破坏性操作。
+ * 破坏性操作在 session-safe 模式下也不会被自动放行。
+ */
+export function isDestructiveOperation(toolName: string, args?: any): boolean {
+  if (ALWAYS_REQUIRE_APPROVAL.has(toolName)) return true;
+  if ((toolName === 'execute_command' || toolName === 'start_background_command') && args?.command) {
+    return isDestructiveCommand(args.command);
+  }
+  return false;
+}
+
 /**
  * 判断工具是否需要审批。
- * 如果用户已在本会话中选择「后续自动允许」，则跳过审批。
+ * 检查顺序：
+ * 1. 工具不在审批列表中 → 不需要
+ * 2. 命令行工具的只读命令 → 不需要（自动放行）
+ * 3. 工具已获得会话级授权 → 不需要
+ * 4. 会话安全模式已开启 且 操作非破坏性 → 不需要
+ * 5. 其他 → 需要审批
  */
-export function toolRequiresApproval(toolName: string): boolean {
+export function toolRequiresApproval(toolName: string, args?: any): boolean {
   if (!TOOLS_REQUIRING_APPROVAL.has(toolName)) return false;
-  return !_sessionApprovedTools.has(toolName);
+
+  // 命令行工具：只读命令自动放行
+  if ((toolName === 'execute_command' || toolName === 'start_background_command') && args?.command) {
+    if (isReadOnlyCommand(args.command)) return false;
+  }
+
+  // 会话级授权（针对特定工具）
+  if (_sessionApprovedTools.has(toolName)) return false;
+
+  // 会话安全模式：非破坏性操作自动放行
+  if (_sessionSafeMode && !isDestructiveOperation(toolName, args)) return false;
+
+  return true;
 }
 
 /**
@@ -121,10 +314,18 @@ export function approveToolForSession(toolName: string): void {
 }
 
 /**
+ * 启用会话安全模式（自动允许所有非破坏性操作）
+ */
+export function enableSessionSafeMode(): void {
+  _sessionSafeMode = true;
+}
+
+/**
  * 清空会话级自动许可缓存（新建会话时调用）
  */
 export function clearSessionApprovals(): void {
   _sessionApprovedTools.clear();
+  _sessionSafeMode = false;
 }
 
 /**
