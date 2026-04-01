@@ -8,6 +8,7 @@ import {
   generateConnectionGraphTool as generateSchematicHandler,
   getPinmapSummaryTool as getPinmapSummaryHandler,
   getSensorPinmapCatalogTool as getComponentCatalogHandler,
+  getProjectContextTool as getProjectContextHandler,
   validateConnectionGraphTool as validateSchematicHandler,
   generatePinmapTool as generatePinmapHandler,
   savePinmapTool as savePinmapHandler,
@@ -92,6 +93,31 @@ class GetComponentCatalogTool implements IAilyTool {
   getResultText(args: any, result?: ToolUseResult): string {
     if (result?.is_error) return '组件目录获取失败';
     return '组件目录获取完成';
+  }
+}
+
+// ============================
+// get_project_context
+// ============================
+
+class GetProjectContextTool implements IAilyTool {
+  readonly name = 'get_project_context';
+  readonly schema = findLegacySchema('get_project_context');
+  readonly displayMode = 'appendMessage' as const;
+
+  async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
+    if (!ctx.host?.connectionGraph) return { is_error: true, content: '连线图服务不可用' };
+    if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    return getProjectContextHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args || {});
+  }
+
+  getStartText(): string {
+    return '获取项目上下文和组件目录...';
+  }
+
+  getResultText(args: any, result?: ToolUseResult): string {
+    if (result?.is_error) return '项目上下文获取失败';
+    return '项目上下文和组件目录获取完成';
   }
 }
 
@@ -196,7 +222,7 @@ class GetCurrentSchematicTool implements IAilyTool {
 }
 
 // ============================
-// apply_schematic
+// apply_schematic (已废弃，功能已合并到 validate_schematic)
 // ============================
 
 class ApplySchematicTool implements IAilyTool {
@@ -205,18 +231,19 @@ class ApplySchematicTool implements IAilyTool {
   readonly displayMode = 'appendMessage' as const;
 
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
+    // 已废弃：直接转发到 validate_schematic，它已包含保存 + 刷新功能
     if (!ctx.host?.connectionGraph) return { is_error: true, content: '连线图服务不可用' };
     if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
-    return applySchematicHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args);
+    return validateSchematicHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args);
   }
 
   getStartText(): string {
-    return '解析 AWS 并保存连线图...';
+    return '验证并保存连线图...';
   }
 
   getResultText(args: any, result?: ToolUseResult): string {
-    if (result?.is_error) return 'AWS 解析保存失败';
-    return 'AWS 解析并保存完成';
+    if (result?.is_error) return '连线图验证保存失败';
+    return '连线图验证并保存完成';
   }
 }
 
@@ -232,3 +259,4 @@ ToolRegistry.register(new GeneratePinmapTool());
 ToolRegistry.register(new SavePinmapTool());
 ToolRegistry.register(new GetCurrentSchematicTool());
 ToolRegistry.register(new ApplySchematicTool());
+ToolRegistry.register(new GetProjectContextTool());

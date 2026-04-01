@@ -2576,14 +2576,13 @@ IMPORTANT: update是全量替换，必须包含所有任务。只想添加新任
     // =============================================================================
     {
         name: 'generate_schematic',
-        description: `生成硬件接线图的核心工具。分析开发板与外设的引脚映射，返回引脚摘要和生成规则。你需要根据返回内容编写 AWS (Aily Wiring Syntax) 连线，再先调用 validate_schematic 预检，最后调用 apply_schematic 完成最终保存与 JSON 生成。
+        description: `生成硬件接线图的核心工具。分析开发板与外设的引脚映射，返回引脚摘要和生成规则。你需要根据返回内容编写 AWS (Aily Wiring Syntax) 连线，再调用 validate_schematic 完成验证、保存与刷新。
 
 **完整工作流：**
-1. （可选）不知道有哪些组件可用时，先调用 get_component_catalog 获取 pinmapId
+1. （可选）不知道有哪些组件可用时，先调用 get_project_context 获取项目上下文和 pinmapId
 2. 调用本工具，传入 pinmapIds
-3. 工具返回引脚摘要（pinSummaries）和生成规则（instructions），你根据此生成 AWS 连线内容
-4. 调用 validate_schematic(aws: "...") 做安全/语义预检
-5. 调用 apply_schematic(aws: "...") 从 AWS 生成并保存 JSON 连线图
+3. 工具返回引脚摘要，你根据此编写 AWS 连线内容
+4. 调用 validate_schematic(aws: "...") 验证 + 保存 + 刷新（最终步骤）
 
 **触发时机：** 用户说"帮我接线"、"怎么接 DHT20"、"生成接线图"、"连接传感器"等
 
@@ -2641,14 +2640,7 @@ IMPORTANT: update是全量替换，必须包含所有任务。只想添加新任
     },
     {
         name: 'get_pinmap_summary',
-        description: `获取指定组件的完整引脚详情（功能列表、引脚类型、位置等）。
-
-**使用场景：**
-- 用户询问某个组件具体有哪些引脚、支持哪些功能
-- 需要查看某个传感器的详细引脚规格
-- 调试或验证 pinmap 配置内容
-
-**注意：** 连线流程中通常不需要单独调用——generate_schematic 内部已包含引脚摘要。`,
+        description: `**已废弃** — generate_schematic 内部已包含完整引脚摘要，通常无需单独调用此工具。`,
         input_schema: {
             type: 'object',
             properties: {
@@ -2704,23 +2696,47 @@ IMPORTANT: update是全量替换，必须包含所有任务。只想添加新任
         agents: ["schematicAgent"]
     },
     {
+        name: 'get_project_context',
+        description: `一次获取项目上下文 + 组件目录，合并了 get_context 和 get_component_catalog 的功能。
+
+**⭐ 连线流程第一步：** 替代原先需要依次调用 get_context + get_component_catalog 的两步操作。
+
+**返回数据：**
+1. **project**：项目路径、名称、开发板、已安装库列表
+2. **cppCode**：当前 Blockly 生成的 C++ 代码（用于推断硬件外设需求）
+3. **currentBoard**：开发板的 pinmap 状态和 pinmapId
+4. **catalogs**：传感器/外设库的型号列表 + pinmapId
+5. **softwareLibraries**：软件库（WiFi/MQTT 等，无物理引脚）
+6. **librariesMissingCatalog**：缺少 catalog 的库（需用 generate_pinmap 生成）`,
+        input_schema: {
+            type: 'object',
+            properties: {
+                includeNeedsGeneration: {
+                    type: 'boolean',
+                    description: '是否包含需要生成 pinmap 的项目（status=needs_generation）',
+                    default: true
+                }
+            },
+            required: []
+        },
+        agents: ["schematicAgent"]
+    },
+    {
         name: 'validate_schematic',
-        description: `验证 AWS 接线图的安全性与正确性。
+        description: `验证 AWS 接线图并保存。这是连线工作流的**最终步骤**，集验证 + 保存 + 刷新为一体。
 
-**AWS 格式：** 通过 aws 参数传入 AWS (Aily Wiring Syntax) 语法
+**功能：**
+- 解析 AWS 语法，检查引脚、冲突、电压等安全问题
+- 验证通过后自动保存 connection.aws 和 connection_output.json
+- 自动通知接线图界面刷新
 
-    **定位：** 这是预检/诊断工具，重点是发现语法、引脚、冲突、电压等问题。
-    **与 apply_schematic 的关系：** 两者有部分重叠；但在工作流上，应将本工具视为“验证”，将 apply_schematic 视为“最终落盘并生成 JSON”。
-
-**调用时机：** generate_schematic 返回引脚摘要后，你生成连线后调用本工具。
+**调用时机：** generate_schematic 返回引脚摘要后，你编写 AWS 连线后调用本工具作为最终步骤。
 
 **推荐流程：**
-1. **get_context()**：获取当前项目和库的上下文信息，了解当前项目实际使用的开发板和组件
-2. **get_component_catalog(includeBoards: true)**：获取开发板 + 组件的 pinmapId 列表
-3. **generate_schematic(pinmapIds: [...])**：获取引脚摘要和连线规则
-4. **你生成连线**：输出 AWS 格式
-5. **validate_schematic**：验证 AWS 是否正确
-6. **apply_schematic**：最终从 AWS 生成/保存 JSON`,
+1. **get_project_context()**：获取项目上下文 + 组件目录
+2. **generate_schematic(pinmapIds: [...])**：获取引脚摘要
+3. **你编写 AWS 连线**
+4. **validate_schematic(aws: "...")**：验证 + 保存 + 刷新（最终步骤）`,
         input_schema: {
             type: 'object',
             properties: {
@@ -2760,42 +2776,26 @@ IMPORTANT: update是全量替换，必须包含所有任务。只想添加新任
 //         },
         agents: ["schematicAgent"]
     },
-    {
-        name: 'apply_schematic',
-        description: `将 AWS 格式连线转换为 JSON 并保存。这是 AWS 工作流的最终落盘工具。
-
-**功能：**
-- 不传参数：读取项目中的 connection.aws 文件，解析并保存到 connection_output.json
-- 传 aws 参数：直接解析传入的 AWS 内容，同时保存为 connection.aws 和 connection_output.json
-
-**成功：** 保存 AWS 文件、生成 connection_output.json，并通知接线图界面刷新
-**失败：** 返回解析错误 + 完整 AWS 语法参考
-
-**与 validate_schematic 的区别：**
-- validate_schematic：用于预检和安全校验
-- apply_schematic：用于最终持久化和 JSON 生成
-
-**AWS 编辑流程（推荐）：**
-1. read_file 读取 connection.aws
-2. edit_file 修改 AWS 内容
-3. apply_schematic() 解析并保存`,
-        input_schema: {
-            type: 'object',
-            properties: {
-                aws: {
-                    type: 'string',
-                    description: '可选。直接传入 AWS 内容（首次生成时使用）。不传则从项目中的 connection.aws 文件读取。'
-                }
-            },
-            required: []
-        },
-        agents: ["schematicAgent"]
-    },
+    // {
+    //     name: 'apply_schematic',
+    //     description: `**已废弃** — 请直接使用 validate_schematic，它已包含验证 + 保存 + 刷新的完整功能。调用本工具会自动转发到 validate_schematic。`,
+    //     input_schema: {
+    //         type: 'object',
+    //         properties: {
+    //             aws: {
+    //                 type: 'string',
+    //                 description: '可选。直接传入 AWS 内容（首次生成时使用）。不传则从项目中的 connection.aws 文件读取。'
+    //             }
+    //         },
+    //         required: []
+    //     },
+    //     agents: ["schematicAgent"]
+    // },
     {
         name: 'get_current_schematic',
         description: `读取当前项目已保存的连线图完整内容。
 
-    **用于编辑流程：** 用户想修改/添加/删除连线时，先调用本工具获取当前状态，然后编写新的 AWS 内容，先调用 validate_schematic 检查，再调用 apply_schematic 最终保存。
+**用于编辑流程：** 用户想修改/添加/删除连线时，先调用本工具获取当前状态，然后编写新的 AWS 内容，调用 validate_schematic 验证并保存。
 
 **典型编辑场景：**
 - “删除 DHT20 的 VCC 连线”
@@ -2806,8 +2806,7 @@ IMPORTANT: update是全量替换，必须包含所有任务。只想添加新任
 1. **get_current_schematic()**：获取当前连线图数据
 2. **修改连线**：基于当前连线信息编写新的 AWS 格式内容
    - 新增组件时：先调用 generate_schematic 获取新组件引脚信息
-3. **validate_schematic(aws: "修改后的AWS内容")**：验证 AWS
-4. **apply_schematic(aws: "修改后的AWS内容")**：最终保存并生成 JSON`,
+3. **validate_schematic(aws: "修改后的AWS内容")**：验证 + 保存 + 刷新（最终步骤）`,
         input_schema: {
             type: 'object',
             properties: {},
