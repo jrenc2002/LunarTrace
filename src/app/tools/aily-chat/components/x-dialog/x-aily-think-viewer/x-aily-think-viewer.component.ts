@@ -182,6 +182,10 @@ export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges, O
   private _throttleTimerId: ReturnType<typeof setTimeout> | null = null;
   private _lastRenderedRawLen = 0;
 
+  // ===== Polling: 因 v 字段已移除，x-markdown 不再逐帧触发 ngOnChanges =====
+  // think viewer 需自行轮询 store 获取最新内容
+  private _pollTimer: ReturnType<typeof setInterval> | null = null;
+
   ngOnChanges(changes: SimpleChanges): void {
     if (!changes['data'] || !this.data) return;
 
@@ -211,17 +215,23 @@ export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges, O
 
     // ★ 关键修复：isComplete 变化时立即渲染（不做节流）
     if (this.data.isComplete === true && prevStreaming) {
+      this._stopPolling();
       this._cancelThrottle();
       this._renderNow(raw, true);
       this.thinkExpanded = false;
       return;
     }
 
+    if (this.data.isComplete === true) {
+      this._stopPolling();
+    }
+
     if (!this.data.isComplete) {
       this.thinkExpanded = true;
       this.shouldScrollThink = true;
-      // ★ 关键修复：流式期间使用节流
       this._scheduleRender(raw);
+      // 启动轮询：v 字段已移除，x-markdown 不再驱动 ngOnChanges，需自行拉取 store
+      this._startPolling();
     }
   }
 
@@ -275,6 +285,31 @@ export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges, O
     this._pendingRaw = null;
   }
 
+  /** 启动轮询：每 200ms 从 store 读取最新 think 内容 */
+  private _startPolling(): void {
+    if (this._pollTimer) return;
+    this._pollTimer = setInterval(() => {
+      if (!this.data?.ref || this.data.isComplete) {
+        this._stopPolling();
+        return;
+      }
+      const raw = getThinkContent(this.data.ref);
+      if (raw && raw.length !== this._lastRenderedRawLen) {
+        this.thinkContent = raw;
+        this.shouldScrollThink = true;
+        this._scheduleRender(raw);
+      }
+    }, 200);
+  }
+
+  /** 停止轮询 */
+  private _stopPolling(): void {
+    if (this._pollTimer) {
+      clearInterval(this._pollTimer);
+      this._pollTimer = null;
+    }
+  }
+
   private _renderNow(raw: string, isFinal: boolean): void {
     if (!raw) {
       this.markdownContent.set('');
@@ -307,5 +342,6 @@ export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges, O
 
   ngOnDestroy(): void {
     this._cancelThrottle();
+    this._stopPolling();
   }
 }

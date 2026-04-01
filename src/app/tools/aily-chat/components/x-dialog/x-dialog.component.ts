@@ -604,7 +604,11 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
         this._frozenParser = new MarkdownParser();
         this._frozenRenderer = new MarkdownRenderer({ components: this.componentMap });
       }
-      const html = this._frozenParser.parse(adjustedFrozen);
+      // ★ 关键：将 aily-* 代码块预渲染为静态 HTML
+      // frozen [innerHTML] 不会调用 injectDynamicComponents()，
+      // 如果不替换，aily-think 等代码块会显示为原始 <code> 元素（部分/空 think）
+      const frozenForParse = this._preRenderFrozenBlocks(adjustedFrozen);
+      const html = this._frozenParser.parse(frozenForParse);
       this._frozenHtmlCache = this._frozenRenderer!.render(html);
       this.frozenHtml.set(this.sanitizer.bypassSecurityTrustHtml(this._frozenHtmlCache));
     }
@@ -648,6 +652,84 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
     }
 
     return pos > 0 ? pos : -1;
+  }
+
+  /**
+   * ★ 预渲染 frozen 中的 aily-* 代码块为静态 HTML
+   *
+   * frozen [innerHTML] 不经过 x-markdown 的 injectDynamicComponents()，
+   * 因此 aily-think/aily-state 等代码块如果原样保留，会渲染为 <code> 元素
+   * 导致用户看到 JSON 文本或空/部分 think 块。
+   *
+   * 此方法将它们替换为视觉等效的静态 HTML（inline 样式 + FA 图标），
+   * marked.js 会保留 block-level HTML，DOMPurify 允许 style/class 属性。
+   */
+  private _preRenderFrozenBlocks(markdown: string): string {
+    // aily-think → 静态折叠式 think header
+    markdown = markdown.replace(
+      /\n```aily-think\n([\s\S]*?)\n```\n/g,
+      (_match, jsonStr: string) => {
+        try {
+          const data = JSON.parse(jsonStr.trim());
+          const isComplete = data.isComplete !== false;
+          const icon = isComplete
+            ? '<i class="fa-light fa-circle-check" style="color:#52c41a;flex-shrink:0;margin-right:5px;"></i>'
+            : '<i class="fa-duotone fa-solid fa-loader" style="color:#1890ff;flex-shrink:0;margin-right:5px;"></i>';
+          const label = isComplete ? 'Think' : 'Thinking...';
+          return '\n<div style="border-radius:5px;padding:5px 10px;margin:4px 0;background-color:#3a3a3a;color:#ccc;">'
+            + '<div style="display:flex;align-items:center;gap:6px;font-size:13px;">'
+            + icon + '<span>' + label + '</span></div></div>\n';
+        } catch {
+          return '\n';
+        }
+      }
+    );
+
+    // aily-state → 静态状态指示行
+    markdown = markdown.replace(
+      /\n```aily-state\n([\s\S]*?)\n```\n/g,
+      (_match, jsonStr: string) => {
+        try {
+          const data = JSON.parse(jsonStr.trim());
+          const state: string = data.state || 'done';
+          const text: string = data.text || data.name || '';
+          let iconCls: string, color: string;
+          if (state === 'done') { iconCls = 'fa-circle-check'; color = '#52c41a'; }
+          else if (state === 'error' || state === 'warn') { iconCls = 'fa-triangle-exclamation'; color = '#faad14'; }
+          else { iconCls = 'fa-loader'; color = '#1890ff'; }
+          return '\n<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px;color:#999;">'
+            + '<i class="fa-light ' + iconCls + '" style="color:' + color + ';flex-shrink:0;"></i>'
+            + '<span>' + this._escapeHtml(text) + '</span></div>\n';
+        } catch {
+          return '\n';
+        }
+      }
+    );
+
+    // aily-context → 静态上下文标签
+    markdown = markdown.replace(
+      /\n```aily-context\n([\s\S]*?)\n```\n/g,
+      (_match, jsonStr: string) => {
+        try {
+          const data = JSON.parse(jsonStr.trim());
+          const label: string = data.label || '附加上下文';
+          return '\n<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px;color:#888;">'
+            + '<i class="fa-light fa-paperclip" style="flex-shrink:0;"></i>'
+            + '<span>' + this._escapeHtml(label) + '</span></div>\n';
+        } catch {
+          return '\n';
+        }
+      }
+    );
+
+    // 其他 aily-* 代码块：移除（冻结区不显示交互型组件）
+    markdown = markdown.replace(/\n```aily-\w+\n[\s\S]*?\n```\n/g, '\n');
+
+    return markdown;
+  }
+
+  private _escapeHtml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   onSubagentBodyScroll(event: Event): void {
@@ -841,7 +923,7 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
           storeThinkContent(key, buf);
           this._thinkRefKeys.push(key);
           const isComplete = !this.doing;
-          parts.push('\n```aily-think\n' + JSON.stringify({ ref: key, isComplete, v: buf.length }) + '\n```\n');
+          parts.push('\n```aily-think\n' + JSON.stringify({ ref: key, isComplete }) + '\n```\n');
         }
         pos = content.length;
         break;
@@ -853,7 +935,7 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
         const key = `think_${this.msgIndex}_${thinkIndex++}`;
         storeThinkContent(key, buf);
         this._thinkRefKeys.push(key);
-        parts.push('\n```aily-think\n' + JSON.stringify({ ref: key, isComplete: true, v: buf.length }) + '\n```\n');
+        parts.push('\n```aily-think\n' + JSON.stringify({ ref: key, isComplete: true }) + '\n```\n');
       }
       pos = thinkEnd + 8; // '</think>'.length
     }
