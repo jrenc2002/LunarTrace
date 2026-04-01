@@ -504,12 +504,24 @@ export class IframeComponent implements OnInit, OnDestroy {
       };
       this.iframeData = newPayload;
       await this.pushDataToRemote();
-      this.noticeService.update({
-        title: 'AI生成中',
-        text: '连线图已自动更新',
-        state: 'done',
-        setTimeout: 3000,
-      });
+
+      // 区分预览推送（空连线）和最终推送（有连线）
+      const hasConnections = Array.isArray(data.connections) && data.connections.length > 0;
+      if (hasConnections) {
+        this.noticeService.update({
+          title: 'AI生成中',
+          text: '连线图已自动更新',
+          state: 'done',
+          setTimeout: 3000,
+        });
+      } else {
+        this.noticeService.update({
+          title: 'AI生成中',
+          text: '组件已加载，正在生成连线方案...',
+          state: 'doing',
+          showProgress: false,
+        });
+      }
     } catch (error) {
       console.error('[IframeComponent] 处理连线图更新失败:', error);
     }
