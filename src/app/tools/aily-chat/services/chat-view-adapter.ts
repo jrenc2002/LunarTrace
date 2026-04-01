@@ -28,16 +28,6 @@ export class ChatViewAdapter {
   /** flush 回调（由 engine 注册，在 rAF 内执行实际 list 修改） */
   private onFlushCallback: (() => void) | null = null;
 
-  /**
-   * ★ P0-perf: 渲染抑制模式
-   *
-   * 工具执行期间（tool_call_request → continueToolCallingLoop → streamConnect），
-   * list 数据变更正常进行但跳过 NgZone / cdCallback / scroll，
-   * 避免每次 displayToolCallState 触发 CD → x-markdown 全量 re-parse（2s+ 阻塞）。
-   * 渲染在下次 streaming 开始时恢复，由正常 doFlush 路径触发。
-   */
-  private _renderSuppressed = false;
-
   constructor(
     /** 引用 engine.list — 直接操作（在 rAF 回调内，一帧只操作一次） */
     private getList: () => ChatMessage[],
@@ -227,7 +217,7 @@ export class ChatViewAdapter {
    *
    * 用于 tool_call_request 入口：
    *   - 数据必须立即提交（后续 buildMessages 依赖 list 完整性）
-   *   - 渲染完全省略（render suppression 模式下自然跳过）
+   *   - 渲染延迟到下一帧 doFlush 自然触发
    */
   flushDataOnly(): void {
     if (this.rafId !== null) {
@@ -240,33 +230,7 @@ export class ChatViewAdapter {
     for (const seg of segments) {
       this._doAppendMessage(seg.role, seg.content, seg.source);
     }
-    // ★ 不再 _scheduleRender — 工具处理期间完全禁止渲染
-    // 渲染由下次 streaming 的 doFlush 自然触发
   }
-
-  // ==================== 渲染抑制 ====================
-
-  /**
-   * 进入渲染抑制模式 — 数据写入继续，所有 CD/scroll/render 暂停
-   * 用于 tool_call_request → tool_execute → continueToolCallingLoop 阶段
-   */
-  suppressRender(): void {
-    this._renderSuppressed = true;
-    // 取消所有待执行的渲染 rAF
-    if (this._renderRafId !== null) {
-      cancelAnimationFrame(this._renderRafId);
-      this._renderRafId = null;
-    }
-  }
-
-  /**
-   * 退出渲染抑制模式 — 不立即触发 CD，由后续 doFlush 自然恢复渲染
-   */
-  resumeRender(): void {
-    this._renderSuppressed = false;
-  }
-
-  private _renderRafId: number | null = null;
 
   /**
    * 销毁：取消 pending rAF
@@ -304,15 +268,6 @@ export class ChatViewAdapter {
     const _s = ChatPerformanceTracer.begin('doFlush');
     const segments = this._computeMergedChunks();
     if (segments.length === 0) { ChatPerformanceTracer.end(_s, 'doFlush', 'empty'); return; }
-
-    if (this._renderSuppressed) {
-      // 渲染抑制模式：只合并数据，跳过 NgZone/CD/scroll
-      for (const seg of segments) {
-        this._doAppendMessage(seg.role, seg.content, seg.source);
-      }
-      ChatPerformanceTracer.end(_s, 'doFlush', 'suppressed');
-      return;
-    }
 
     // 进入 Angular Zone 执行 list 变更 → 触发 CD
     this._runInZone(() => {
@@ -357,17 +312,6 @@ export class ChatViewAdapter {
     }
     // 在 zone 外完成纯计算
     const segments = this._computeMergedChunks();
-
-    if (this._renderSuppressed) {
-      // 渲染抑制模式：执行数据操作但跳过 NgZone/CD/scroll
-      const _imfSpan = ChatPerformanceTracer.begin('_immediateFlushAndRun', `${segments.length}segs suppressed`);
-      for (const seg of segments) {
-        this._doAppendMessage(seg.role, seg.content, seg.source);
-      }
-      fn();
-      ChatPerformanceTracer.end(_imfSpan, '_immediateFlushAndRun');
-      return;
-    }
 
     // 单次 zone entry：flush mutations + action → 1 次 CD
     const _imfSpan = ChatPerformanceTracer.begin('_immediateFlushAndRun', `${segments.length}segs`);
@@ -457,10 +401,7 @@ export class ChatViewAdapter {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
     }
-    if (this._renderRafId !== null) {
-      cancelAnimationFrame(this._renderRafId);
-      this._renderRafId = null;
-    }
+
     this.pendingChunks = [];
   }
 }

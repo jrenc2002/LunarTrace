@@ -13,6 +13,7 @@ import { XMarkdownComponent } from 'ngx-x-markdown';
 import type { StreamingOption, ComponentMap } from 'ngx-x-markdown';
 import { AilyChatCodeComponent } from '../aily-chat-code.component';
 import { getClosingTagsForOpenBlocks } from '../../../services/content-sanitizer.service';
+import { getThinkContent } from '../../../core/think-content-store';
 
 @Component({
   selector: 'x-aily-think-viewer',
@@ -160,6 +161,8 @@ export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges {
     content?: string;
     encoded?: boolean;
     isComplete?: boolean;
+    ref?: string;
+    v?: number;
   } | null = null;
   @ViewChild('thinkBody') thinkBodyRef?: ElementRef<HTMLElement>;
 
@@ -181,13 +184,17 @@ export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges {
       if (this.data.isComplete === false && !prevStreaming) {
         this.thinkStickToBottom = true;
       }
-      let raw = this.data.content || '';
-      if (this.data.encoded) {
+      let raw = '';
+      if (this.data.ref) {
+        raw = getThinkContent(this.data.ref);
+      } else if (this.data.encoded && this.data.content) {
         try {
-          raw = decodeURIComponent(atob(raw));
+          raw = decodeURIComponent(atob(this.data.content));
         } catch {
-          /* ignore */
+          raw = this.data.content;
         }
+      } else {
+        raw = this.data.content || '';
       }
       const prev = this.thinkContent;
       this.thinkContent = raw;

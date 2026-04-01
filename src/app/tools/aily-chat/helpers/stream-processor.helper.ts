@@ -101,9 +101,6 @@ export class StreamProcessorHelper {
     console.log('发起流连接，statelessMode:', statelessMode, _isNetworkRetry ? `(网络重试 #${this.streamNetworkRetryCount})` : '');
     if (!this.engine.sessionId) { console.warn('无法建立流连接：sessionId 为空'); return; }
 
-    // ★ P0-perf: 恢复渲染 — 上一轮 tool_call_request 进入抑制模式，
-    // 新 streaming 开始前恢复，让 doFlush 正常触发 CD。
-    this.engine.viewAdapter.resumeRender();
     // 用户发起的新连接重置重试计数；自动重试保持计数
     if (!_isNetworkRetry) {
       this.streamNetworkRetryCount = 0;
@@ -251,10 +248,6 @@ export class StreamProcessorHelper {
             const _fnSpan = ChatPerformanceTracer.begin('flushDataOnly_toolReq');
             this.engine.viewAdapter.flushDataOnly();
             ChatPerformanceTracer.end(_fnSpan, 'flushDataOnly_toolReq');
-            // ★ P0-perf: 进入渲染抑制模式 — 工具执行期间所有 displayToolCallState /
-            // completeToolCall 只做数据写入，不触发 NgZone → CD → x-markdown re-parse (2s+)。
-            // 渲染在下次 streamConnect 时恢复。
-            this.engine.viewAdapter.suppressRender();
             this.engine.repetitionDetectionService.markBoundary('tool_call');
 
             // 内部工具（服务端已执行，前端仅展示）
@@ -645,8 +638,7 @@ export class StreamProcessorHelper {
           return;
         }
 
-        // ★ 恢复渲染（非 stateless 路径）
-        this.engine.viewAdapter.resumeRender();
+
         this.engine.viewAdapter.markLastMessageDone();
         this.engine.ngZone.run(() => {
           this.engine.isWaiting = false;

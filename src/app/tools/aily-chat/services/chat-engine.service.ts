@@ -820,8 +820,6 @@ Do not create non-existent boards and libraries.
 
   stop(): void {
     this.isCancelled = true;
-    // ★ 恢复渲染（可能在工具执行期间被抑制）
-    this.viewAdapter.resumeRender();
     // 中止正在进行的异步工具操作
     if (this.abortController) {
       this.abortController.abort();

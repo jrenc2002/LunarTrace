@@ -2,6 +2,7 @@ import {
   Component,
   Input,
   OnChanges,
+  OnDestroy,
   Output,
   EventEmitter,
   signal,
@@ -14,15 +15,17 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { TranslateModule } from '@ngx-translate/core';
 import { NzToolTipModule } from 'ng-zorro-antd/tooltip';
-import { XMarkdownComponent } from 'ngx-x-markdown';
+import { XMarkdownComponent, MarkdownParser, MarkdownRenderer } from 'ngx-x-markdown';
 import type { StreamingOption, ComponentMap } from 'ngx-x-markdown';
 import { AilyChatCodeComponent } from './aily-chat-code.component';
 import { ChatAPI } from '../../core/api-endpoints';
 import { AilyHost } from '../../core/host';
 import { EditCheckpointService } from '../../services/edit-checkpoint.service';
 import { ChatPerformanceTracer } from '../../services/chat-perf-tracer';
+import { storeThinkContent, deleteThinkContent } from '../../core/think-content-store';
 import { ResourceItem } from '../../core/chat-types';
 
 @Component({
@@ -33,7 +36,7 @@ import { ResourceItem } from '../../core/chat-types';
   imports: [CommonModule, FormsModule, TranslateModule, NzToolTipModule, XMarkdownComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class XDialogComponent implements OnChanges, AfterViewChecked {
+export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy {
   @Input() role = 'user';
   @Input() content = '';
   @Input() doing = false;
@@ -85,6 +88,8 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   private readonly subagentScrollBottomThresholdPx = 48;
 
   streamContent = signal('');
+  /** ★ 已冻结的 HTML：已渲染完毕的前段内容，不再经过 x-markdown parse */
+  frozenHtml = signal<SafeHtml>('');
   streamingConfig = signal<StreamingOption>({ hasNextChunk: false, enableAnimation: false });
   readonly componentMap: ComponentMap = { code: AilyChatCodeComponent };
 
@@ -93,6 +98,12 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   private _preprocessTimerId: ReturnType<typeof setTimeout> | null = null;
   private _pendingContent: string | null = null;
   private _lastPreprocessTime = 0;
+  // ★ frozen/active 分片渲染：只让 x-markdown 处理最后变化的部分
+  private _frozenMarkdown = '';        // 已冻结的 markdown 源文本
+  private _frozenHtmlCache = '';       // 对应的渲染后 HTML
+  private _frozenParser: MarkdownParser | null = null;
+  private _frozenRenderer: MarkdownRenderer | null = null;
+  private static readonly FREEZE_THRESHOLD = 4000; // 超过此长度启用分片
   // ★ filterToolCalls 缓存：避免每次 preprocess 都全量 split + parse
   private _ftcCacheInput = '';
   private _ftcCacheOutput = '';
@@ -100,6 +111,8 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   // ★ filterThinkTags 缓存：避免流式中每帧重新 btoa(encodeURIComponent()) 全部 think 内容
   private _fttCacheInput = '';
   private _fttCacheOutput = '';
+  // ★ think 内容外部化：仅存储 ref key 列表，内容在 think-content-store 中
+  private _thinkRefKeys: string[] = [];
   /** 是否显示操作栏 */
   showActions = false;
   /** 反馈状态 */
@@ -111,7 +124,11 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   editResources: ResourceItem[] = [];
   showEditAddList = false;
 
-  constructor(private editCheckpointService: EditCheckpointService, private cdr: ChangeDetectorRef) {}
+  constructor(
+    private editCheckpointService: EditCheckpointService,
+    private cdr: ChangeDetectorRef,
+    private sanitizer: DomSanitizer,
+  ) {}
 
   /** 是否可显示操作栏（非 doing 的最后一条 aily 消息） */
   get canShowActions(): boolean {
@@ -493,15 +510,103 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
     const processed = this.preprocess(content);
     if (processed !== this.lastRaw) {
       this.lastRaw = processed;
-      this.appendContent(processed);
+      this._setStreamContent(processed);
     }
   }
 
-  private appendContent(content: string): void {
-    // const current = this.streamContent();
-    // const separator = current && !current.endsWith('\n') ? '\n\n' : '';
-    // this.streamContent.set(current + separator + content);
-    this.streamContent.set(content);
+  /**
+   * ★ Frozen/Active 分片渲染核心
+   *
+   * 当 processed markdown > FREEZE_THRESHOLD 且正在流式时：
+   * 1. 找到安全分割点（最后一个段落边界，不能在代码块内）
+   * 2. 前段一次性 parse+sanitize → frozenHtml（innerHTML 直出，不再重复 parse）
+   * 3. 后段（active tail）→ streamContent → x-markdown 实时渲染
+   *
+   * 效果：x-markdown 每帧只 parse 几 KB 的 active tail，而不是全部 50-100KB+
+   */
+  private _setStreamContent(processed: string): void {
+    if (!this.doing || processed.length < XDialogComponent.FREEZE_THRESHOLD) {
+      // 短内容 / 非流式：全量交给 x-markdown（无 frozen）
+      // 非流式时清除 frozen（final render 让 x-markdown 处理全部内容以正确注入动态组件）
+      if (!this.doing && this._frozenMarkdown) {
+        this._frozenMarkdown = '';
+        this._frozenHtmlCache = '';
+        this.frozenHtml.set('');
+      }
+      this.streamContent.set(processed);
+      return;
+    }
+
+    // ★ 增量冻结：只有当 processed 在当前 frozen 基础上追加时才增量处理
+    if (this._frozenMarkdown && processed.startsWith(this._frozenMarkdown)) {
+      // frozen 部分不变，只更新 active tail
+      const activeTail = processed.slice(this._frozenMarkdown.length);
+      this.streamContent.set(activeTail);
+      return;
+    }
+
+    // 寻找安全分割点：在代码块外的最后一个 \n\n
+    const splitPos = this._findSafeSplitPoint(processed);
+    if (splitPos <= 0) {
+      // 找不到安全分割点，退回全量模式
+      this.streamContent.set(processed);
+      return;
+    }
+
+    const frozenPart = processed.slice(0, splitPos);
+    const activeTail = processed.slice(splitPos);
+
+    // 只有当 frozen 部分变化时才重新渲染
+    if (frozenPart !== this._frozenMarkdown) {
+      this._frozenMarkdown = frozenPart;
+      if (!this._frozenParser) {
+        this._frozenParser = new MarkdownParser();
+        this._frozenRenderer = new MarkdownRenderer({ components: this.componentMap });
+      }
+      const html = this._frozenParser.parse(frozenPart);
+      this._frozenHtmlCache = this._frozenRenderer!.render(html);
+      this.frozenHtml.set(this.sanitizer.bypassSecurityTrustHtml(this._frozenHtmlCache));
+    }
+
+    this.streamContent.set(activeTail);
+  }
+
+  /**
+   * 在 processed markdown 中找到安全的分割点。
+   * 安全 = 在代码块外的 \n\n 位置。
+   * 返回分割位置（split 之前的内容不包含未闭合代码块）。
+   * 留至少 2KB 给 active tail。
+   */
+  private _findSafeSplitPoint(text: string): number {
+    const minTail = 2000;
+    const searchEnd = text.length - minTail;
+    if (searchEnd <= 0) return -1;
+
+    // 从 searchEnd 向前找最近的 \n\n
+    let pos = text.lastIndexOf('\n\n', searchEnd);
+    if (pos <= 0) return -1;
+
+    // 验证 pos 处不在代码块内
+    // 简单的方法：数 pos 之前 ``` 的奇偶性
+    let fenceCount = 0;
+    let searchPos = 0;
+    while (true) {
+      const fenceIdx = text.indexOf('```', searchPos);
+      if (fenceIdx === -1 || fenceIdx >= pos) break;
+      fenceCount++;
+      searchPos = fenceIdx + 3;
+    }
+    if (fenceCount % 2 !== 0) {
+      // 在代码块内，向前找上一个 ``` 之前的 \n\n
+      const lastFence = text.lastIndexOf('```', pos);
+      if (lastFence > 0) {
+        pos = text.lastIndexOf('\n\n', lastFence - 1);
+      } else {
+        return -1;
+      }
+    }
+
+    return pos > 0 ? pos : -1;
   }
 
   onSubagentBodyScroll(event: Event): void {
@@ -523,6 +628,14 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
       }
       this.shouldScrollSubagent = false;
     }
+  }
+
+  ngOnDestroy(): void {
+    if (this._preprocessRafId !== null) cancelAnimationFrame(this._preprocessRafId);
+    if (this._preprocessTimerId !== null) clearTimeout(this._preprocessTimerId);
+    for (const key of this._thinkRefKeys) deleteThinkContent(key);
+    this._frozenParser = null;
+    this._frozenRenderer = null;
   }
 
   // ===== Preprocessing =====
@@ -641,7 +754,10 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   /**
    * 将 <think>...</think> 转换为 aily-think 代码块
    * 由 AilyChatCodeComponent 负责渲染
-   * 优化：使用 indexOf 跳过大段非标签文本 + 结果缓存避免每帧重新编码
+   *
+   * ★ P0-perf: think 内容外部化到 think-content-store
+   * 之前：btoa(encodeURIComponent(raw)) 嵌入代码块 → ~40KB/block → x-markdown 每帧解析全部
+   * 现在：仅嵌入 ~80 byte 引用 JSON → x-markdown 解析 <10KB
    */
   private filterThinkTags(content: string): string {
     // 快速路径：内容完全没变
@@ -653,6 +769,9 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
       return content;
     }
 
+    // 位置化 key：think_{msgIndex}_{thinkIndex}，同一 think 块跨帧 key 稳定
+    this._thinkRefKeys = [];
+    let thinkIndex = 0;
     const parts: string[] = [];
     let pos = 0;
 
@@ -677,9 +796,11 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
         // 未闭合的 <think>：流式中显示 loading，流式结束标记为完成
         const buf = content.slice(bodyStart).trim();
         if (buf) {
-          const encoded = btoa(encodeURIComponent(buf));
+          const key = `think_${this.msgIndex}_${thinkIndex++}`;
+          storeThinkContent(key, buf);
+          this._thinkRefKeys.push(key);
           const isComplete = !this.doing;
-          parts.push('\n```aily-think\n' + JSON.stringify({ content: encoded, isComplete, encoded: true }) + '\n```\n');
+          parts.push('\n```aily-think\n' + JSON.stringify({ ref: key, isComplete, v: buf.length }) + '\n```\n');
         }
         pos = content.length;
         break;
@@ -688,8 +809,10 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
       // 完整的 <think>...</think> 块
       const buf = content.slice(bodyStart, thinkEnd).trim();
       if (buf) {
-        const encoded = btoa(encodeURIComponent(buf));
-        parts.push('\n```aily-think\n' + JSON.stringify({ content: encoded, isComplete: true, encoded: true }) + '\n```\n');
+        const key = `think_${this.msgIndex}_${thinkIndex++}`;
+        storeThinkContent(key, buf);
+        this._thinkRefKeys.push(key);
+        parts.push('\n```aily-think\n' + JSON.stringify({ ref: key, isComplete: true, v: buf.length }) + '\n```\n');
       }
       pos = thinkEnd + 8; // '</think>'.length
     }
