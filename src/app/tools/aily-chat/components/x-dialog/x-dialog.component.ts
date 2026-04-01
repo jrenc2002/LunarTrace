@@ -419,12 +419,13 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
         // ★ 自适应节流：根据内容长度动态调整更新间隔
         // 短内容 (<5KB): 每帧更新 (rAF ~16ms)
         // 中内容 (5-20KB): 每 120ms
-        // 长内容 (20-50KB): 每 250ms
-        // 超长内容 (>50KB): 每 400ms
+        // 长内容 (20-50KB): 每 300ms
+        // 超长内容 (50-100KB): 每 600ms
+        // 巨大内容 (>100KB): 每 1000ms
         // x-markdown 每次 set 都全量 parse+sanitize，耗时与内容长度成正比
         this._pendingContent = content;
         const len = content.length;
-        const interval = len < 5000 ? 0 : len < 20000 ? 120 : len < 50000 ? 250 : 400;
+        const interval = len < 5000 ? 0 : len < 20000 ? 120 : len < 50000 ? 300 : len < 100000 ? 600 : 1000;
         const now = performance.now();
         const elapsed = now - this._lastPreprocessTime;
 

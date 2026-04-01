@@ -101,6 +101,9 @@ export class StreamProcessorHelper {
     console.log('发起流连接，statelessMode:', statelessMode, _isNetworkRetry ? `(网络重试 #${this.streamNetworkRetryCount})` : '');
     if (!this.engine.sessionId) { console.warn('无法建立流连接：sessionId 为空'); return; }
 
+    // ★ P0-perf: 恢复渲染 — 上一轮 tool_call_request 进入抑制模式，
+    // 新 streaming 开始前恢复，让 doFlush 正常触发 CD。
+    this.engine.viewAdapter.resumeRender();
     // 用户发起的新连接重置重试计数；自动重试保持计数
     if (!_isNetworkRetry) {
       this.streamNetworkRetryCount = 0;
@@ -242,12 +245,16 @@ export class StreamProcessorHelper {
             this.engine.ngZone.run(() => { this.engine.isWaiting = false; });
           } else if (data.type === 'tool_call_request') {
             const _tcSpan = ChatPerformanceTracer.begin('tool_call_request', data.tool_name);
-            // ★ P0-perf: 工具请求到达前强制 flush 所有 pending 内容（含 </think>），
-            // 避免 silent 工具（如 todo_write_tool）跳过 startToolCall → _immediateFlushAndRun，
-            // 导致 </think> 留在 pendingChunks 直到下一帧才渲染。
-            const _fnSpan = ChatPerformanceTracer.begin('flushNow_toolReq');
-            this.engine.viewAdapter.flushNow();
-            ChatPerformanceTracer.end(_fnSpan, 'flushNow_toolReq');
+            // ★ P0-perf: 工具请求到达前将 pending 内容（含 </think>）提交到 list 数据层，
+            // 使用 flushDataOnly 跳过 NgZone → 不触发同步 CD → x-markdown 不会阻塞 3s+。
+            // 渲染在下一帧异步完成。
+            const _fnSpan = ChatPerformanceTracer.begin('flushDataOnly_toolReq');
+            this.engine.viewAdapter.flushDataOnly();
+            ChatPerformanceTracer.end(_fnSpan, 'flushDataOnly_toolReq');
+            // ★ P0-perf: 进入渲染抑制模式 — 工具执行期间所有 displayToolCallState /
+            // completeToolCall 只做数据写入，不触发 NgZone → CD → x-markdown re-parse (2s+)。
+            // 渲染在下次 streamConnect 时恢复。
+            this.engine.viewAdapter.suppressRender();
             this.engine.repetitionDetectionService.markBoundary('tool_call');
 
             // 内部工具（服务端已执行，前端仅展示）
@@ -638,6 +645,8 @@ export class StreamProcessorHelper {
           return;
         }
 
+        // ★ 恢复渲染（非 stateless 路径）
+        this.engine.viewAdapter.resumeRender();
         this.engine.viewAdapter.markLastMessageDone();
         this.engine.ngZone.run(() => {
           this.engine.isWaiting = false;

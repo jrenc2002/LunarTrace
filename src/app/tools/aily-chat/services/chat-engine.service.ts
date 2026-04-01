@@ -533,13 +533,9 @@ export class ChatEngineService {
 
     const ctx = this.buildToolContext();
 
-    // ★ P0-perf: 让出主线程一次（setTimeout 0），让 pending 微任务清空。
-    // flushNow() 已在 tool_call_request 入口同步推送内容到 list，
-    // x-dialog preprocess 的 rAF 会自行调度，无需等待其完成。
-    // 旧版双帧 rAF yield 会被 x-markdown 全量渲染（8s+）卡住，导致工具执行延迟。
-    const _yieldSpan = ChatPerformanceTracer.begin('executeRegisteredTool_yield');
-    await new Promise<void>(r => setTimeout(r, 0));
-    ChatPerformanceTracer.end(_yieldSpan, 'executeRegisteredTool_yield');
+    // ★ P0-perf: flushDataOnly 已在 tool_call_request 入口同步提交数据到 list，
+    // 不触发 NgZone CD，x-markdown 渲染在下一帧异步完成。
+    // 无需 yield 等待渲染，直接执行工具。
 
     const _execSpan = ChatPerformanceTracer.begin('tool_execute', toolName);
     const toolResult = await ToolRegistry.execute(toolName, toolArgs, ctx);
@@ -824,6 +820,8 @@ Do not create non-existent boards and libraries.
 
   stop(): void {
     this.isCancelled = true;
+    // ★ 恢复渲染（可能在工具执行期间被抑制）
+    this.viewAdapter.resumeRender();
     // 中止正在进行的异步工具操作
     if (this.abortController) {
       this.abortController.abort();

@@ -319,6 +319,9 @@ export class ToolCallLoopHelper {
     // 提交当前 turn 的 checkpoint
     this.engine.editCheckpointService.commitCurrentTurn();
 
+    // ★ 恢复渲染 — 工具循环结束，确保最终状态可见
+    this.engine.viewAdapter.resumeRender();
+
     // 如果本轮有文件变更，通过服务推送摘要到面板
     if (this.engine.editCheckpointService.hasEditsInCurrentTurn()) {
       if (this.engine.ailyChatConfigService.autoSaveEdits) {
