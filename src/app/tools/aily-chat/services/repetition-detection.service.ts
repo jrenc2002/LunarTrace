@@ -38,6 +38,8 @@ export interface RepetitionCheckResult {
   suggestion?: string;
   /** think 状态转换信息（供调用方同步 UI 状态） */
   thinkTransition?: 'entered' | 'exited';
+  /** 非阻塞式大小警告（不中断流，由调用方在流中注入提示） */
+  sizeWarning?: string;
 }
 
 /**
@@ -247,7 +249,7 @@ export class RepetitionDetectionService {
   }
 
   /** Think 缓冲区最大长度 */
-  private readonly MAX_THINK_TOKENS = 300;
+  private readonly MAX_THINK_TOKENS = 1500;
 
   /** Think 内检测间隔（每 N 个 token 检测一次） */
   private readonly THINK_CHECK_INTERVAL = 8;
@@ -256,6 +258,20 @@ export class RepetitionDetectionService {
 
   /** 标签检测缓冲区（处理跨 token 的 <think>/<\/think> 标签拆分） */
   private tagBuffer = '';
+
+  // ==================== 兜底：单次 SSE 输出总大小限制 ====================
+
+  /** 单次 SSE 响应累积的总字节数 */
+  private totalStreamBytes = 0;
+
+  /** 大小软警告间隔（每 3MB 发出一次非阻塞警告） */
+  private readonly SIZE_WARNING_INTERVAL_BYTES = 3 * 1024 * 1024;
+
+  /** 单次 SSE 响应绝对上限（5MB），超过即强制中断 */
+  private readonly MAX_SINGLE_RESPONSE_BYTES = 5 * 1024 * 1024;
+
+  /** 下一次触发大小警告的字节阈值（每次警告后递增一个 interval） */
+  private nextSizeWarningBytes = this.SIZE_WARNING_INTERVAL_BYTES;
 
   /** 非 Think 内容的 token 缓冲区（Layer 1/4/5 只在此缓冲区上检测，避免 think 内容污染） */
   private nonThinkStreamTokens: string[] = [];
@@ -391,6 +407,7 @@ export class RepetitionDetectionService {
   }
 
   private pushStreamToken(token: string): void {
+    this.totalStreamBytes += token.length;
     this.streamTokens.push(token);
     if (this._cachedStreamText !== null) {
       this._cachedStreamText += token;
@@ -1553,6 +1570,24 @@ export class RepetitionDetectionService {
   checkStreamRepetition(token: string): RepetitionCheckResult {
     const chunkResult = this.processStreamChunk(token);
 
+    // Layer -1（兜底）: 绝对上限强制中断
+    if (this.totalStreamBytes > this.MAX_SINGLE_RESPONSE_BYTES) {
+      return {
+        isRepetitive: true,
+        pattern: `单次输出已超过 ${Math.round(this.MAX_SINGLE_RESPONSE_BYTES / 1024 / 1024)}MB (${(this.totalStreamBytes / 1024 / 1024).toFixed(1)}MB)`,
+        suggestion: '输出内容异常庞大，可能存在无限循环。',
+        thinkTransition: this.lastThinkTransition ?? undefined,
+      };
+    }
+
+    // 软警告：每 3MB 发出一次，不中断流
+    let sizeWarning: string | undefined;
+    if (this.totalStreamBytes >= this.nextSizeWarningBytes) {
+      const currentMB = (this.totalStreamBytes / 1024 / 1024).toFixed(1);
+      sizeWarning = `当前单次输出已达 ${currentMB}MB，内容可能存在循环，如需停止请点击取消按钮`;
+      this.nextSizeWarningBytes += this.SIZE_WARNING_INTERVAL_BYTES;
+    }
+
     if (chunkResult.sawThinkContent || chunkResult.thinkClosedInChunk) {
       const thinkResult = this.checkThinkRepetition();
       if (chunkResult.thinkClosedInChunk) {
@@ -1568,21 +1603,21 @@ export class RepetitionDetectionService {
     }
 
     if (this.insideThink) {
-      return { isRepetitive: false, thinkTransition: this.lastThinkTransition ?? undefined };
+      return { isRepetitive: false, thinkTransition: this.lastThinkTransition ?? undefined, sizeWarning };
     }
 
     if (!chunkResult.sawNonThinkContent) {
-      return { isRepetitive: false, thinkTransition: this.lastThinkTransition ?? undefined };
+      return { isRepetitive: false, thinkTransition: this.lastThinkTransition ?? undefined, sizeWarning };
     }
 
     // 每 N 个 token 检测一次
     if (this.streamTokens.length % this.CHECK_INTERVAL !== 0) {
-      return { isRepetitive: false, thinkTransition: this.lastThinkTransition ?? undefined };
+      return { isRepetitive: false, thinkTransition: this.lastThinkTransition ?? undefined, sizeWarning };
     }
 
     // 至少需要一定数量的 token 才开始检测
     if (this.streamTokens.length < this.MIN_TOKENS_FOR_DETECTION) {
-      return { isRepetitive: false, thinkTransition: this.lastThinkTransition ?? undefined };
+      return { isRepetitive: false, thinkTransition: this.lastThinkTransition ?? undefined, sizeWarning };
     }
 
     // ★ 性能优化：只 join 一次 nonThinkStreamTokens，复用缓存
@@ -1642,7 +1677,7 @@ export class RepetitionDetectionService {
       return lineResult;
     }
 
-    return { isRepetitive: false, thinkTransition: this.lastThinkTransition ?? undefined };
+    return { isRepetitive: false, thinkTransition: this.lastThinkTransition ?? undefined, sizeWarning };
   }
 
   // -------------------- Layer 1: 短语连续重复 --------------------
@@ -2559,6 +2594,8 @@ export class RepetitionDetectionService {
     this.lastBoundaryTokenIndex = 0;
     this.insideThink = false;
     this.lastThinkTransition = null;
+    this.totalStreamBytes = 0;
+    this.nextSizeWarningBytes = this.SIZE_WARNING_INTERVAL_BYTES;
   }
 
   /**
