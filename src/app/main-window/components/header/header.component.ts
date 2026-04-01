@@ -23,6 +23,7 @@ import { AuthService } from '../../../services/auth.service';
 import { BoardSelectorDialogComponent } from '../board-selector-dialog/board-selector-dialog.component';
 import { LoginDialogComponent } from '../login-dialog/login-dialog.component';
 import { PlatformService } from '../../../services/platform.service';
+import { OpenocdService } from '../../../services/openocd.service';
 // import { AppStoreService } from '../../../tools/app-store/app-store.service';
 import { AppItem } from '../../../tools/app-store/app-store.config';
 import { APP_LIST } from '../../../configs/tool.config';
@@ -111,6 +112,7 @@ export class HeaderComponent implements OnDestroy {
     private authService: AuthService,
     private translate: TranslateService,
     private platformService: PlatformService,
+    private openocdService: OpenocdService,
     // private appStoreService: AppStoreService
   ) { }
 
@@ -284,6 +286,24 @@ export class HeaderComponent implements OnDestroy {
     // 添加STM32相关配置选项
     if (this.projectService.currentBoardConfig['core'].indexOf('stm32') > -1 &&
       this.projectService.currentBoardConfig['description'].indexOf('Series') > -1) {
+      // 调用openocd，检测所有已连接的 ST-Link 和 DAPLink 调试器
+      try {
+        const result = await this.openocdService.detectAll();
+        if (result.success && result.devices && result.devices.length > 0) {
+          portList0.push({ sep: true });
+          for (const device of result.devices) {
+            portList0.push({
+              name: `${device.type} - ${device.serial || device.description || 'Unknown'}`,
+              text: device.description || '',
+              type: 'debugger',
+              icon: device.type === 'ST-Link' ? 'fa-light fa-microchip' : 'fa-light fa-bug',
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('OpenOCD 设备检测失败:', e);
+      }
+
       let temp = this.projectService.currentBoardConfig['type'].split(':');
       let board = temp[temp.length - 1];
       // console.log('STM32开发板标识:', board);
