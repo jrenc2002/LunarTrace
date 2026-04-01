@@ -66,7 +66,16 @@ function isTransientNetworkError(err: any): boolean {
   if (status === 502 || status === 503 || status === 504) return true;
   if (err instanceof TypeError && /network/i.test(err.message || '')) return true;
   const msg = (err.message || '').toLowerCase();
-  return msg.includes('failed to fetch') || msg.includes('network') || msg.includes('econnreset');
+  if (msg.includes('failed to fetch') || msg.includes('network') || msg.includes('econnreset')) return true;
+  // 流读取中途断连（HTTP 200 但 body 未完整传输）
+  if (
+    msg.includes('err_incomplete_chunked_encoding') ||
+    msg.includes('premature close') ||
+    msg.includes('err_content_length_mismatch') ||
+    msg.includes('err_connection_closed') ||
+    msg.includes('err_http2_protocol_error')
+  ) return true;
+  return false;
 }
 
 // ===== 核心 SSE 处理 =====
@@ -169,10 +178,8 @@ async function handleFetch(cmd: any): Promise<void> {
         }
       } catch (readError: any) {
         if (readError?.name === 'AbortError' || abortCtrl.signal.aborted) return;
-        (postMessage as any)({
-          type: 'sse_error', id: cmd.id,
-          error: { name: readError.name, message: readError.message },
-        });
+        // 流读取中途断连（如 ERR_INCOMPLETE_CHUNKED_ENCODING）→ 向外抛给重试循环
+        throw readError;
       }
 
       return; // 请求成功，退出重试循环

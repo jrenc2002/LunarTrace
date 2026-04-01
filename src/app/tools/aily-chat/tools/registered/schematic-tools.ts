@@ -33,6 +33,7 @@ class GenerateSchematicTool implements IAilyTool {
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
     if (!ctx.host?.connectionGraph) return { is_error: true, content: '连线图服务不可用' };
     if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    ctx.host.connectionGraph.emitNotice?.({ title: 'AI生成中', text: '正在准备硬件组件引脚信息...', state: 'doing', showProgress: false });
     return generateSchematicHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args);
   }
 
@@ -108,6 +109,7 @@ class GetProjectContextTool implements IAilyTool {
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
     if (!ctx.host?.connectionGraph) return { is_error: true, content: '连线图服务不可用' };
     if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    ctx.host.connectionGraph.emitNotice?.({ title: 'AI生成中', text: '正在分析项目和组件信息...', state: 'doing', showProgress: false });
     return getProjectContextHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args || {});
   }
 
@@ -133,6 +135,7 @@ class ValidateSchematicTool implements IAilyTool {
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
     if (!ctx.host?.connectionGraph) return { is_error: true, content: '连线图服务不可用' };
     if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    ctx.host.connectionGraph.emitNotice?.({ title: 'AI生成中', text: '正在验证并保存连线图...', state: 'doing', showProgress: false });
     return validateSchematicHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args);
   }
 
@@ -158,6 +161,7 @@ class GeneratePinmapTool implements IAilyTool {
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
     if (!ctx.host?.connectionGraph) return { is_error: true, content: '连线图服务不可用' };
     if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    ctx.host.connectionGraph.emitNotice?.({ title: 'AI生成中', text: '正在生成引脚配置...', state: 'doing', showProgress: false });
     return generatePinmapHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args);
   }
 
@@ -183,6 +187,7 @@ class SavePinmapTool implements IAilyTool {
   async invoke(args: any, ctx: ToolContext): Promise<ToolUseResult> {
     if (!ctx.host?.connectionGraph) return { is_error: true, content: '连线图服务不可用' };
     if (!ctx.host?.project) return { is_error: true, content: '项目服务不可用' };
+    ctx.host.connectionGraph.emitNotice?.({ title: 'AI生成中', text: '正在保存引脚配置...', state: 'doing', showProgress: false });
     return savePinmapHandler(ctx.host.connectionGraph as any, ctx.host.project as any, args);
   }
 

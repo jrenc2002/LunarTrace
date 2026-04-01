@@ -1,6 +1,8 @@
 import { Injectable } from '@angular/core';
+import { Subject, Observable } from 'rxjs';
 import { ElectronService } from './electron.service';
 import { ProjectService } from './project.service';
+import { NoticeOptions } from './notice.service';
 
 // =====================================================
 // 数据类型定义（与 connection-graph 子页面共享）
@@ -399,6 +401,29 @@ export class ConnectionGraphService {
 
   /** 缓存的 iframe penpal remote API（由 IframeComponent 设置） */
   private _iframeApi: any = null;
+
+  /** 连线图生成进度通知流（工具 → iframe noticeService） */
+  private _noticeUpdate$ = new Subject<NoticeOptions>();
+
+  /** 外部订阅进度通知 */
+  get noticeUpdate$(): Observable<NoticeOptions> {
+    return this._noticeUpdate$.asObservable();
+  }
+
+  /** 工具调用时发射进度通知（由 connectionGraphTool 内部调用） */
+  emitNotice(opts: NoticeOptions): void {
+    // 本窗口观察者（嵌入模式）
+    this._noticeUpdate$.next(opts);
+    // 跨窗口：通过 IPC 通知子窗口（子窗口模式）
+    if (this.electronService.isElectron && window['ipcRenderer']) {
+      try {
+        window['ipcRenderer'].send('iframe-message-connection-graph', {
+          type: 'notice-update',
+          data: opts,
+        });
+      } catch { /* 子窗口未打开时忽略 */ }
+    }
+  }
 
   constructor(
     private electronService: ElectronService,

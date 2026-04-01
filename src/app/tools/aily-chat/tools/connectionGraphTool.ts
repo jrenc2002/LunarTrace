@@ -412,6 +412,69 @@ ${failedPinmapIds.map(f => `- ${f.pinmapId}: ${f.reason}`).join('\n')}
     
     const awsPinmapSummary = awsSummaryParts.join('\n\n');
 
+    // === 方案 A：推送预览到 iframe（板子 + 组件，无连线）===
+    if (pinSummaries.length > 1) {
+      try {
+        const previewConfigMap = new Map<string, any>();
+        const previewComponents: any[] = [];
+
+        // 添加开发板
+        if (boardConfig) {
+          previewConfigMap.set('board', boardConfig);
+          previewComponents.push({
+            refId: 'board',
+            componentId: boardConfig.id,
+            componentName: boardConfig.name,
+            pinmapId: boardPinmapId,
+            isBoard: true,
+          });
+        }
+
+        // 添加外设组件
+        for (const ci of componentInstances) {
+          const fullConfig = connectionGraphService.loadPinmapById(ci.pinmapId, packagesBasePath);
+          if (fullConfig) {
+            previewConfigMap.set(ci.alias, fullConfig);
+            previewComponents.push({
+              refId: ci.alias,
+              componentId: fullConfig.id,
+              componentName: ci.label || fullConfig.name,
+              pinmapId: ci.pinmapId,
+              instance: ci.instance,
+            });
+          }
+        }
+
+        const previewPayload = {
+          componentConfigs: Object.fromEntries(previewConfigMap),
+          components: previewComponents,
+          connections: [],   // 空连线 — 预览模式
+        };
+
+        // 嵌入模式：直接推送
+        if (connectionGraphService.hasActiveIframe) {
+          await connectionGraphService.iframeApi.receiveData(previewPayload);
+        }
+        // 子窗口模式：通过 IPC 推送
+        if (typeof window !== 'undefined' && window['ipcRenderer']) {
+          window['ipcRenderer'].send('iframe-message-connection-graph', {
+            type: 'generate-graph-updated',
+            data: previewPayload,
+          });
+        }
+
+        connectionGraphService.emitNotice?.({
+          title: 'AI生成中',
+          text: '硬件组件已就绪，正在生成连线方案...',
+          state: 'doing',
+          showProgress: false,
+        });
+      } catch (e) {
+        // 预览推送失败不影响主流程
+        console.warn('[generate_schematic] 预览推送失败:', e);
+      }
+    }
+
     const result: any = {
       awsPinmapSummary,  // AWS 格式的引脚摘要
       loadedPinmapIds,
@@ -1061,7 +1124,7 @@ export async function validateConnectionGraphTool(
     }
     connectionGraphService.saveJSONFile(jsonData);
 
-    // 8. 通知 iframe 刷新
+    // 8. 通知 iframe 刷新（嵌入模式；子窗口模式已由 saveJSONFile → IPC 处理）
     if (connectionGraphService.hasActiveIframe) {
       try {
         await connectionGraphService.iframeApi.receiveData({
@@ -1073,6 +1136,14 @@ export async function validateConnectionGraphTool(
         // iframe 通知失败不影响主流程
       }
     }
+
+    // 通知完成（嵌入 + 子窗口均生效）
+    connectionGraphService.emitNotice?.({
+      title: 'AI生成中',
+      text: '✅ 连线图已生成完成',
+      state: 'done',
+      setTimeout: 3000,
+    });
 
     const result = {
       valid: errors.length === 0,

@@ -815,11 +815,12 @@ export class ChatService {
               }
             } catch (error) {
               if ((error as Error)?.name === 'AbortError' || aborted) return;
-              observer.error(error);
+              // 流读取中途断连（如 ERR_INCOMPLETE_CHUNKED_ENCODING）→ 向外抛给重试逻辑
+              throw error;
             }
           } catch (error) {
             if ((error as Error)?.name === 'AbortError' || aborted) return;
-            // 瞬态网络错误自动重试（如 TypeError: network）
+            // 瞬态网络错误自动重试（如 TypeError: network / ERR_INCOMPLETE_CHUNKED_ENCODING）
             if (isTransientNetworkError(error) && attempt < MAX_NETWORK_RETRIES) {
               const delay = attempt === 0 ? RETRY_INITIAL_DELAY : RETRY_BASE_DELAY * Math.pow(2, attempt - 1);
               console.warn(`[chatRequest] 网络错误，${delay}ms 后第 ${attempt + 1} 次重试:`, (error as Error).message);
