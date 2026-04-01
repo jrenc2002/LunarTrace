@@ -15,10 +15,9 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { TranslateModule } from '@ngx-translate/core';
 import { NzToolTipModule } from 'ng-zorro-antd/tooltip';
-import { XMarkdownComponent, MarkdownParser, MarkdownRenderer } from 'ngx-x-markdown';
+import { XMarkdownComponent } from 'ngx-x-markdown';
 import type { StreamingOption, ComponentMap } from 'ngx-x-markdown';
 import { AilyChatCodeComponent } from './aily-chat-code.component';
 import { ChatAPI } from '../../core/api-endpoints';
@@ -88,8 +87,6 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
   private readonly subagentScrollBottomThresholdPx = 48;
 
   streamContent = signal('');
-  /** ★ 已冻结的 HTML：已渲染完毕的前段内容，不再经过 x-markdown parse */
-  frozenHtml = signal<SafeHtml>('');
   streamingConfig = signal<StreamingOption>({ hasNextChunk: false, enableAnimation: false });
   readonly componentMap: ComponentMap = { code: AilyChatCodeComponent };
 
@@ -98,12 +95,6 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
   private _preprocessTimerId: ReturnType<typeof setTimeout> | null = null;
   private _pendingContent: string | null = null;
   private _lastPreprocessTime = 0;
-  // ★ frozen/active 分片渲染：只让 x-markdown 处理最后变化的部分
-  private _frozenMarkdown = '';        // 已冻结的 markdown 源文本
-  private _frozenHtmlCache = '';       // 对应的渲染后 HTML
-  private _frozenParser: MarkdownParser | null = null;
-  private _frozenRenderer: MarkdownRenderer | null = null;
-  private static readonly FREEZE_THRESHOLD = 1500; // 超过此长度启用分片
   // ★ filterToolCalls 缓存：避免每次 preprocess 都全量 split + parse
   private _ftcCacheInput = '';
   private _ftcCacheOutput = '';
@@ -127,7 +118,6 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
   constructor(
     private editCheckpointService: EditCheckpointService,
     private cdr: ChangeDetectorRef,
-    private sanitizer: DomSanitizer,
   ) {}
 
   /** 是否可显示操作栏（非 doing 的最后一条 aily 消息） */
@@ -510,231 +500,8 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
     const processed = this.preprocess(content);
     if (processed !== this.lastRaw) {
       this.lastRaw = processed;
-      this._setStreamContent(processed);
-    }
-  }
-
-  /**
-   * ★ Frozen/Active 分片渲染核心
-   *
-   * 当 processed markdown > FREEZE_THRESHOLD 且正在流式时：
-   * 1. 找到安全分割点（最后一个段落边界，不能在代码块内）
-   * 2. 前段一次性 parse+sanitize → frozenHtml（innerHTML 直出，不再重复 parse）
-   * 3. 后段（active tail）→ streamContent → x-markdown 实时渲染
-   *
-   * 效果：x-markdown 每帧只 parse 几 KB 的 active tail，而不是全部 50-100KB+
-   */
-  private _setStreamContent(processed: string): void {
-    if (!this.doing || processed.length < XDialogComponent.FREEZE_THRESHOLD) {
-      if (!this.doing && this._frozenMarkdown) {
-        this._frozenMarkdown = '';
-        this._frozenHtmlCache = '';
-        this.frozenHtml.set('');
-      }
       this.streamContent.set(processed);
-      return;
     }
-
-    // ★ 增量冻结：只有当 processed 在当前 frozen 基础上追加时才增量处理
-    if (this._frozenMarkdown && processed.startsWith(this._frozenMarkdown)) {
-      const activeTail = processed.slice(this._frozenMarkdown.length);
-      this.streamContent.set(activeTail);
-      return;
-    }
-
-    // ★ 关键约束：流式 think (isComplete:false) 必须在 active tail 中
-    // frozen 是静态 HTML，无法轮询 store 获取最新 think 内容
-    // 找到第一个 isComplete:false 的 think 块位置作为冻结上限
-    const freezeCeiling = this._findFirstStreamingThinkPos(processed);
-
-    // 寻找安全分割点：在代码块外的最后一个 \n\n
-    const splitPos = this._findSafeSplitPoint(processed, freezeCeiling);
-    if (splitPos <= 0) {
-      // 找不到安全分割点，退回全量模式
-      // ★ 必须清除 frozenHtml，否则旧 frozen + 全量 streamContent = 重复渲染
-      this._frozenMarkdown = '';
-      this._frozenHtmlCache = '';
-      this.frozenHtml.set('');
-      this.streamContent.set(processed);
-      return;
-    }
-
-    const adjustedFrozen = processed.slice(0, splitPos);
-    const adjustedActive = processed.slice(splitPos);
-
-    // 只有当 frozen 部分变化时才重新渲染
-    if (adjustedFrozen !== this._frozenMarkdown) {
-      this._frozenMarkdown = adjustedFrozen;
-      if (!this._frozenParser) {
-        this._frozenParser = new MarkdownParser();
-        this._frozenRenderer = new MarkdownRenderer({ components: this.componentMap });
-      }
-      // ★ 关键：将 aily-* 代码块预渲染为静态 HTML
-      // frozen [innerHTML] 不会调用 injectDynamicComponents()，
-      // 如果不替换，aily-think 等代码块会显示为原始 <code> 元素（部分/空 think）
-      const frozenForParse = this._preRenderFrozenBlocks(adjustedFrozen);
-      const html = this._frozenParser.parse(frozenForParse);
-      this._frozenHtmlCache = this._frozenRenderer!.render(html);
-      this.frozenHtml.set(this.sanitizer.bypassSecurityTrustHtml(this._frozenHtmlCache));
-    }
-
-    this.streamContent.set(adjustedActive);
-  }
-
-  /**
-   * 找到 processed 中第一个 isComplete:false 的 aily-think 代码块位置。
-   * 返回该代码块之前的 \n 位置，作为冻结上限。
-   * 如果没有流式 think，返回 -1（不限制）。
-   */
-  private _findFirstStreamingThinkPos(text: string): number {
-    const marker = '```aily-think\n';
-    let searchPos = 0;
-    while (searchPos < text.length) {
-      const blockStart = text.indexOf(marker, searchPos);
-      if (blockStart === -1) return -1;
-      const jsonStart = blockStart + marker.length;
-      const blockEnd = text.indexOf('\n```', jsonStart);
-      if (blockEnd === -1) {
-        // 未闭合的代码块 — 视为流式
-        return blockStart > 0 ? blockStart : 0;
-      }
-      const jsonStr = text.slice(jsonStart, blockEnd).trim();
-      try {
-        const data = JSON.parse(jsonStr);
-        if (data.isComplete === false) {
-          return blockStart > 0 ? blockStart : 0;
-        }
-      } catch { /* 解析失败，跳过 */ }
-      searchPos = blockEnd + 4; // skip \n```
-    }
-    return -1;
-  }
-
-  /**
-   * 在 processed markdown 中找到安全的分割点。
-   * 安全 = 在代码块外的 \n\n 位置。
-   * 返回分割位置（split 之前的内容不包含未闭合代码块）。
-   * 留至少 2KB 给 active tail。
-   */
-  /**
-   * 在 processed markdown 中找到安全的分割点。
-   * 安全 = 在代码块外的 \n\n 位置，且不超过 freezeCeiling（流式 think 位置）。
-   * 留至少 2KB 给 active tail。
-   */
-  private _findSafeSplitPoint(text: string, freezeCeiling: number = -1): number {
-    const minTail = 2000;
-    let searchEnd = text.length - minTail;
-    if (searchEnd <= 0) return -1;
-
-    // ★ 流式 think 约束：冻结上限不能超过第一个 isComplete:false 的 think 位置
-    if (freezeCeiling >= 0 && freezeCeiling < searchEnd) {
-      searchEnd = freezeCeiling;
-    }
-    if (searchEnd <= 0) return -1;
-
-    // 从 searchEnd 向前找最近的 \n\n
-    let pos = text.lastIndexOf('\n\n', searchEnd);
-    if (pos <= 0) return -1;
-
-    // 验证 pos 处不在代码块内
-    // 简单的方法：数 pos 之前 ``` 的奇偶性
-    let fenceCount = 0;
-    let searchPos = 0;
-    while (true) {
-      const fenceIdx = text.indexOf('```', searchPos);
-      if (fenceIdx === -1 || fenceIdx >= pos) break;
-      fenceCount++;
-      searchPos = fenceIdx + 3;
-    }
-    if (fenceCount % 2 !== 0) {
-      // 在代码块内，向前找上一个 ``` 之前的 \n\n
-      const lastFence = text.lastIndexOf('```', pos);
-      if (lastFence > 0) {
-        pos = text.lastIndexOf('\n\n', lastFence - 1);
-      } else {
-        return -1;
-      }
-    }
-
-    return pos > 0 ? pos : -1;
-  }
-
-  /**
-   * ★ 预渲染 frozen 中的 aily-* 代码块为静态 HTML
-   *
-   * frozen [innerHTML] 不经过 x-markdown 的 injectDynamicComponents()，
-   * 因此 aily-think/aily-state 等代码块如果原样保留，会渲染为 <code> 元素
-   * 导致用户看到 JSON 文本或空/部分 think 块。
-   *
-   * 此方法将它们替换为视觉等效的静态 HTML（inline 样式 + FA 图标），
-   * marked.js 会保留 block-level HTML，DOMPurify 允许 style/class 属性。
-   */
-  private _preRenderFrozenBlocks(markdown: string): string {
-    // aily-think → 静态折叠式 think header
-    markdown = markdown.replace(
-      /\n```aily-think\n([\s\S]*?)\n```\n/g,
-      (_match, jsonStr: string) => {
-        try {
-          const data = JSON.parse(jsonStr.trim());
-          const isComplete = data.isComplete !== false;
-          const icon = isComplete
-            ? '<i class="fa-light fa-circle-check" style="color:#52c41a;flex-shrink:0;margin-right:5px;"></i>'
-            : '<i class="fa-duotone fa-solid fa-loader" style="color:#1890ff;flex-shrink:0;margin-right:5px;"></i>';
-          const label = isComplete ? 'Think' : 'Thinking...';
-          return '\n<div style="border-radius:5px;padding:5px 10px;margin:4px 0;background-color:#3a3a3a;color:#ccc;">'
-            + '<div style="display:flex;align-items:center;gap:6px;font-size:13px;">'
-            + icon + '<span>' + label + '</span></div></div>\n';
-        } catch {
-          return '\n';
-        }
-      }
-    );
-
-    // aily-state → 静态状态指示行
-    markdown = markdown.replace(
-      /\n```aily-state\n([\s\S]*?)\n```\n/g,
-      (_match, jsonStr: string) => {
-        try {
-          const data = JSON.parse(jsonStr.trim());
-          const state: string = data.state || 'done';
-          const text: string = data.text || data.name || '';
-          let iconCls: string, color: string;
-          if (state === 'done') { iconCls = 'fa-circle-check'; color = '#52c41a'; }
-          else if (state === 'error' || state === 'warn') { iconCls = 'fa-triangle-exclamation'; color = '#faad14'; }
-          else { iconCls = 'fa-loader'; color = '#1890ff'; }
-          return '\n<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px;color:#999;">'
-            + '<i class="fa-light ' + iconCls + '" style="color:' + color + ';flex-shrink:0;"></i>'
-            + '<span>' + this._escapeHtml(text) + '</span></div>\n';
-        } catch {
-          return '\n';
-        }
-      }
-    );
-
-    // aily-context → 静态上下文标签
-    markdown = markdown.replace(
-      /\n```aily-context\n([\s\S]*?)\n```\n/g,
-      (_match, jsonStr: string) => {
-        try {
-          const data = JSON.parse(jsonStr.trim());
-          const label: string = data.label || '附加上下文';
-          return '\n<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px;color:#888;">'
-            + '<i class="fa-light fa-paperclip" style="flex-shrink:0;"></i>'
-            + '<span>' + this._escapeHtml(label) + '</span></div>\n';
-        } catch {
-          return '\n';
-        }
-      }
-    );
-
-    // 其他 aily-* 代码块：移除（冻结区不显示交互型组件）
-    markdown = markdown.replace(/\n```aily-\w+\n[\s\S]*?\n```\n/g, '\n');
-
-    return markdown;
-  }
-
-  private _escapeHtml(s: string): string {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   onSubagentBodyScroll(event: Event): void {
@@ -762,8 +529,6 @@ export class XDialogComponent implements OnChanges, AfterViewChecked, OnDestroy 
     if (this._preprocessRafId !== null) cancelAnimationFrame(this._preprocessRafId);
     if (this._preprocessTimerId !== null) clearTimeout(this._preprocessTimerId);
     for (const key of this._thinkRefKeys) deleteThinkContent(key);
-    this._frozenParser = null;
-    this._frozenRenderer = null;
   }
 
   // ===== Preprocessing =====

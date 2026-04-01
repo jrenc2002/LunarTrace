@@ -16,9 +16,6 @@
     </div>
     @if (subagentExpanded) {
       <div class="subagent-fold-body" #subagentBody (scroll)="onSubagentBodyScroll($event)">
-        @if (frozenHtml()) {
-          <div class="x-markdown x-markdown-dark frozen-content" [innerHTML]="frozenHtml()"></div>
-        }
         @if (streamContent()) {
           <x-markdown
             [content]="streamContent()"
@@ -132,9 +129,6 @@
       </div>
     } @else {
       <div class="content" [class.thinking]="content==='[thinking...]'">
-        @if (frozenHtml()) {
-          <div class="x-markdown x-markdown-dark frozen-content" [innerHTML]="frozenHtml()"></div>
-        }
         @if (streamContent()) {
           <x-markdown
             [content]="streamContent()"
