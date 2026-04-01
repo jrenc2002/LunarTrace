@@ -293,6 +293,7 @@ export class ChatViewAdapter {
     const segments = this._computeMergedChunks();
 
     // 单次 zone entry：flush mutations + action → 1 次 CD
+    const _imfSpan = ChatPerformanceTracer.begin('_immediateFlushAndRun', `${segments.length}segs`);
     this._runInZone(() => {
       for (const seg of segments) {
         this._doAppendMessage(seg.role, seg.content, seg.source);
@@ -302,6 +303,7 @@ export class ChatViewAdapter {
       this.scrollToBottom?.();
       this.onFlushCallback?.();
     });
+    ChatPerformanceTracer.end(_imfSpan, '_immediateFlushAndRun');
   }
 
   /**

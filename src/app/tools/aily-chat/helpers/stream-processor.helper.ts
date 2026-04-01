@@ -245,7 +245,9 @@ export class StreamProcessorHelper {
             // ★ P0-perf: 工具请求到达前强制 flush 所有 pending 内容（含 </think>），
             // 避免 silent 工具（如 todo_write_tool）跳过 startToolCall → _immediateFlushAndRun，
             // 导致 </think> 留在 pendingChunks 直到下一帧才渲染。
+            const _fnSpan = ChatPerformanceTracer.begin('flushNow_toolReq');
             this.engine.viewAdapter.flushNow();
+            ChatPerformanceTracer.end(_fnSpan, 'flushNow_toolReq');
             this.engine.repetitionDetectionService.markBoundary('tool_call');
 
             // 内部工具（服务端已执行，前端仅展示）
@@ -559,7 +561,9 @@ export class StreamProcessorHelper {
                 case 'warn': finalState = ToolCallState.WARN; break;
                 default: finalState = ToolCallState.DONE; break;
               }
+              const _ctcSpan = ChatPerformanceTracer.begin('completeToolCall', data.tool_name);
               this.engine.msg.completeToolCall(data.tool_id, data.tool_name, finalState, resultText);
+              ChatPerformanceTracer.end(_ctcSpan, 'completeToolCall', data.tool_name);
             }
 
             this.engine.repetitionDetectionService.recordToolCallOutcome(toolCallId, data.tool_name, toolArgs, {

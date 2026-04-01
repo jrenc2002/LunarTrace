@@ -24,12 +24,33 @@ interface TraceEntry {
   detail?: string;
 }
 
-const MAX_LOG = 500;
+const MAX_LOG = 5000;
 const log: TraceEntry[] = [];
+/** 关键事件独立 buffer — 不被高频 streaming 事件覆盖 */
+const KEY_MAX = 500;
+const keyLog: TraceEntry[] = [];
+/** 高频标签集 — 这些 tag 不写入 keyLog */
+const HIGH_FREQ_TAGS = new Set(['sse_chunk', 'preprocess_rAF_scheduled']);
 let seqId = 0;
 
 function isEnabled(): boolean {
   try { return !!(globalThis as any).__AILY_PERF_TRACE; } catch { return false; }
+}
+
+function isHighFreq(tag: string): boolean {
+  if (HIGH_FREQ_TAGS.has(tag)) return true;
+  // doFlush / preprocess_rAF_exec 带有 [id] 前缀
+  const inner = tag.includes('] ') ? tag.slice(tag.indexOf('] ') + 2) : tag;
+  return inner === 'doFlush' || inner === 'preprocess_rAF_exec';
+}
+
+function pushEntry(entry: TraceEntry): void {
+  log.push(entry);
+  if (log.length > MAX_LOG) log.splice(0, log.length - MAX_LOG);
+  if (!isHighFreq(entry.tag)) {
+    keyLog.push(entry);
+    if (keyLog.length > KEY_MAX) keyLog.splice(0, keyLog.length - KEY_MAX);
+  }
 }
 
 export class ChatPerformanceTracer {
@@ -45,31 +66,46 @@ export class ChatPerformanceTracer {
   static begin(tag: string, detail?: string): number {
     if (!isEnabled()) return -1;
     const id = ++seqId;
-    log.push({ tag: `[${id}] ${tag}`, phase: 'start', t: performance.now(), detail });
-    if (log.length > MAX_LOG) log.splice(0, log.length - MAX_LOG);
+    pushEntry({ tag: `[${id}] ${tag}`, phase: 'start', t: performance.now(), detail });
     return id;
   }
 
   /** 结束一个命名 span */
   static end(spanId: number, tag: string, detail?: string): void {
     if (!isEnabled() || spanId < 0) return;
-    log.push({ tag: `[${spanId}] ${tag}`, phase: 'end', t: performance.now(), detail });
-    if (log.length > MAX_LOG) log.splice(0, log.length - MAX_LOG);
+    pushEntry({ tag: `[${spanId}] ${tag}`, phase: 'end', t: performance.now(), detail });
   }
 
   /** 打点（无 start/end 对） */
   static mark(tag: string, detail?: string): void {
     if (!isEnabled()) return;
-    log.push({ tag, phase: 'start', t: performance.now(), detail });
-    if (log.length > MAX_LOG) log.splice(0, log.length - MAX_LOG);
+    pushEntry({ tag, phase: 'start', t: performance.now(), detail });
   }
 
   // ─── 输出与调试 ───
 
-  /** 打印最近的事件日志 */
-  static dump(count = 200): void {
+  /** 打印最近的全部事件日志 */
+  static dump(count = 500): void {
     const entries = log.slice(-count);
     if (entries.length === 0) { console.log('[PerfTracer] 无记录'); return; }
+
+    const t0 = entries[0].t;
+    const rows = entries.map(e => ({
+      '∆ms': +(e.t - t0).toFixed(2),
+      'phase': e.phase,
+      'tag': e.tag,
+      'detail': e.detail || '',
+    }));
+    console.table(rows);
+  }
+
+  /**
+   * 打印关键事件（工具调用、startChatTurn 阶段、LONG_TASK 等）
+   * 不含高频 streaming 事件（sse_chunk / doFlush / preprocess），定位卡顿首选
+   */
+  static dumpKey(count = 200): void {
+    const entries = keyLog.slice(-count);
+    if (entries.length === 0) { console.log('[PerfTracer] 无关键事件'); return; }
 
     const t0 = entries[0].t;
     const rows = entries.map(e => ({
@@ -104,7 +140,7 @@ export class ChatPerformanceTracer {
   }
 
   /** 清空日志 */
-  static reset(): void { log.length = 0; seqId = 0; }
+  static reset(): void { log.length = 0; keyLog.length = 0; seqId = 0; }
 }
 
 // 暴露到全局方便 Console 调用

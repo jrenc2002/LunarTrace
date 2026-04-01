@@ -544,7 +544,9 @@ export class ChatEngineService {
     ));
     ChatPerformanceTracer.end(_yieldSpan, 'executeRegisteredTool_yield');
 
+    const _execSpan = ChatPerformanceTracer.begin('tool_execute', toolName);
     const toolResult = await ToolRegistry.execute(toolName, toolArgs, ctx);
+    ChatPerformanceTracer.end(_execSpan, 'tool_execute', `${toolName} err=${toolResult?.is_error ?? false}`);
     const resultText = ToolRegistry.getResultText(toolName, toolArgs, toolResult);
     if (toolName === 'create_project' && toolResult?.is_error) {
       AilyHost.get().ui?.updateFooterState({ state: 'warn', text: '项目创建失败' });
