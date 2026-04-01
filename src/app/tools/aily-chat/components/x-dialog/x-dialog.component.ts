@@ -19,8 +19,8 @@ import type { StreamingOption, ComponentMap } from 'ngx-x-markdown';
 import { AilyChatCodeComponent } from './aily-chat-code.component';
 import { ChatAPI } from '../../core/api-endpoints';
 import { AilyHost } from '../../core/host';
-import { EditCheckpointService } from '../../services/edit-checkpoint.service';
 import { ResourceItem } from '../../core/chat-types';
+
 
 @Component({
   selector: 'aily-x-dialog',
@@ -40,14 +40,15 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   /** 当前会话 ID */
   @Input() sessionId = '';
   @Input() msgIndex = -1;
-  @Input() activeCheckpointAnchorIndex: number | null = null;
   @Input() currentMode = 'agent';
   @Input() currentModelName = '';
   /** 该消息创建时使用的模型名称 */
   @Input() turnModelName = '';
   @Input() isWaiting = false;
 
-  @Output() checkpointHoverChange = new EventEmitter<number | null>();
+  /** 本组件 dialog-box 是否被 hover */
+  dialogBoxHovered = false;
+
   @Output() editAndResend = new EventEmitter<{ msgIndex: number; newText: string; resources: ResourceItem[] }>();
   @Output() editModeToggle = new EventEmitter<{ event: MouseEvent; type: 'mode' }>();
   @Output() editModelToggle = new EventEmitter<{ event: MouseEvent; type: 'model' }>();
@@ -94,7 +95,7 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   editResources: ResourceItem[] = [];
   showEditAddList = false;
 
-  constructor(private editCheckpointService: EditCheckpointService) {}
+  constructor() {}
 
   /** 是否可显示操作栏（非 doing 的最后一条 aily 消息） */
   get canShowActions(): boolean {
@@ -114,7 +115,7 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   }
 
   get showCheckpointAnchor(): boolean {
-    return this.canRenderCheckpointAnchor && this.activeCheckpointAnchorIndex === this.msgIndex;
+    return this.canRenderCheckpointAnchor && this.dialogBoxHovered;
   }
 
   /** 是否可编辑用户消息（非 doing 的 user 消息） */
@@ -124,18 +125,12 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
 
   onDialogMouseEnter(): void {
     this.showActions = true;
-    // 悬停任意消息时，激活该 turn 对应 user 消息上的检查点锚点
-    const anchorListIndex = this.editCheckpointService.getTurnStartListIndexByAnyListIndex(this.msgIndex);
-    if (anchorListIndex !== null) {
-      this.checkpointHoverChange.emit(anchorListIndex);
-    } else {
-      this.checkpointHoverChange.emit(null);
-    }
+    this.dialogBoxHovered = true;
   }
 
   onDialogMouseLeave(): void {
     this.showActions = false;
-    this.checkpointHoverChange.emit(null);
+    this.dialogBoxHovered = false;
   }
 
   onRegenerate(): void {
