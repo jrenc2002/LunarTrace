@@ -215,6 +215,7 @@ export class ChatEngineService {
       () => { if (this.sessionId) { this.chatHistoryService.markDirty(this.sessionId); } },
       this.ngZone,
       undefined, // cdCallback — 由 component 通过 setCdCallback 注入
+      () => this.scrollManager.scrollToBottom(), // scrollToBottom — 流式 rAF flush 后自动滚动
     );
   }
 
