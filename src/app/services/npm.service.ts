@@ -9,6 +9,7 @@ import { CmdService } from './cmd.service';
 import { WorkflowService } from './workflow.service';
 import { TranslateService } from '@ngx-translate/core';
 import { NoticeService } from './notice.service';
+import { LogService } from './log.service';
 
 @Injectable({
   providedIn: 'root'
@@ -23,7 +24,8 @@ export class NpmService {
     private cmdService: CmdService,
     private workflowService: WorkflowService,
     private translate: TranslateService,
-    private noticeService: NoticeService
+    private noticeService: NoticeService,
+    private logService: LogService
   ) { }
 
   isInstalling = false;
@@ -124,13 +126,26 @@ export class NpmService {
       showProgress: false,
       setTimeout: 300000
     });
-    // 添加超时保护和正确的参数名
-    await Promise.race([
-      window['npm'].run({ cmd: cmd }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(this.translate.instant('NPM.INSTALL_TIMEOUT'))), 300000) // 5分钟超时
-      )
-    ]);
+    try {
+      // 添加超时保护和正确的参数名
+      await Promise.race([
+        window['npm'].run({ cmd: cmd }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(this.translate.instant('NPM.INSTALL_TIMEOUT'))), 300000) // 5分钟超时
+        )
+      ]);
+    } catch (error) {
+      console.error(`安装开发板 ${board.name} 失败:`, error);
+      this.noticeService.update({
+        title: this.translate.instant('NPM.INSTALL_FAILED_TITLE'),
+        text: this.translate.instant('NPM.INSTALLING', { name: board.name }),
+        detail: error?.message || String(error),
+        state: 'error'
+      });
+      this.isInstalling = false;
+      this.workflowService.finishInstall(false, error?.message || String(error));
+      throw error;
+    }
 
     // this.uiService.updateFooterState({ state: 'done', text: this.translate.instant('NPM.BOARD_INSTALL_COMPLETE') });
     this.noticeService.update({ 
@@ -216,6 +231,11 @@ export class NpmService {
           console.log(`依赖 ${key} 安装成功, 时间: ${new Date().toISOString()}`);
         } catch (error) {
           console.error(`依赖 ${key} 安装失败:`, error);
+          this.logService.update({
+            title: `npm install ${key}@${version} 失败`,
+            detail: error?.message || String(error),
+            state: 'error'
+          });
         }
       }
 
@@ -235,6 +255,7 @@ export class NpmService {
       this.noticeService.update({ 
         title: this.translate.instant('NPM.INSTALL_FAILED_TITLE'), 
         text: this.translate.instant('NPM.BOARD_DEPS_INSTALL_FAILED'), 
+        detail: error?.message || String(error),
         state: 'error'
       });
       this.workflowService.finishInstall(false, this.translate.instant('NPM.BOARD_DEPS_INSTALL_FAILED'));

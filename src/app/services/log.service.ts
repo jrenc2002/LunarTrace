@@ -21,6 +21,11 @@ export class LogService {
    * @param opts - 要更新和发送的日志选项。
    */
   update(opts: LogOptions) {
+    // 过滤掉无效的日志条目
+    if (!opts.title && !opts.detail) return;
+    if (opts.title === 'undefined') opts.title = '';
+    if (opts.detail === 'undefined') opts.detail = '';
+
     opts['timestamp'] = Date.now();
     // opts['showDetail'] = false;
     this.list.push(opts);

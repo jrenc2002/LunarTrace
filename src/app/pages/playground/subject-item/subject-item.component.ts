@@ -48,7 +48,7 @@ export class SubjectItemComponent {
     private playgroundService: PlaygroundService,
     private uiService: UiService,
     private platformService: PlatformService,
-    private translate: TranslateService
+    private translate: TranslateService,
   ) { }
 
   ngOnInit() {

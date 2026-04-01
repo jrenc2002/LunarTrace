@@ -11,6 +11,10 @@ export interface CmdOutput {
   signal?: string;
   error?: string;
   streamId: string;
+  /** close 事件时附带的累积 stderr 输出 */
+  stderr?: string;
+  /** close 事件时附带的累积 stdout 输出 */
+  stdout?: string;
 }
 
 export interface CmdOptions {
@@ -56,8 +60,45 @@ export class CmdService {
       ...options,
       streamId
     };
+    // 累积 stderr/stdout 输出，在 close 事件时附加到返回数据中
+    const MAX_COLLECTED_SIZE = 2000;
+    let collectedStderr = '';
+    let collectedStdout = '';
+
     // 注册数据监听器
     const removeListener = window['cmd'].onData(streamId, (data: CmdOutput) => {
+      // 累积 stderr/stdout 数据
+      if (data.type === 'stderr' && data.data) {
+        collectedStderr += data.data;
+        if (collectedStderr.length > MAX_COLLECTED_SIZE) {
+          collectedStderr = collectedStderr.slice(-MAX_COLLECTED_SIZE);
+        }
+      } else if (data.type === 'stdout' && data.data) {
+        collectedStdout += data.data;
+        if (collectedStdout.length > MAX_COLLECTED_SIZE) {
+          collectedStdout = collectedStdout.slice(-MAX_COLLECTED_SIZE);
+        }
+      }
+
+      // close 事件时，将累积的 stderr/stdout 附加到事件对象上
+      if (data.type === 'close') {
+        data.stderr = collectedStderr;
+        data.stdout = collectedStdout;
+
+        // 命令以非零退出码结束且有 stderr 时，自动写入日志面板
+        // 跳过 taskkill/pkill 等进程清理命令（找不到进程时返回非零是正常的）
+        const lowerCmd = command.toLowerCase();
+        const isCleanupCmd = lowerCmd === 'taskkill' || lowerCmd === 'pkill' || lowerCmd === 'kill' || lowerCmd === 'killall';
+        if (data.code !== 0 && collectedStderr && !isCleanupCmd) {
+          const fullCmd = [command, ...(args || [])].join(' ');
+          this.logService.update({
+            title: `命令执行失败: ${fullCmd}`,
+            detail: collectedStderr,
+            state: 'error'
+          });
+        }
+      }
+
       subject.next(data);
 
       // 如果是关闭或错误事件，完成Observable

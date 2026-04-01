@@ -171,13 +171,15 @@ export class BlocklyEditorComponent implements OnInit, AfterViewInit, OnDestroy 
           showProgress: false,
         });
       }, 0);
-      await this.cmdService.runAsync(`npm install`, projectPath);
+      const npmResult = await this.cmdService.runAsync(`npm install`, projectPath);
       if (!(await this.npmService.installedOk(projectPath))) {
         setTimeout(() => {
           this.noticeService.update({
             title: this.translate.instant('NPM.INSTALL_FAILED_TITLE'),
             text: this.translate.instant('NPM.BOARD_DEPS_INSTALL_FAILED'),
+            detail: npmResult?.stderr || 'npm install 执行完成但依赖检查未通过',
             state: 'error',
+            sendToLog: false,
           });
         }, 1000);
         return;

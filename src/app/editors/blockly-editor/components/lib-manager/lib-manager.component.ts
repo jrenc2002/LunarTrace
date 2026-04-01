@@ -61,7 +61,7 @@ export class LibManagerComponent {
     private crossPlatformCmdService: CrossPlatformCmdService,
     private electronService: ElectronService,
     private platformService: PlatformService,
-    private workflowService: WorkflowService
+    private workflowService: WorkflowService,
   ) {
   }
 
@@ -207,10 +207,10 @@ export class LibManagerComponent {
     this.message.loading(`${lib.nickname} ${this.translate.instant('LIB_MANAGER.INSTALLING')}...`);
     this.output = '';
     try {
-      const { code } = await this.cmdService.runAsync(`npm install ${lib.name}@${lib.version}`, this.projectService.currentProjectPath);
+      const { code, stderr } = await this.cmdService.runAsync(`npm install ${lib.name}@${lib.version}`, this.projectService.currentProjectPath);
 
       if (code !== 0) {
-        throw new Error();
+        throw new Error(stderr || `退出码: ${code}`);
       }
 
       this.libraryList = this.applyLocalization(await this.checkInstalled(this.libraryList));
@@ -402,10 +402,10 @@ export class LibManagerComponent {
       const importedLibraryPath = await this.copyLibraryToProject(folderPath);
 
       // 使用 npm install 安装本地库
-      const { code } = await this.cmdService.runAsync(`npm install "${importedLibraryPath}"`, this.projectService.currentProjectPath);
+      const { code, stderr } = await this.cmdService.runAsync(`npm install "${importedLibraryPath}"`, this.projectService.currentProjectPath);
 
       if (code !== 0) {
-        throw new Error('安装导入库失败');
+        throw new Error(stderr || '安装导入库失败');
       }
 
       // 重新检查已安装的库

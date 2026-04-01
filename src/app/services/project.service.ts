@@ -78,7 +78,7 @@ export class ProjectService {
     private workflowService: WorkflowService,
     private translate: TranslateService,
     private noticeService: NoticeService,
-    private modal: NzModalService
+    private modal: NzModalService,
   ) {
   }
 
