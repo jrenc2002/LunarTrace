@@ -980,7 +980,7 @@ export async function validateConnectionGraphTool(
               ? `连线配置基本安全，但有 ${warnings.length} 条警告需要注意。`
               : '连线配置安全，所有检查通过。')
             : `发现 ${errors.length} 个安全问题，请修正后重新验证。`,
-          tip: '用户可以点击右侧工具栏的「查看接线」按钮查看连线图。',
+          tip: '用户可以点击右侧工具栏的「电路连接」按钮查看连线图。',
         }, null, 2),
       };
     }
@@ -1161,7 +1161,7 @@ export async function validateConnectionGraphTool(
           : '连线配置安全，所有检查通过。数据已保存。')
         : `发现 ${errors.length} 个安全问题，请修正后重新验证。`,
       awsWarnings: parsed.warnings.length > 0 ? parsed.warnings : undefined,
-      tip: '用户可以点击右侧工具栏的「查看接线」按钮查看连线图。',
+      tip: '用户可以点击右侧工具栏的「电路连接」按钮查看连线图。',
     };
 
     return {

@@ -731,6 +731,8 @@ Do not create non-existent boards and libraries.
         this.ensureAbsExport();
         // 同步自动保存配置
         this.editCheckpointService.autoSaveEdits = this.ailyChatConfigService.autoSaveEdits;
+        // Turn 开始前先持久化前一轮 checkpoint（防止崩溃丢数据）
+        this.saveCheckpointToDisk();
         // 启动新 turn 的 checkpoint
         this.editCheckpointService.startTurn(
           0,
@@ -912,6 +914,25 @@ Do not create non-existent boards and libraries.
     this.absAutoSyncService.exportToAbs().catch(err => {
       console.warn('[ChatEngine] ABS 自动导出失败:', err);
     });
+  }
+
+  /**
+   * Turn 开始前将已有 checkpoint 数据持久化到磁盘。
+   * 确保前一轮的快照不因崩溃而丢失（基线快照策略）。
+   */
+  private saveCheckpointToDisk(): void {
+    if (this.editCheckpointService.getTotalEditCount() === 0) return;
+    const projectPath = this.prjPath
+      || this.chatService.currentSessionPath
+      || AilyHost.get().project.currentProjectPath;
+    if (projectPath && this.sessionId) {
+      try {
+        this.editCheckpointService.commitCurrentTurn();
+        this.editCheckpointService.saveToDisk(projectPath, this.sessionId);
+      } catch (err) {
+        console.warn('[ChatEngine] checkpoint saveToDisk before turn failed:', err);
+      }
+    }
   }
 
   // ==================== 模式 / 模型切换 ====================
@@ -1285,6 +1306,8 @@ Do not create non-existent boards and libraries.
     this.ensureAbsExport();
     // 同步自动保存配置
     this.editCheckpointService.autoSaveEdits = this.ailyChatConfigService.autoSaveEdits;
+    // Turn 开始前先持久化前一轮 checkpoint（防止崩溃丢数据）
+    this.saveCheckpointToDisk();
     // 创建新的 checkpoint
     this.editCheckpointService.startTurn(
       0,
