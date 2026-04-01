@@ -88,9 +88,11 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
   streamingConfig = signal<StreamingOption>({ hasNextChunk: false, enableAnimation: false });
   readonly componentMap: ComponentMap = { code: AilyChatCodeComponent };
 
-  // ★ 节流式 preprocess：流式期间最多每 rAF 帧处理一次，避免每次 content push 都 O(n)
+  // ★ 自适应节流 preprocess：内容短时每帧更新，内容长时降低频率，避免 x-markdown 全量 parse 卡顿
   private _preprocessRafId: number | null = null;
+  private _preprocessTimerId: ReturnType<typeof setTimeout> | null = null;
   private _pendingContent: string | null = null;
+  private _lastPreprocessTime = 0;
   // ★ filterToolCalls 缓存：避免每次 preprocess 都全量 split + parse
   private _ftcCacheInput = '';
   private _ftcCacheOutput = '';
@@ -414,21 +416,49 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
       const content = this.content || '';
 
       if (this.doing && changes['content'] && !changes['doing']) {
-        // ★ 流式期间：节流到 rAF 帧边界，确保正确性（始终走 preprocess）
-        // 同一帧内多次 content push 只执行最后一次，与 viewAdapter rAF 批处理对齐
+        // ★ 自适应节流：根据内容长度动态调整更新间隔
+        // 短内容 (<5KB): 每帧更新 (rAF ~16ms)
+        // 中内容 (5-20KB): 每 120ms
+        // 长内容 (20-50KB): 每 250ms
+        // 超长内容 (>50KB): 每 400ms
+        // x-markdown 每次 set 都全量 parse+sanitize，耗时与内容长度成正比
         this._pendingContent = content;
-        if (this._preprocessRafId === null) {
-          ChatPerformanceTracer.mark('preprocess_rAF_scheduled');
-          this._preprocessRafId = requestAnimationFrame(() => {
-            this._preprocessRafId = null;
-            if (this._pendingContent !== null) {
-              const _ps = ChatPerformanceTracer.begin('preprocess_rAF_exec');
-              this._doFullPreprocess(this._pendingContent);
-              this._pendingContent = null;
-              ChatPerformanceTracer.end(_ps, 'preprocess_rAF_exec');
-            }
-          });
+        const len = content.length;
+        const interval = len < 5000 ? 0 : len < 20000 ? 120 : len < 50000 ? 250 : 400;
+        const now = performance.now();
+        const elapsed = now - this._lastPreprocessTime;
+
+        if (interval === 0) {
+          // 短内容：保持 rAF 节流（原有行为）
+          if (this._preprocessTimerId !== null) { clearTimeout(this._preprocessTimerId); this._preprocessTimerId = null; }
+          if (this._preprocessRafId === null) {
+            ChatPerformanceTracer.mark('preprocess_rAF_scheduled');
+            this._preprocessRafId = requestAnimationFrame(() => {
+              this._preprocessRafId = null;
+              this._flushPendingPreprocess();
+            });
+          }
+        } else if (elapsed >= interval) {
+          // 已超过间隔：立即在下一 rAF 处理
+          if (this._preprocessTimerId !== null) { clearTimeout(this._preprocessTimerId); this._preprocessTimerId = null; }
+          if (this._preprocessRafId === null) {
+            this._preprocessRafId = requestAnimationFrame(() => {
+              this._preprocessRafId = null;
+              this._flushPendingPreprocess();
+            });
+          }
+        } else if (this._preprocessTimerId === null && this._preprocessRafId === null) {
+          // 间隔未到且没有 pending 的定时器：设置定时器，到期后在 rAF 处理
+          const remaining = interval - elapsed;
+          this._preprocessTimerId = setTimeout(() => {
+            this._preprocessTimerId = null;
+            this._preprocessRafId = requestAnimationFrame(() => {
+              this._preprocessRafId = null;
+              this._flushPendingPreprocess();
+            });
+          }, remaining);
         }
+        // 否则已有 pending timer/rAF，跳过（最终会用最新 _pendingContent）
         return;
       }
 
@@ -436,10 +466,25 @@ export class XDialogComponent implements OnChanges, AfterViewChecked {
       if (this._preprocessRafId !== null) {
         cancelAnimationFrame(this._preprocessRafId);
         this._preprocessRafId = null;
-        this._pendingContent = null;
       }
+      if (this._preprocessTimerId !== null) {
+        clearTimeout(this._preprocessTimerId);
+        this._preprocessTimerId = null;
+      }
+      this._pendingContent = null;
       ChatPerformanceTracer.mark('preprocess_immediate', `doing=${this.doing}`);
       this._doFullPreprocess(content);
+    }
+  }
+
+  /** 自适应节流 flush：执行 pending preprocess 并更新时间戳 */
+  private _flushPendingPreprocess(): void {
+    if (this._pendingContent !== null) {
+      const _ps = ChatPerformanceTracer.begin('preprocess_rAF_exec');
+      this._doFullPreprocess(this._pendingContent);
+      this._lastPreprocessTime = performance.now();
+      this._pendingContent = null;
+      ChatPerformanceTracer.end(_ps, 'preprocess_rAF_exec');
     }
   }
 

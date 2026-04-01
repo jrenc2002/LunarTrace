@@ -533,15 +533,12 @@ export class ChatEngineService {
 
     const ctx = this.buildToolContext();
 
-    // ★ P0-perf: 让出主线程两帧，确保 flush + x-dialog preprocess 均完成
-    // 第一帧: viewAdapter doFlush 触发 CD → ngOnChanges 注册 preprocess rAF
-    // 第二帧: x-dialog preprocess rAF 执行 → </think> 渲染完成
-    // 旧版单 rAF+setTimeout 只能保证 flush，preprocess 的 rAF 被迟到下一帧，
-    // 导致 </think> 在工具执行期间不能渲染。
+    // ★ P0-perf: 让出主线程一次（setTimeout 0），让 pending 微任务清空。
+    // flushNow() 已在 tool_call_request 入口同步推送内容到 list，
+    // x-dialog preprocess 的 rAF 会自行调度，无需等待其完成。
+    // 旧版双帧 rAF yield 会被 x-markdown 全量渲染（8s+）卡住，导致工具执行延迟。
     const _yieldSpan = ChatPerformanceTracer.begin('executeRegisteredTool_yield');
-    await new Promise<void>(r => requestAnimationFrame(() =>
-      requestAnimationFrame(() => setTimeout(r, 0))
-    ));
+    await new Promise<void>(r => setTimeout(r, 0));
     ChatPerformanceTracer.end(_yieldSpan, 'executeRegisteredTool_yield');
 
     const _execSpan = ChatPerformanceTracer.begin('tool_execute', toolName);
