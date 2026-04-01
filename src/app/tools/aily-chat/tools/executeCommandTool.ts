@@ -118,7 +118,7 @@ export async function executeCommandTool(
                 reject(new Error(`命令执行超时 (${COMMAND_EXECUTION_LIMITS.timeout / 1000}秒)`));
             }, COMMAND_EXECUTION_LIMITS.timeout);
             
-            cmdService.run(data.command, data.cwd, false).subscribe({
+            cmdService.run(data.command, data.cwd, false, true).subscribe({
                 next: (data) => {
                     // console.log(`Command output received:`, data);
 

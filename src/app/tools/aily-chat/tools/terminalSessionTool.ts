@@ -121,7 +121,7 @@ export async function startBackgroundCommandTool(args: StartBackgroundCommandArg
 
   // 异步启动命令，不等待完成
   try {
-    const observable = cmdService.run(command, projectPath, false);
+    const observable = cmdService.run(command, projectPath, false, true);
     session.subscription = observable.subscribe({
       next: (data: any) => {
         if (data?.data) {

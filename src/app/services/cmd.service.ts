@@ -50,7 +50,7 @@ export class CmdService {
    * @param options 命令选项
    * @returns Observable<CmdOutput>
    */
-  spawn(command: string, args?: string[], options?: Partial<CmdOptions>): Observable<CmdOutput> {
+  spawn(command: string, args?: string[], options?: Partial<CmdOptions>, silent: boolean = false): Observable<CmdOutput> {
     const streamId = `cmd_${Date.now()}_${Math.random()}`;
     const subject = new Subject<CmdOutput>();
     this.subjects.set(streamId, subject);
@@ -89,7 +89,7 @@ export class CmdService {
         // 跳过 taskkill/pkill 等进程清理命令（找不到进程时返回非零是正常的）
         const lowerCmd = command.toLowerCase();
         const isCleanupCmd = lowerCmd === 'taskkill' || lowerCmd === 'pkill' || lowerCmd === 'kill' || lowerCmd === 'killall';
-        if (data.code !== 0 && collectedStderr && !isCleanupCmd) {
+        if (data.code !== 0 && collectedStderr && !isCleanupCmd && !silent) {
           const fullCmd = [command, ...(args || [])].join(' ');
           this.logService.update({
             title: `命令执行失败: ${fullCmd}`,
@@ -130,10 +130,10 @@ export class CmdService {
    * @param cwd 工作目录
    * @param useQueue 是否使用队列（默认为true）
    */
-  run(command: string, cwd?: string, useQueue: boolean = true): Observable<CmdOutput> {
+  run(command: string, cwd?: string, useQueue: boolean = true, silent: boolean = false): Observable<CmdOutput> {
     if (!useQueue) {
       // 直接执行，不使用队列
-      return this.executeCommand(command, cwd);
+      return this.executeCommand(command, cwd, silent);
     }
 
     // 使用队列机制
@@ -165,17 +165,19 @@ export class CmdService {
    * @param command 命令字符串
    * @param cwd 工作目录
    */
-  private executeCommand(command: string, cwd?: string): Observable<CmdOutput> {
+  private executeCommand(command: string, cwd?: string, silent: boolean = false): Observable<CmdOutput> {
     // console.log(`run command: ${command}`);
-    this.logService.update({
-      title: '执行命令',
-      detail: command,
-      state: 'info'
-    });
+    if (!silent) {
+      this.logService.update({
+        title: '执行命令',
+        detail: command,
+        state: 'info'
+      });
+    }
     const parts = parseCommand(command);
     const cmd = parts[0];
     const args = parts.slice(1);
-    return this.spawn(cmd, args, { cwd });
+    return this.spawn(cmd, args, { cwd }, silent);
   }
 
   /**
@@ -230,8 +232,8 @@ export class CmdService {
    * @param useQueue 是否使用队列（默认为true）
    * @returns Promise<{success: boolean, output: string, error?: string}>
    */
-  async runAsync(command: string, cwd?: string, useQueue: boolean = true): Promise<CmdOutput> {
-    return lastValueFrom(this.run(command, cwd, useQueue))
+  async runAsync(command: string, cwd?: string, useQueue: boolean = true, silent: boolean = false): Promise<CmdOutput> {
+    return lastValueFrom(this.run(command, cwd, useQueue, silent))
   }
 
   /**

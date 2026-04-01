@@ -292,7 +292,7 @@ export class ArduinoLintService {
       let errorMessage = '';
 
       return new Promise((resolve, reject) => {
-        this.cmdService.run(lintCommand).subscribe({
+        this.cmdService.run(lintCommand, undefined, true, true).subscribe({
           next: (output) => {
             // console.log('📋 cmdService 输出类型:', output.type);
             // console.log('📋 cmdService 输出数据:', output.data);
@@ -839,7 +839,7 @@ export class ArduinoLintService {
       }
       
       try {
-        await this.cmdService.runAsync(`${this.platformService.za7} x "${sourceZipPath}" -o"${sourcePath}" -y`);
+        await this.cmdService.runAsync(`${this.platformService.za7} x "${sourceZipPath}" -o"${sourcePath}" -y`, undefined, true, true);
       } catch (error) {
         console.error(`解压库 ${lib} 失败:`, error);
         return null;
