@@ -23,6 +23,7 @@ export {
   getPinmapSummaryTool,
   validateConnectionGraphTool,
   getSensorPinmapCatalogTool,
+  getProjectContextTool,
   generatePinmapTool,
   savePinmapTool,
   getCurrentSchematicTool,

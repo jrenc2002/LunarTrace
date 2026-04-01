@@ -585,9 +585,11 @@ export class ContextBudgetService {
     turnManager: TurnManager,
     llmConfig?: any,
     selectModel?: string,
-    turnSpans?: readonly TurnSpan[]
+    turnSpans?: readonly TurnSpan[],
+    /** 预计算的 messages token 数（来自 updateBudgetAsync），避免重复同步计算 */
+    precomputedTokens?: number
   ): Promise<any[]> {
-    const currentTokens = estimateMessagesTokens(messages);
+    const currentTokens = precomputedTokens ?? estimateMessagesTokens(messages);
     const maxTokens = this.maxContextTokens;
 
     // ==================== 层级 0: 后台摘要化结果应用 ====================
@@ -611,7 +613,7 @@ export class ContextBudgetService {
             timestamp: Date.now()
           });
 
-          this.updateBudget(applied);
+          this._emitSnapshot(afterTokens, applied.length);
           return applied;
         }
         // 写回失败时继续走后续压缩层级
@@ -637,7 +639,7 @@ export class ContextBudgetService {
             timestamp: Date.now()
           });
 
-          this.updateBudget(applied);
+          this._emitSnapshot(afterTokens, applied.length);
           return applied;
         }
         // 写回失败时继续走后续压缩层级
@@ -664,7 +666,7 @@ export class ContextBudgetService {
         compressedMessages: messages.length - trimmed.length,
         timestamp: Date.now()
       });
-      this.updateBudget(trimmed);
+      this._emitSnapshot(trimmedTokens, trimmed.length);
       return trimmed;
     }
 
@@ -673,7 +675,7 @@ export class ContextBudgetService {
     // 回退到优先级裁剪先缓解，下次请求时后台摘要应已完成
     if (bg.state === BackgroundSummarizationState.InProgress) {
       console.log(`[上下文压缩] 后台摘要正在进行，跳过前台 LLM 调用，使用优先级裁剪`);
-      this.updateBudget(trimmed);
+      this._emitSnapshot(trimmedTokens, trimmed.length);
       return trimmed;
     }
 
@@ -698,13 +700,13 @@ export class ContextBudgetService {
         timestamp: Date.now()
       });
 
-      this.updateBudget(summarized);
+      this._emitSnapshot(afterTokens, summarized.length);
       return summarized;
     } catch (error) {
       // 层级 4: 最终兜底 — foregroundSummarize 内部已实现 Full→Simple 降级链,
       // 到达此处说明连 Simple mode 也失败了（极端情况），回退到优先级裁剪
       console.warn('[上下文压缩] 摘要服务完全失败（含 Simple mode），回退到优先级裁剪:', error);
-      this.updateBudget(trimmed);
+      this._emitSnapshot(trimmedTokens, trimmed.length);
       return trimmed;
     }
   }

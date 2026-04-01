@@ -19,7 +19,7 @@ import {
   PromptPriority,
   ChatMessage,
 } from './prompt-elements';
-import { estimateTokenCount, estimateMessagesTokens } from '../services/context-budget.service';
+// (estimateTokenCount removed — prompt pipeline uses fast O(1) estimation)
 import { SkillRegistry } from '../core/skill-registry';
 import { getDeferredToolsListing } from '../tools/tools';
 import { getMemoryPromptSnippet } from '../tools/memoryTool';
@@ -29,6 +29,37 @@ import { ASK_MODE_ROLE_TEXT } from '../services/stream-constants';
 
 const TOOL_CONTINUATION_PROMPT =
   'Above are the results of calling one or more tools. The user cannot see these results, so you should explain them clearly if needed. Continue your task based on these tool results.';
+
+/** ★ P0-perf: prompt pipeline 裁剪只需要相对大小对比，不需要精确 token 数。
+ *  用 O(1) 的字符长度估算代替 O(n) 逐字符遍历，避免多轮后同步阻塞主线程。
+ *  精确计算已在 startChatTurn → updateBudgetAsync 中通过 Worker 异步完成。
+ */
+export function fastEstimateMessageTokens(msg: any): number {
+  let chars = 4; // overhead
+  if (msg.content) chars += msg.content.length;
+  if (msg.name) chars += msg.name.length;
+  if (msg.tool_calls) {
+    for (const tc of msg.tool_calls) {
+      chars += 4;
+      if (tc.id) chars += tc.id.length;
+      if (tc.function?.name) chars += tc.function.name.length;
+      if (tc.function?.arguments) {
+        chars += typeof tc.function.arguments === 'string'
+          ? tc.function.arguments.length
+          : JSON.stringify(tc.function.arguments).length;
+      }
+    }
+  }
+  // 混合中英文平均 ~0.4 token/char（CJK ~0.67, ASCII ~0.25）
+  return Math.ceil(chars * 0.4);
+}
+
+export function fastEstimateMessagesTokens(messages: any[]): number {
+  if (!messages || messages.length === 0) return 0;
+  let total = 2;
+  for (const msg of messages) total += fastEstimateMessageTokens(msg);
+  return total;
+}
 
 // ==================== ContextInjectionProvider ====================
 
@@ -79,7 +110,7 @@ export class ContextInjectionProvider implements PromptElementProvider {
 
     const content = `<aily-context>\n${parts.join('\n')}\n</aily-context>`;
     const message: ChatMessage = { role: 'user', content };
-    const tokens = estimateTokenCount(content);
+    const tokens = Math.ceil(content.length * 0.4);
 
     return {
       id: this.id,
@@ -125,7 +156,7 @@ export class ConversationHistoryProvider implements PromptElementProvider {
 
     if (turnSpans.length === 0) {
       // 没有 TurnSpan 信息：整体作为一个 Element
-      const tokens = estimateMessagesTokens(messages);
+      const tokens = fastEstimateMessagesTokens(messages);
       return {
         id: this.id,
         priority: PromptPriority.HISTORY_BASE,
@@ -143,7 +174,7 @@ export class ConversationHistoryProvider implements PromptElementProvider {
       const isCurrentTurn = (i === totalTurns - 1);
       const isOldest = (i === 0 && totalTurns > 3);
       const turnMessages = messages.slice(span.startIdx, span.endIdx);
-      const tokens = estimateMessagesTokens(turnMessages);
+      const tokens = fastEstimateMessagesTokens(turnMessages);
 
       let priority: number;
       let evictable = true;
@@ -205,7 +236,7 @@ export class ToolContinuationProvider implements PromptElementProvider {
       role: 'user',
       content: TOOL_CONTINUATION_PROMPT,
     };
-    const tokens = estimateTokenCount(TOOL_CONTINUATION_PROMPT);
+    const tokens = 50; // 固定常量字符串 ~170 chars ≈ 50 tokens
 
     return {
       id: this.id,

@@ -37,7 +37,7 @@ import { TOOLS } from '../tools/tools';
 import { syncAbsFileHandler } from '../tools/syncAbsFileTool';
 import { registerAskUserCallback, unregisterAskUserCallback, AskUserQuestion, AskUserFullResponse, AskUserAnswer } from '../tools/askUserTool';
 import { cleanupAllTerminalSessions } from '../tools/terminalSessionTool';
-import { toolRequiresApproval, requestToolApproval, registerToolApprovalCallback, unregisterToolApprovalCallback, approveToolForSession, clearSessionApprovals, ToolApprovalRequest, ToolApprovalResult } from '../core/tool-approval';
+import { toolRequiresApproval, requestToolApproval, registerToolApprovalCallback, unregisterToolApprovalCallback, approveToolForSession, enableSessionSafeMode, clearSessionApprovals, ToolApprovalRequest, ToolApprovalResult } from '../core/tool-approval';
 
 import { AILY_CHAT_ONBOARDING_CONFIG } from '../../../configs/onboarding.config';
 
@@ -47,6 +47,8 @@ import { StreamProcessorHelper } from '../helpers/stream-processor.helper';
 import { ToolCallLoopHelper } from '../helpers/tool-call-loop.helper';
 import { TurnManager } from '../core/turn-manager';
 import { AilyChatHookService } from './chat-hook.service';
+import { ChatViewAdapter } from './chat-view-adapter';
+import { ChatPerformanceTracer } from './chat-perf-tracer';
 
 @Injectable()
 export class ChatEngineService {
@@ -56,6 +58,10 @@ export class ChatEngineService {
   readonly session = new SessionLifecycleHelper(this);
   readonly stream = new StreamProcessorHelper(this);
   readonly turnLoop = new ToolCallLoopHelper(this);
+
+  // ==================== rAF 批处理 UI 适配器 ====================
+  /** 流式文本走 rAF 合并，每帧只触发一次 Angular CD（参考 Copilot FetchStreamSource pause/unpause） */
+  readonly viewAdapter: ChatViewAdapter = null!; // 由 constructor 初始化
 
   // ==================== Hook 系统 — 参考 Copilot IChatHookService ====================
   /** 中心化 Hook 注册与执行引擎，支持 PreToolUse/PostToolUse/Stop 等生命周期拦截 */
@@ -78,7 +84,6 @@ export class ChatEngineService {
   // ==================== 半公共状态 ====================
   sessionAllowedPaths: string[] = [];
   currentMessageSource: string = 'mainAgent';
-  terminateTemp = '';
   toolCallStates: { [key: string]: string } = {};
 
   // ==================== 内置工具 ====================
@@ -191,7 +196,7 @@ export class ChatEngineService {
     public repetitionDetectionService: RepetitionDetectionService,
     public contextBudgetService: ContextBudgetService,
     public subagentSessionService: SubagentSessionService,
-    private ngZone: NgZone,
+    public ngZone: NgZone,
     private absAutoSyncService: AbsAutoSyncService,
     public editCheckpointService: EditCheckpointService,
     public translate: TranslateService,
@@ -199,7 +204,25 @@ export class ChatEngineService {
     public scrollManager: ScrollManagerService,
     public resourceManager: ResourceManagerService,
     public menuManager: MenuManagerService,
-  ) {}
+  ) {
+    // 初始化 viewAdapter（需要 ngZone 已注入）
+    (this as any).viewAdapter = new ChatViewAdapter(
+      () => this.list,
+      (msg) => this.list.push(msg),
+      () => this.currentMessageSource,
+      () => this.currentModelName || undefined,
+      () => this._isWaiting,
+      () => { if (this.sessionId) { this.chatHistoryService.markDirty(this.sessionId); } },
+      this.ngZone,
+      undefined, // cdCallback — 由 component 通过 setCdCallback 注入
+      () => this.scrollManager.scrollToBottom(), // scrollToBottom — 流式 rAF flush 后自动滚动
+    );
+  }
+
+  /** 注册 OnPush CD 回调（由 component 调用 cdr.markForCheck） */
+  setCdCallback(cb: () => void): void {
+    (this.viewAdapter as any).cdCallback = cb;
+  }
 
   // ==================== 初始化 / 销毁 ====================
 
@@ -236,6 +259,7 @@ export class ChatEngineService {
    * 引擎销毁 — 由 Component 的 ngOnDestroy 调用
    */
   destroy(): void {
+    this.viewAdapter.destroy();
     this.chatService.isWaiting = false;
     this.session.saveCurrentSession();
     this.chatHistoryService.flushAll();
@@ -250,9 +274,7 @@ export class ChatEngineService {
     this.cleanupSubscriptions();
     this.session.disconnect();
 
-    if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
-      this.list[this.list.length - 1].state = 'done';
-    }
+    this.viewAdapter.markLastMessageDone();
   }
 
   // ==================== 订阅管理 ====================
@@ -301,50 +323,36 @@ export class ChatEngineService {
     document.addEventListener('aily-task-action', this.taskActionHandler);
 
     // 订阅 subagent 执行进度
-    // 使用节流避免每个 SSE chunk 都触发 scrollToBottom（内部含 setTimeout 轮询，
-    // 高频触发会创建大量重叠的滚动循环导致卡顿）
-    let scrollRafId: number | null = null;
+    // viewAdapter 方法内部已处理 NgZone 边界，无需外部 ngZone.run()
     this.subagentProgressSubscription = this.subagentSessionService.onProgress()
       .subscribe((event: SubagentProgressEvent) => {
-        // 子Agent progress 通过 Subject.next() 在 Promise/async 上下文中触发，
-        // 脱离了 Angular Zone，导致变更检测不触发、UI 批量刷新而非流式。
-        // 用 ngZone.run() 将回调拉回 Zone 内，确保每次 list 变更都触发渲染。
-        this.ngZone.run(() => {
-          if (!this.isWaiting) return;
-          const agentSource = event.agentName || 'subAgent';
-          switch (event.type) {
-            case 'streaming':
-              if (event.content) { this.msg.appendMessage('aily', event.content, agentSource); }
-              break;
-            case 'tool_call_start': {
-              const innerId = event.innerToolId || `${event.toolId}_inner_${Date.now()}`;
-              const innerName = event.innerToolName || 'unknown';
-              this.msg.startToolCall(innerId, innerName, `${agentSource}: ${innerName}...`, undefined, agentSource);
-              break;
-            }
-            case 'tool_call_end': {
-              const innerId = event.innerToolId || `${event.toolId}_inner_${Date.now()}`;
-              const innerName = event.innerToolName || 'unknown';
-              const state = event.isError ? ToolCallState.ERROR : ToolCallState.DONE;
-              const text = event.isError ? `${agentSource}: ${innerName} 失败` : `${agentSource}: ${innerName} 完成`;
-              this.msg.completeToolCall(innerId, innerName, state, text, agentSource);
-              break;
-            }
-            case 'tool_call':
-              this.msg.appendMessage('aily', `\n\n> 🛠️ ${event.content}\n\n`, agentSource);
-              break;
-            case 'error':
-              this.msg.appendMessage('aily', `\n\n> ❌ ${event.content}\n\n`, agentSource);
-              break;
+        if (!this.isWaiting) return;
+        const agentSource = event.agentName || 'subAgent';
+        switch (event.type) {
+          case 'streaming':
+            if (event.content) { this.msg.appendStreaming('aily', event.content, agentSource); }
+            break;
+          case 'tool_call_start': {
+            const innerId = event.innerToolId || `${event.toolId}_inner_${Date.now()}`;
+            const innerName = event.innerToolName || 'unknown';
+            this.msg.startToolCall(innerId, innerName, `${agentSource}: ${innerName}...`, undefined, agentSource);
+            break;
           }
-          // 子Agent内容更新后，节流滚动：合并同一帧内的多次调用
-          if (scrollRafId === null) {
-            scrollRafId = requestAnimationFrame(() => {
-              scrollRafId = null;
-              this.scrollManager.scrollToBottom();
-            });
+          case 'tool_call_end': {
+            const innerId = event.innerToolId || `${event.toolId}_inner_${Date.now()}`;
+            const innerName = event.innerToolName || 'unknown';
+            const state = event.isError ? ToolCallState.ERROR : ToolCallState.DONE;
+            const text = event.isError ? `${agentSource}: ${innerName} 失败` : `${agentSource}: ${innerName} 完成`;
+            this.msg.completeToolCall(innerId, innerName, state, text, agentSource);
+            break;
           }
-        });
+          case 'tool_call':
+            this.msg.appendMessage('aily', `\n\n> 🛠️ ${event.content}\n\n`, agentSource);
+            break;
+          case 'error':
+            this.msg.appendMessage('aily', `\n\n> ❌ ${event.content}\n\n`, agentSource);
+            break;
+        }
       });
 
     // 订阅项目路径变化
@@ -489,7 +497,7 @@ export class ChatEngineService {
 
     // ── 工具审批拦截 ──
     // 对需要审批的工具，等待用户确认后再执行（审批 UI 由 aily-approval 块提供，不需要额外 aily-state）
-    if (toolRequiresApproval(toolName)) {
+    if (toolRequiresApproval(toolName, toolArgs)) {
       const approval = await requestToolApproval(toolCallId, toolName, toolArgs);
       if (!approval.approved) {
         const rejectReason = approval.reason || '用户拒绝执行';
@@ -506,6 +514,8 @@ export class ChatEngineService {
       // 用户已批准，处理会话级授权
       if (approval.scope === 'session') {
         approveToolForSession(toolName);
+      } else if (approval.scope === 'session-safe') {
+        enableSessionSafeMode();
       }
       // 批准后显示正常执行状态
       if (displayMode === 'toolCall') {
@@ -529,7 +539,14 @@ export class ChatEngineService {
     }
 
     const ctx = this.buildToolContext();
+
+    // ★ P0-perf: flushDataOnly 已在 tool_call_request 入口同步提交数据到 list，
+    // 不触发 NgZone CD，x-markdown 渲染在下一帧异步完成。
+    // 无需 yield 等待渲染，直接执行工具。
+
+    const _execSpan = ChatPerformanceTracer.begin('tool_execute', toolName);
     const toolResult = await ToolRegistry.execute(toolName, toolArgs, ctx);
+    ChatPerformanceTracer.end(_execSpan, 'tool_execute', `${toolName} err=${toolResult?.is_error ?? false}`);
     const resultText = ToolRegistry.getResultText(toolName, toolArgs, toolResult);
     if (toolName === 'create_project' && toolResult?.is_error) {
       AilyHost.get().ui?.updateFooterState({ state: 'warn', text: '项目创建失败' });
@@ -655,7 +672,6 @@ Do not create non-existent boards and libraries.
     }
 
     this.scrollManager.autoScrollEnabled = true;
-    this.terminateTemp = '';
     let text = content.trim();
     if (!this.sessionId || !text) return;
 
@@ -722,6 +738,8 @@ Do not create non-existent boards and libraries.
         this.ensureAbsExport();
         // 同步自动保存配置
         this.editCheckpointService.autoSaveEdits = this.ailyChatConfigService.autoSaveEdits;
+        // Turn 开始前先持久化前一轮 checkpoint（防止崩溃丢数据）
+        this.saveCheckpointToDisk();
         // 启动新 turn 的 checkpoint
         this.editCheckpointService.startTurn(
           0,
@@ -765,7 +783,7 @@ Do not create non-existent boards and libraries.
           else if (error.message) { errorMessage = error.message; }
           this.msg.appendMessage('aily', `\n\`\`\`aily-error\n{\n  "message": "${errorMessage}",\n  "status": ${error.status || 'unknown'}\n}\n\`\`\`\n\n\`\`\`aily-button\n[{"text":"重试","action":"retry","type":"primary"}]\n\`\`\`\n\n`);
           this.isWaiting = false;
-          this.list[this.list.length - 1].state = 'done';
+          this.viewAdapter.markLastMessageDone();
         }
       }
     });
@@ -799,9 +817,7 @@ Do not create non-existent boards and libraries.
       }
     } finally {
       // 确保最后一条消息标记完成（包括超时/错误场景）
-      if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
-        this.list[this.list.length - 1].state = 'done';
-      }
+      this.viewAdapter.markLastMessageDone();
       this.currentMessageSource = 'mainAgent';
       this.isWaiting = false;
       this.isCompleted = true;
@@ -878,9 +894,7 @@ Do not create non-existent boards and libraries.
     // stop 时提交当前 turn 的快照，确保 checkpoint 数据完整
     this.editCheckpointService.commitCurrentTurn();
 
-    if (this.list.length > 0 && this.list[this.list.length - 1].role === 'aily') {
-      this.list[this.list.length - 1].state = 'done';
-    }
+    this.viewAdapter.markLastMessageDone();
     this.isWaiting = false;
     this.isCompleted = true;
     if (this.useStatelessMode || wasStatelessTurn) { this.session.saveCurrentSession(); }
@@ -907,6 +921,25 @@ Do not create non-existent boards and libraries.
     this.absAutoSyncService.exportToAbs().catch(err => {
       console.warn('[ChatEngine] ABS 自动导出失败:', err);
     });
+  }
+
+  /**
+   * Turn 开始前将已有 checkpoint 数据持久化到磁盘。
+   * 确保前一轮的快照不因崩溃而丢失（基线快照策略）。
+   */
+  private saveCheckpointToDisk(): void {
+    if (this.editCheckpointService.getTotalEditCount() === 0) return;
+    const projectPath = this.prjPath
+      || this.chatService.currentSessionPath
+      || AilyHost.get().project.currentProjectPath;
+    if (projectPath && this.sessionId) {
+      try {
+        this.editCheckpointService.commitCurrentTurn();
+        this.editCheckpointService.saveToDisk(projectPath, this.sessionId);
+      } catch (err) {
+        console.warn('[ChatEngine] checkpoint saveToDisk before turn failed:', err);
+      }
+    }
   }
 
   // ==================== 模式 / 模型切换 ====================
@@ -1280,6 +1313,8 @@ Do not create non-existent boards and libraries.
     this.ensureAbsExport();
     // 同步自动保存配置
     this.editCheckpointService.autoSaveEdits = this.ailyChatConfigService.autoSaveEdits;
+    // Turn 开始前先持久化前一轮 checkpoint（防止崩溃丢数据）
+    this.saveCheckpointToDisk();
     // 创建新的 checkpoint
     this.editCheckpointService.startTurn(
       0,
@@ -1517,7 +1552,7 @@ Do not create non-existent boards and libraries.
   /**
    * 外部调用：用户批准工具执行。
    */
-  approveToolExecution(toolCallId: string, scope: 'once' | 'session' = 'once'): void {
+  approveToolExecution(toolCallId: string, scope: 'once' | 'session' | 'session-safe' = 'once'): void {
     if (this._resolveToolApproval) {
       document.dispatchEvent(new CustomEvent('aily-approval-result', {
         detail: { toolCallId, approved: true, scope }

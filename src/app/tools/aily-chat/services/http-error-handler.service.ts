@@ -191,6 +191,20 @@ export function isTransientNetworkError(err: any): boolean {
     }
   }
 
+  // 流读取中途断连（HTTP 200 但 body 未完整传输）
+  const errMsg = ((err as Error)?.message || '').toLowerCase();
+  if (
+    errMsg.includes('err_incomplete_chunked_encoding') ||
+    errMsg.includes('net::err_incomplete_chunked_encoding') ||
+    errMsg.includes('premature close') ||
+    errMsg.includes('err_content_length_mismatch') ||
+    errMsg.includes('err_connection_closed') ||
+    errMsg.includes('err_http2_protocol_error') ||
+    errMsg.includes('aborted') && !(err as Error)?.name?.includes('AbortError')
+  ) {
+    return true;
+  }
+
   const status = extractHttpStatusCode(err);
 
   // 502/503/504 且 message 含连接/DNS 类关键词 → 服务暂时不可达

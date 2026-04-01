@@ -19,6 +19,7 @@ import { CommonModule } from '@angular/common';
 import { WindowMessenger, connect, Connection } from 'penpal';
 import { UiService } from '../../services/ui.service';
 import { TranslateService } from '@ngx-translate/core';
+import { Subscription } from 'rxjs';
 
 /** iframe IPC 统一载荷（规范：docs/iframe-ipc-spec.md） */
 export interface IframeIpcPayload<T = unknown> {
@@ -84,6 +85,8 @@ export class IframeComponent implements OnInit, OnDestroy {
   isConnectionGraphWindow = false;
   /** connection-graph IPC 统一监听清理函数 */
   private connectionGraphIpcCleanup: (() => void) | null = null;
+  /** 连线图生成进度通知订阅 */
+  private noticeSubscription: Subscription | null = null;
   /** 待响应的保存请求：messageId -> resolve */
   private pendingSaveResolvers = new Map<string, (result: { success: boolean }) => void>();
 
@@ -322,6 +325,11 @@ export class IframeComponent implements OnInit, OnDestroy {
       // 将 remote API 注册到 ConnectionGraphService，供 Agent 工具推送数据
       this.connectionGraphService.setIframeApi(remote);
 
+      // 订阅连线图工具的进度通知，转发到 noticeService
+      this.noticeSubscription = this.connectionGraphService.noticeUpdate$.subscribe((opts) => {
+        this.ngZone.run(() => this.noticeService.update(opts));
+      });
+
       // 连接成功，结束 loading
       this.isLoading = false;
       this.showEmptyState = false;
@@ -435,6 +443,12 @@ export class IframeComponent implements OnInit, OnDestroy {
           }
           break;
         }
+        case 'notice-update': {
+          if (data) {
+            this.ngZone.run(() => this.noticeService.update(data as any));
+          }
+          break;
+        }
       }
     };
 
@@ -448,6 +462,10 @@ export class IframeComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    if (this.noticeSubscription) {
+      this.noticeSubscription.unsubscribe();
+      this.noticeSubscription = null;
+    }
     if (this.connectionGraphIpcCleanup) {
       this.connectionGraphIpcCleanup();
       this.connectionGraphIpcCleanup = null;
@@ -486,12 +504,24 @@ export class IframeComponent implements OnInit, OnDestroy {
       };
       this.iframeData = newPayload;
       await this.pushDataToRemote();
-      this.noticeService.update({
-        title: 'AI生成中',
-        text: '连线图已自动更新',
-        state: 'done',
-        setTimeout: 3000,
-      });
+
+      // 区分预览推送（空连线）和最终推送（有连线）
+      const hasConnections = Array.isArray(data.connections) && data.connections.length > 0;
+      if (hasConnections) {
+        this.noticeService.update({
+          title: 'AI生成中',
+          text: '连线图已自动更新',
+          state: 'done',
+          setTimeout: 3000,
+        });
+      } else {
+        this.noticeService.update({
+          title: 'AI生成中',
+          text: '组件已加载，正在生成连线方案...',
+          state: 'doing',
+          showProgress: false,
+        });
+      }
     } catch (error) {
       console.error('[IframeComponent] 处理连线图更新失败:', error);
     }

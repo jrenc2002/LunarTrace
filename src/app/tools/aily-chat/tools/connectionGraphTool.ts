@@ -172,7 +172,7 @@ export async function generateConnectionGraphTool(
           // 记录加载失败的 pinmapId
           failedPinmapIds.push({
             pinmapId,
-            reason: 'pinmap 文件不存在或无法读取。请先使用 get_component_catalog 确认该组件的 pinmap 状态，如果状态为 needs_generation 或 missing_catalog，需先调用 generate_pinmap + save_pinmap 生成配置。',
+            reason: 'pinmap 文件不存在或无法读取。请先使用 get_project_context 确认该组件的 pinmap 状态，如果状态为 needs_generation 或 missing_catalog，需先调用 generate_pinmap + save_pinmap 生成配置。',
           });
         }
       }
@@ -284,7 +284,7 @@ export async function generateConnectionGraphTool(
       if (notFoundComponents.length > 0) {
         message += `\n未找到以下组件的 pinmap: ${notFoundComponents.join(', ')}`;
       }
-      message += '\n\n提示：请先使用 get_component_catalog 工具确认组件的 pinmap 状态（status 字段），只有 status=available 的组件才可用于生成连线。';
+      message += '\n\n提示：请先使用 get_project_context 工具确认组件的 pinmap 状态（status 字段），只有 status=available 的组件才可用于生成连线。';
 
       return {
         is_error: failedPinmapIds.length > 0,  // 如果有加载失败则标记为错误
@@ -295,7 +295,7 @@ export async function generateConnectionGraphTool(
           loadedPinmapIds,
           componentInstances: componentInstances.length > 0 ? componentInstances : undefined,
           instructions: failedPinmapIds.length > 0
-            ? '请先调用 get_component_catalog 确认组件状态，再使用 generate_pinmap + save_pinmap 为缺失配置的组件生成 pinmap。'
+            ? '请先调用 get_project_context 确认组件状态，再使用 generate_pinmap + save_pinmap 为缺失配置的组件生成 pinmap。'
             : '请根据上面的引脚信息和用户需求，输出符合 connection_output.json 格式的连线 JSON。输出完成后，请调用 validate_schematic 工具验证连线安全性。',
         }, null, 2),
       };
@@ -384,11 +384,11 @@ ${softwareDetails}
 ### ⚠️ 以下组件的 pinmap 加载失败
 ${failedPinmapIds.map(f => `- ${f.pinmapId}: ${f.reason}`).join('\n')}
 
-这些组件无法生成连线，请先调用 get_component_catalog 确认其状态，再使用 generate_pinmap + save_pinmap 生成配置。`;
+这些组件无法生成连线，请先调用 get_project_context 确认其状态，再使用 generate_pinmap + save_pinmap 生成配置。`;
     }
 
     // === 生成 AWS 格式的引脚摘要 ===
-    const { generatePinmapSummary, AWS_SYNTAX_REFERENCE } = await import('../../../services/connection-aws');
+    const { generatePinmapSummary } = await import('../../../services/connection-aws');
     
     // 构建 AWS 格式的组件摘要数组
     const awsSummaryParts: string[] = [];
@@ -412,62 +412,86 @@ ${failedPinmapIds.map(f => `- ${f.pinmapId}: ${f.reason}`).join('\n')}
     
     const awsPinmapSummary = awsSummaryParts.join('\n\n');
 
+    // === 方案 A：推送预览到 iframe（板子 + 组件，无连线）===
+    if (pinSummaries.length > 1) {
+      try {
+        const previewConfigMap = new Map<string, any>();
+        const previewComponents: any[] = [];
+
+        // 添加开发板
+        if (boardConfig) {
+          previewConfigMap.set('board', boardConfig);
+          previewComponents.push({
+            refId: 'board',
+            componentId: boardConfig.id,
+            componentName: boardConfig.name,
+            pinmapId: boardPinmapId,
+            isBoard: true,
+          });
+        }
+
+        // 添加外设组件
+        for (const ci of componentInstances) {
+          const fullConfig = connectionGraphService.loadPinmapById(ci.pinmapId, packagesBasePath);
+          if (fullConfig) {
+            previewConfigMap.set(ci.alias, fullConfig);
+            previewComponents.push({
+              refId: ci.alias,
+              componentId: fullConfig.id,
+              componentName: ci.label || fullConfig.name,
+              pinmapId: ci.pinmapId,
+              instance: ci.instance,
+            });
+          }
+        }
+
+        const previewPayload = {
+          componentConfigs: Object.fromEntries(previewConfigMap),
+          components: previewComponents,
+          connections: [],   // 空连线 — 预览模式
+        };
+
+        // 嵌入模式：直接推送
+        if (connectionGraphService.hasActiveIframe) {
+          await connectionGraphService.iframeApi.receiveData(previewPayload);
+        }
+        // 子窗口模式：通过 IPC 推送
+        if (typeof window !== 'undefined' && window['ipcRenderer']) {
+          window['ipcRenderer'].send('iframe-message-connection-graph', {
+            type: 'generate-graph-updated',
+            data: previewPayload,
+          });
+        }
+
+        connectionGraphService.emitNotice?.({
+          title: 'AI生成中',
+          text: '硬件组件已就绪，正在生成连线方案...',
+          state: 'doing',
+          showProgress: false,
+        });
+      } catch (e) {
+        // 预览推送失败不影响主流程
+        console.warn('[generate_schematic] 预览推送失败:', e);
+      }
+    }
+
     const result: any = {
-      awsPinmapSummary,  // AWS 格式的引脚摘要（替代 pinSummaries JSON）
+      awsPinmapSummary,  // AWS 格式的引脚摘要
       loadedPinmapIds,
       failedPinmapIds: failedPinmapIds.length > 0 ? failedPinmapIds : undefined,
       componentInstances: componentInstances.length > 0 ? componentInstances : undefined,
       softwareComponents: softwareComponents.length > 0 ? softwareComponents : undefined,
       notFoundComponents: notFoundComponents.length > 0 ? notFoundComponents : undefined,
-      awsSyntax: AWS_SYNTAX_REFERENCE,
-      instructions: `请根据上面的引脚信息，使用 AWS 语法输出连线方案，然后调用 apply_schematic(aws: "...") 保存。
-
-### 预定义别名
-- \`board\` - 开发板（自动可用，无需 USE 声明）
-
-### AWS 输出格式
-\`\`\`aws
-# 组件声明（只声明外部组件，board 无需声明）
-USE <pinmapId> AS <别名> "<显示名称>"
-
-# 连线
-CONNECT <from别名>.<引脚名> -> <to别名>.<引脚名> @<类型>
-
-# 引脚重映射（可选）
-ASSIGN <别名>.<引脚名> AS <角色> @<类型>:<总线号>
-\`\`\`
-
-### 连接类型
-- @power (红色): 电源连接
-- @gnd (黑色): 接地连接
-- @i2c (紫色): I2C 数据线
-- @spi (橙色): SPI 数据线
-- @uart (青色): UART 数据线
-- @digital (蓝色): 数字信号
-- @analog (绿色): 模拟信号
-- @pwm (黄色): PWM 信号
-
-### 示例
-\`\`\`aws
-# board 是预定义别名，只需声明外部组件
-USE lib-dht:dht20:asair AS dht "温湿度传感器"
-
-# 电源连接
-CONNECT board.3V3 -> dht.VCC @power
-CONNECT board.GND -> dht.GND @gnd
-
-# I2C 连接
-CONNECT board.SDA -> dht.SDA @i2c
-CONNECT board.SCL -> dht.SCL @i2c
-\`\`\`
-
-### 注意事项
-1. \`board\` 是预定义别名，无需 USE 声明
-2. 引脚名使用 awsPinmapSummary 中列出的名称
-3. 所有组件都需要电源(power)和接地(gnd)连线
-4. I2C 设备需要 SDA 和 SCL 连线
-5. 输出完成后调用 apply_schematic(aws: "你的AWS代码") 保存${multiInstanceNote}${softwareComponentNote}${failedComponentsWarning}`,
     };
+
+    // 仅当存在动态信息（多实例/软件组件/失败组件）时才添加附注
+    const notes: string[] = [];
+    if (multiInstanceNote) notes.push(multiInstanceNote);
+    if (softwareComponentNote) notes.push(softwareComponentNote);
+    if (failedComponentsWarning) notes.push(failedComponentsWarning);
+    if (notes.length > 0) {
+      result.notes = notes.join('\n');
+    }
 
     const toolResult: ToolUseResult = {
       is_error: false,
@@ -573,7 +597,7 @@ export async function getPinmapSummaryTool(
       const availableIds = connectionGraphService.getAvailablePinmapIds(packagesBasePath, { status: 'available' });
       if (availableIds.length > 0) {
         result.availableSensorPinmapIds = availableIds.slice(0, 10); // 最多显示 10 个
-        result.tip = '使用 get_component_catalog 工具可查看完整的组件目录。';
+        result.tip = '使用 get_project_context 工具可查看完整的组件目录。';
       }
     }
 
@@ -586,6 +610,83 @@ export async function getPinmapSummaryTool(
     return {
       is_error: true,
       content: `获取引脚摘要失败: ${error.message || error}`,
+    };
+  }
+}
+
+/**
+ * get_project_context 工具
+ *
+ * 合并 get_context + get_component_catalog 的功能，一次返回项目上下文 + 组件目录。
+ * 替代原先需要依次调用两个工具的两步操作。
+ */
+export async function getProjectContextTool(
+  connectionGraphService: ConnectionGraphService,
+  projectService: ProjectService,
+  input: { includeNeedsGeneration?: boolean }
+): Promise<ToolUseResult> {
+  try {
+    // === Part 1: 项目上下文（来自 getContextTool 逻辑）===
+    const { getContextTool } = await import('./getContextTool');
+    const contextResult = await getContextTool(projectService, { info_type: 'all' });
+    let contextData: any = {};
+    try {
+      contextData = JSON.parse(contextResult.content);
+    } catch { /* ignore */ }
+
+    // === Part 2: 组件目录（来自 getSensorPinmapCatalogTool 逻辑）===
+    const catalogResult = await getSensorPinmapCatalogTool(
+      connectionGraphService,
+      projectService,
+      { includeNeedsGeneration: input.includeNeedsGeneration, includeBoards: true }
+    );
+    let catalogData: any = {};
+    try {
+      catalogData = JSON.parse(catalogResult.content);
+    } catch { /* ignore */ }
+
+    // === 合并结果 ===
+    const merged: any = {
+      // 项目基本信息
+      project: contextData.project,
+      editingMode: contextData.editingMode,
+      cppCode: contextData.cppCode,
+      // 组件目录信息
+      currentBoard: catalogData.currentBoard,
+    };
+
+    if (contextData.warn) {
+      merged.warn = contextData.warn;
+    }
+
+    if (catalogData.catalogs) {
+      merged.catalogCount = catalogData.catalogCount;
+      merged.catalogs = catalogData.catalogs;
+      merged.usage = catalogData.usage;
+    }
+
+    if (catalogData.softwareLibraries) {
+      merged.softwareLibraries = catalogData.softwareLibraries;
+      merged.softwareUsage = catalogData.softwareUsage;
+    }
+
+    if (catalogData.librariesMissingCatalog) {
+      merged.librariesMissingCatalog = catalogData.librariesMissingCatalog;
+      merged.missingCatalogTip = catalogData.missingCatalogTip;
+    }
+
+    if (catalogData.message) {
+      merged.catalogMessage = catalogData.message;
+    }
+
+    return {
+      is_error: false,
+      content: JSON.stringify(merged, null, 2),
+    };
+  } catch (error: any) {
+    return {
+      is_error: true,
+      content: `获取项目上下文失败: ${error.message || error}`,
     };
   }
 }
@@ -879,7 +980,7 @@ export async function validateConnectionGraphTool(
               ? `连线配置基本安全，但有 ${warnings.length} 条警告需要注意。`
               : '连线配置安全，所有检查通过。')
             : `发现 ${errors.length} 个安全问题，请修正后重新验证。`,
-          tip: '用户可以点击右侧工具栏的「查看接线」按钮查看连线图。',
+          tip: '用户可以点击右侧工具栏的「电路连接」按钮查看连线图。',
         }, null, 2),
       };
     }
@@ -945,7 +1046,7 @@ export async function validateConnectionGraphTool(
           success: false,
           loadErrors,
           message: '部分组件配置加载失败',
-          tip: '请调用 get_component_catalog 确认组件状态，使用 generate_pinmap + save_pinmap 补全缺失配置后重试。',
+          tip: '请调用 get_project_context 确认组件状态，使用 generate_pinmap + save_pinmap 补全缺失配置后重试。',
           syntaxReference: AWS_SYNTAX_REFERENCE,
         }, null, 2),
       };
@@ -1023,7 +1124,7 @@ export async function validateConnectionGraphTool(
     }
     connectionGraphService.saveJSONFile(jsonData);
 
-    // 8. 通知 iframe 刷新
+    // 8. 通知 iframe 刷新（嵌入模式；子窗口模式已由 saveJSONFile → IPC 处理）
     if (connectionGraphService.hasActiveIframe) {
       try {
         await connectionGraphService.iframeApi.receiveData({
@@ -1035,6 +1136,14 @@ export async function validateConnectionGraphTool(
         // iframe 通知失败不影响主流程
       }
     }
+
+    // 通知完成（嵌入 + 子窗口均生效）
+    connectionGraphService.emitNotice?.({
+      title: 'AI生成中',
+      text: '✅ 连线图已生成完成',
+      state: 'done',
+      setTimeout: 3000,
+    });
 
     const result = {
       valid: errors.length === 0,
@@ -1052,7 +1161,7 @@ export async function validateConnectionGraphTool(
           : '连线配置安全，所有检查通过。数据已保存。')
         : `发现 ${errors.length} 个安全问题，请修正后重新验证。`,
       awsWarnings: parsed.warnings.length > 0 ? parsed.warnings : undefined,
-      tip: '用户可以点击右侧工具栏的「查看接线」按钮查看连线图。',
+      tip: '用户可以点击右侧工具栏的「电路连接」按钮查看连线图。',
     };
 
     return {
@@ -1346,7 +1455,7 @@ export async function getCurrentSchematicTool(
         content: JSON.stringify({
           exists: false,
           message: '当前项目没有已保存的连线图。',
-          tip: '请先调用 get_component_catalog + generate_schematic 生成连线方案。',
+          tip: '请先调用 get_project_context + generate_schematic 生成连线方案。',
         }, null, 2),
       };
     }
@@ -1369,7 +1478,7 @@ export async function getCurrentSchematicTool(
       editingTip: [
         '如需修改连线：基于当前 schematicData 的连线信息，编写新的 AWS 格式内容',
         '如需添加组件：先调用 generate_schematic 获取新组件的引脚摘要',
-        '修改完成后：调用 validate_schematic(aws: "你的AWS内容") 验证并保存',
+        '修改完成后：调用 validate_schematic(aws: "你的AWS内容") 验证 + 保存 + 刷新（最终步骤）',
       ],
     };
 
@@ -1437,7 +1546,7 @@ export async function applySchematicTool(
           is_error: true,
           content: JSON.stringify({
             error: '项目中没有 connection.aws 文件',
-            tip: '请先使用 generate_schematic 生成连线，然后输出 AWS 格式并调用 apply_schematic(aws: "...") 保存。',
+            tip: '请先使用 generate_schematic 生成连线，然后输出 AWS 格式并调用 validate_schematic(aws: "...") 验证保存。',
           }, null, 2),
         };
       }
@@ -1483,7 +1592,7 @@ export async function applySchematicTool(
           content: JSON.stringify({
             success: false,
             error: '开发板引脚配置不存在',
-            tip: '请先使用 generate_pinmap + save_pinmap 为当前开发板生成 pinmap 配置，然后重新调用 apply_schematic。',
+            tip: '请先使用 generate_pinmap + save_pinmap 为当前开发板生成 pinmap 配置，然后重新调用 validate_schematic。',
             syntaxReference: AWS_SYNTAX_REFERENCE,
           }, null, 2),
         };
@@ -1518,7 +1627,7 @@ export async function applySchematicTool(
           success: false,
           loadErrors,
           message: '部分组件配置加载失败',
-          tip: '请按以下步骤生成缺失的 pinmap 配置：\n1. 调用 get_component_catalog 确认组件状态\n2. 对于 status=needs_generation 的组件，调用 generate_pinmap(pinmapId: "...")\n3. 根据返回的参考信息生成 pinmap JSON\n4. 调用 save_pinmap 保存配置\n5. 重新调用 apply_schematic',
+          tip: '请按以下步骤生成缺失的 pinmap 配置：\n1. 调用 get_project_context 确认组件状态\n2. 对于 status=needs_generation 的组件，调用 generate_pinmap(pinmapId: "...")\n3. 根据返回的参考信息生成 pinmap JSON\n4. 调用 save_pinmap 保存配置\n5. 重新调用 validate_schematic',
           syntaxReference: AWS_SYNTAX_REFERENCE,
         }, null, 2),
       };
@@ -1706,7 +1815,7 @@ export async function applySchematicTool(
   } catch (error: any) {
     return {
       is_error: true,
-      content: `apply_schematic 执行失败: ${error.message || error}`,
+      content: `apply_schematic(已废弃，转发到validate_schematic) 执行失败: ${error.message || error}`,
     };
   }
 }

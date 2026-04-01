@@ -17,7 +17,7 @@
  *   - 本质相同：Budget-first，声明式，自动淘汰
  */
 
-import { estimateMessageTokens, estimateMessagesTokens } from '../services/context-budget.service';
+import { fastEstimateMessageTokens, fastEstimateMessagesTokens } from './prompt-providers';
 
 // ==================== 类型定义 ====================
 
@@ -276,7 +276,7 @@ export function annotateWithPriority(
   for (let i = 0; i < totalTurns; i++) {
     const span = turnSpans[i];
     const turnMessages = messages.slice(span.startIdx, span.endIdx);
-    const tokens = estimateMessagesTokens(turnMessages);
+    const tokens = fastEstimateMessagesTokens(turnMessages);
     const isLatest = (i === totalTurns - 1);
 
     // 检测是否为摘要消息
@@ -348,7 +348,7 @@ export function annotateMessagesLegacy(
 
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
-    const tokens = estimateMessageTokens(msg);
+    const tokens = fastEstimateMessageTokens(msg);
     let priority: number;
 
     if (msg.role === 'system') {

@@ -34,6 +34,7 @@ import {
   getPinmapSummaryTool,
   validateConnectionGraphTool,
   getSensorPinmapCatalogTool,
+  getProjectContextTool,
   generatePinmapTool,
   savePinmapTool,
   getCurrentSchematicTool,
@@ -82,6 +83,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   'generate_schematic': '生成连线方案',
   'validate_schematic': '验证连线配置',
   'get_component_catalog': '获取组件目录',
+  'get_project_context': '获取项目上下文',
   'generate_pinmap': '生成引脚图',
   'save_pinmap': '保存引脚图',
   'get_current_schematic': '获取当前电路图',
@@ -586,10 +588,11 @@ export class BackgroundAgentService implements OnDestroy {
         return getPinmapSummaryTool(this.connectionGraphService, this.projectService, args);
       case 'get_component_catalog':
         return getSensorPinmapCatalogTool(this.connectionGraphService, this.projectService, args);
+      case 'get_project_context':
+        return getProjectContextTool(this.connectionGraphService, this.projectService, args);
       case 'validate_schematic':
+      case 'apply_schematic': // 已废弃，转发到 validate_schematic（功能已合并）
         return validateConnectionGraphTool(this.connectionGraphService, this.projectService, args);
-      case 'apply_schematic':
-        return applySchematicTool(this.connectionGraphService, this.projectService, args);
       case 'get_current_schematic':
         return getCurrentSchematicTool(this.connectionGraphService, this.projectService, args);
       case 'generate_pinmap':

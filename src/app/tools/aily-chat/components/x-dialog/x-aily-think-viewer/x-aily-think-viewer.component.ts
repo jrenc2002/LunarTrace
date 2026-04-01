@@ -6,6 +6,7 @@ import {
   AfterViewChecked,
   OnChanges,
   SimpleChanges,
+  OnDestroy,
   signal,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -13,6 +14,7 @@ import { XMarkdownComponent } from 'ngx-x-markdown';
 import type { StreamingOption, ComponentMap } from 'ngx-x-markdown';
 import { AilyChatCodeComponent } from '../aily-chat-code.component';
 import { getClosingTagsForOpenBlocks } from '../../../services/content-sanitizer.service';
+import { getThinkContent } from '../../../core/think-content-store';
 
 @Component({
   selector: 'x-aily-think-viewer',
@@ -31,7 +33,7 @@ import { getClosingTagsForOpenBlocks } from '../../../services/content-sanitizer
       </div>
       @if (thinkExpanded) {
         <div class="ac-think-body" #thinkBody (scroll)="onThinkBodyScroll($event)">
-          @if (thinkContent) {
+          @if (markdownContent()) {
             <x-markdown
               [content]="markdownContent()"
               [streaming]="streamingConfig()"
@@ -155,11 +157,13 @@ import { getClosingTagsForOpenBlocks } from '../../../services/content-sanitizer
     `,
   ],
 })
-export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges {
+export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges, OnDestroy {
   @Input() data: {
     content?: string;
     encoded?: boolean;
     isComplete?: boolean;
+    ref?: string;
+    v?: number;
   } | null = null;
   @ViewChild('thinkBody') thinkBodyRef?: ElementRef<HTMLElement>;
 
@@ -173,32 +177,150 @@ export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges {
   private thinkStickToBottom = true;
   private readonly thinkScrollBottomThresholdPx = 48;
 
-  ngOnChanges(changes: SimpleChanges): void {
-    if (changes['data']) {
-      if (!this.data) return;
-      const prevData = changes['data'].previousValue as { isComplete?: boolean } | null | undefined;
-      const prevStreaming = prevData && prevData.isComplete === false;
-      if (this.data.isComplete === false && !prevStreaming) {
-        this.thinkStickToBottom = true;
-      }
-      let raw = this.data.content || '';
-      if (this.data.encoded) {
-        try {
-          raw = decodeURIComponent(atob(raw));
-        } catch {
-          /* ignore */
-        }
-      }
-      const prev = this.thinkContent;
-      this.thinkContent = raw;
+  // ===== Throttle state =====
+  private _pendingRaw: string | null = null;
+  private _throttleTimerId: ReturnType<typeof setTimeout> | null = null;
+  private _lastRenderedRawLen = 0;
 
-      // 流式中对未闭合的 markdown 结构补全闭合标签
-      const displayContent = this.data.isComplete ? raw : raw + getClosingTagsForOpenBlocks(raw);
-      this.markdownContent.set(displayContent);
-      this.streamingConfig.set({ hasNextChunk: !this.data.isComplete });
-      if (raw.length > prev.length) this.shouldScrollThink = true;
-      this.thinkExpanded = !this.data.isComplete;
+  // ===== Polling: 因 v 字段已移除，x-markdown 不再逐帧触发 ngOnChanges =====
+  // think viewer 需自行轮询 store 获取最新内容
+  private _pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (!changes['data'] || !this.data) return;
+
+    const prevData = changes['data'].previousValue as { isComplete?: boolean } | null | undefined;
+    const prevStreaming = prevData && prevData.isComplete === false;
+
+    // 首次进入流式：重置滚动状态
+    if (this.data.isComplete === false && !prevStreaming) {
+      this.thinkStickToBottom = true;
     }
+
+    // 获取原始内容
+    let raw = '';
+    if (this.data.ref) {
+      raw = getThinkContent(this.data.ref);
+    } else if (this.data.encoded && this.data.content) {
+      try {
+        raw = decodeURIComponent(atob(this.data.content));
+      } catch {
+        raw = this.data.content;
+      }
+    } else {
+      raw = this.data.content || '';
+    }
+
+    this.thinkContent = raw;
+
+    // ★ 关键修复：isComplete 变化时立即渲染（不做节流）
+    if (this.data.isComplete === true && prevStreaming) {
+      this._stopPolling();
+      this._cancelThrottle();
+      this._renderNow(raw, true);
+      this.thinkExpanded = false;
+      return;
+    }
+
+    if (this.data.isComplete === true) {
+      this._stopPolling();
+    }
+
+    if (!this.data.isComplete) {
+      this.thinkExpanded = true;
+      this.shouldScrollThink = true;
+      this._scheduleRender(raw);
+      // 启动轮询：v 字段已移除，x-markdown 不再驱动 ngOnChanges，需自行拉取 store
+      this._startPolling();
+    }
+  }
+
+  /**
+   * ★ 核心修复：节流渲染
+   *
+   * 问题：每个 think chunk 都触发 ngOnChanges → markdownContent.set() → x-markdown 全量 parse
+   * 日志显示 2715 次 set()，平均每次 ~10ms，大量重复 work
+   *
+   * 修复：
+   * - 存储最新 raw → _pendingRaw
+   * - 如果距上次渲染增长 <500 bytes，跳过（batch 进 pending）
+   * - 已在 pending 时不再重复 schedule
+   * - 100ms 后在 rAF 中渲染
+   *
+   * 效果：think 内容每 100ms 最多 render 一次，每次只处理 500+ bytes 增量
+   */
+  private _scheduleRender(raw: string): void {
+    const rawLen = raw.length;
+    const prevRendered = this._lastRenderedRawLen;
+
+    // 立即渲染的条件：
+    // 1. 距上次渲染增长了 500+ bytes
+    // 2. 这是第一次渲染（_lastRenderedRawLen === 0）
+    // 3. 内容已完成（isComplete）
+    if (rawLen >= prevRendered + 500 || prevRendered === 0) {
+      this._cancelThrottle();
+      this._renderNow(raw, false);
+      return;
+    }
+
+    this._pendingRaw = raw;
+
+    if (this._throttleTimerId !== null) return; // 已有 pending
+
+    this._throttleTimerId = setTimeout(() => {
+      this._throttleTimerId = null;
+      if (this._pendingRaw !== null) {
+        const pending = this._pendingRaw;
+        this._pendingRaw = null;
+        this._renderNow(pending, false);
+      }
+    }, 100);
+  }
+
+  private _cancelThrottle(): void {
+    if (this._throttleTimerId !== null) {
+      clearTimeout(this._throttleTimerId);
+      this._throttleTimerId = null;
+    }
+    this._pendingRaw = null;
+  }
+
+  /** 启动轮询：每 200ms 从 store 读取最新 think 内容 */
+  private _startPolling(): void {
+    if (this._pollTimer) return;
+    this._pollTimer = setInterval(() => {
+      if (!this.data?.ref || this.data.isComplete) {
+        this._stopPolling();
+        return;
+      }
+      const raw = getThinkContent(this.data.ref);
+      if (raw && raw.length !== this._lastRenderedRawLen) {
+        this.thinkContent = raw;
+        this.shouldScrollThink = true;
+        this._scheduleRender(raw);
+      }
+    }, 200);
+  }
+
+  /** 停止轮询 */
+  private _stopPolling(): void {
+    if (this._pollTimer) {
+      clearInterval(this._pollTimer);
+      this._pollTimer = null;
+    }
+  }
+
+  private _renderNow(raw: string, isFinal: boolean): void {
+    if (!raw) {
+      this.markdownContent.set('');
+      this._lastRenderedRawLen = 0;
+      return;
+    }
+
+    // 非完成状态：追加闭合标签（修复流式过程中的 markdown 截断）
+    const displayContent = isFinal ? raw : raw + getClosingTagsForOpenBlocks(raw);
+    this.markdownContent.set(displayContent);
+    this._lastRenderedRawLen = raw.length;
   }
 
   onThinkBodyScroll(event: Event): void {
@@ -216,5 +338,10 @@ export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges {
       }
       this.shouldScrollThink = false;
     }
+  }
+
+  ngOnDestroy(): void {
+    this._cancelThrottle();
+    this._stopPolling();
   }
 }

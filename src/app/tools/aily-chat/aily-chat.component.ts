@@ -1,4 +1,4 @@
-import { Component, ElementRef, ViewChild, ViewChildren, QueryList, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { Component, ElementRef, ViewChild, ViewChildren, QueryList, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { FormsModule } from '@angular/forms';
 import { XDialogComponent } from './components/x-dialog/x-dialog.component';
@@ -104,6 +104,7 @@ export { ToolCallState };
   ],
   templateUrl: './aily-chat.component.html',
   styleUrl: './aily-chat.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [ScrollManagerService, ResourceManagerService, MenuManagerService, EditCheckpointService, ChatEngineService],
 })
 export class AilyChatComponent implements OnDestroy {
@@ -194,7 +195,10 @@ export class AilyChatComponent implements OnDestroy {
     public scrollManager: ScrollManagerService,
     public resourceManager: ResourceManagerService,
     public menuManager: MenuManagerService,
-  ) { }
+  ) {
+    // 注册 OnPush CD 回调 — viewAdapter 每次 flush/appendImmediate 后调用 markForCheck
+    this.engine.setCdCallback(() => this.cdr.markForCheck());
+  }
 
   ngOnInit() {
     // 初始化宿主环境适配器
@@ -416,7 +420,7 @@ export class AilyChatComponent implements OnDestroy {
     this.menuManager.historyActionClick(e, this.engine.sessionId, {
       onGetHistory: () => this.engine.getHistory(),
       onNewChat: () => this.engine.newChat(),
-      onDetectChanges: () => this.cdr.detectChanges(),
+      onDetectChanges: () => this.cdr.markForCheck(),
       onUpdateTitle: (title: string) => { this.chatService.currentSessionTitle = title; },
       onRefreshHistory: () => this.engine.refreshHistoryList(),
     });
