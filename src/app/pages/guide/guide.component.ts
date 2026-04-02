@@ -194,6 +194,11 @@ export class GuideComponent implements OnInit, AfterViewInit {
     await this.projectService.projectOpen(data.path);
   }
 
+  removeProject(event: Event, project: any) {
+    event.stopPropagation();
+    this.projectService.removeRecentlyProject({ path: project.path });
+  }
+
   process(item) {
     switch (item.action) {
       case 'project-new':
