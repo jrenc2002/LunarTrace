@@ -8,6 +8,7 @@ export interface OpenocdDevice {
   pid?: string;
   serial?: string;
   targetVoltage?: string;
+  shortSerial?: string; // A shorter version of the serial number for display purposes
 }
 
 export interface OpenocdFlashOptions {

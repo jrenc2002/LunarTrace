@@ -1,11 +1,13 @@
 const { ipcMain } = require("electron");
-const { detectAllDevices, detectStlink, detectDaplink, flashFirmware } = require("openocd-tool");
+const { detect, detectStlink, detectDaplink, flashFirmware } = require("openocd-tool");
 
 function registerOpenocdHandlers(mainWindow) {
   // 检测所有设备（ST-Link + DAPLink）
   ipcMain.handle("openocd-detect-all", async () => {
     try {
-      const devices = await detectAllDevices();
+      const devices = await detect();
+      console.log("Detected devices:", devices);
+      
       return { success: true, devices };
     } catch (error) {
       console.error("openocd detect all devices failed:", error);

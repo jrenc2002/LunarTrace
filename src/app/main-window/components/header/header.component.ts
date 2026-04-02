@@ -292,11 +292,14 @@ export class HeaderComponent implements OnDestroy {
         if (result.success && result.devices && result.devices.length > 0) {
           portList0.push({ sep: true });
           for (const device of result.devices) {
+            console.log('Detected device:', device  );
+            const rawType = device.type.replace(/-/g, '');
+            const typeName = /stlink/i.test(rawType) ? 'STLink' : /daplink/i.test(rawType) ? 'DAPLink' : device.type;
             portList0.push({
-              name: `${device.type} - ${device.serial || device.description || 'Unknown'}`,
-              text: device.description || '',
+              name: typeName,
+              text: device.shortSerial || '',
               type: 'debugger',
-              icon: device.type === 'ST-Link' ? 'fa-light fa-microchip' : 'fa-light fa-bug',
+              icon: 'fa-brands fa-usb',
             });
           }
         }
