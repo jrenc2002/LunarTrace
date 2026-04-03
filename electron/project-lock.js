@@ -3,6 +3,7 @@
  */
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const { app } = require("electron");
 
 const LOCK_SEGMENTS = [".aily", "project-open.lock"];
@@ -65,6 +66,47 @@ function isPidAlive(pid) {
   }
 }
 
+/**
+ * 锁文件创建时间早于系统最近一次启动 → 必定是陈旧锁（进程不可能跨越重启存活）
+ */
+function isLockStaleAfterReboot(lockData) {
+  if (!lockData || !lockData.startedAt) {
+    return false;
+  }
+  const bootTimeMs = Date.now() - os.uptime() * 1000;
+  return lockData.startedAt < bootTimeMs - 5000; // 5s 容差
+}
+
+/**
+ * 在 Windows 上额外校验 PID 对应进程的可执行路径是否匹配锁中记录的 execPath，
+ * 防止 PID 复用导致误判。
+ */
+function isHolderProcessMatch(lockData) {
+  if (!lockData || !lockData.pid || !lockData.execPath) {
+    return false;
+  }
+  if (process.platform === "win32") {
+    try {
+      const { execFileSync } = require("child_process");
+      const out = execFileSync(
+        "wmic",
+        ["process", "where", `ProcessId=${lockData.pid}`, "get", "ExecutablePath", "/value"],
+        { encoding: "utf8", timeout: 5000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] }
+      );
+      const match = out.match(/ExecutablePath=(.+)/i);
+      if (match) {
+        const actual = match[1].trim().toLowerCase();
+        const expected = lockData.execPath.trim().toLowerCase();
+        return actual === expected;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+  return true; // 非 Windows 平台回退到仅 PID 检查
+}
+
 function writeLockPayload() {
   return JSON.stringify(
     {
@@ -124,7 +166,9 @@ function tryAcquireLock(projectPath, options = {}) {
     return { ok: true, normalizedPath: normalized, lockPath, alreadyHeld: true };
   }
 
-  if (existing && isPidAlive(existing.pid)) {
+  if (existing && isLockStaleAfterReboot(existing)) {
+    // 锁创建于上次重启之前，直接视为陈旧
+  } else if (existing && isPidAlive(existing.pid) && isHolderProcessMatch(existing)) {
     return {
       ok: false,
       conflict: true,
