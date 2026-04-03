@@ -9,7 +9,7 @@ const projectLock = require("./project-lock");
 
 // 设置应用名称，用于 Windows 系统通知显示
 app.setName("aily blockly");
-
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
 // Windows 系统中设置 AppUserModelID，用于通知分组和显示
 if (isWin32) {
   app.setAppUserModelId("pro.aily.blockly");
@@ -196,9 +196,6 @@ if (shouldUseMultiInstance()) {
     console.log('协议启动，跳过实例隔离设置');
   }
 }
-
-app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
-app.commandLine.appendSwitch('enable-features', 'V8LazyCodeGeneration,V8CacheOptions');
 
 app.removeAsDefaultProtocolClient(PROTOCOL);
 
