@@ -134,3 +134,56 @@ export function searchLibraries(db: AnyOrama, term: string, limit: number = 500)
 
   return results.hits.map((hit: any) => hit.document.name as string);
 }
+
+// ===================== 开发板搜索 =====================
+
+const BOARD_SCHEMA = {
+  name: 'string',
+  nickname: 'string',
+  brand: 'string',
+  description: 'string',
+  keywords: 'string',
+  type: 'string',
+} as const;
+
+/**
+ * 创建 Orama 搜索引擎实例，索引开发板列表
+ */
+export function createBoardSearchIndex(boards: any[]): AnyOrama {
+  const db = create({ schema: BOARD_SCHEMA });
+
+  for (const board of boards) {
+    insert(db, {
+      name: board.name || '',
+      nickname: board._nickname || board.nickname || '',
+      brand: board.brand || '',
+      description: board._description || board.description || '',
+      keywords: Array.isArray(board.keywords) ? board.keywords.join(' ') : (board.keywords || ''),
+      type: board.type || '',
+    });
+  }
+
+  return db;
+}
+
+/**
+ * 使用 Orama 执行开发板模糊搜索，返回匹配的开发板名称列表（按相关度排序）
+ */
+export function searchBoards(db: AnyOrama, term: string, limit: number = 500): string[] {
+  const results = search(db, {
+    term,
+    properties: ['name', 'nickname', 'brand', 'description', 'keywords', 'type'],
+    tolerance: 1,
+    boost: {
+      name: 3,
+      nickname: 3,
+      brand: 2,
+      keywords: 1.5,
+      type: 1,
+      description: 0.5,
+    },
+    limit,
+  }) as any;
+
+  return results.hits.map((hit: any) => hit.document.name as string);
+}
