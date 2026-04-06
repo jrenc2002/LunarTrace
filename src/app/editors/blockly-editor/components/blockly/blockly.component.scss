@@ -38,6 +38,10 @@
                         }
                     }
                 }
+
+                > .blocklyToolboxCategory:last-child {
+                    padding-bottom: 70px;
+                }
             }
 
             .blocklyToolboxCategory {
@@ -69,10 +73,6 @@
                         justify-content: center;
                     }
 
-                }
-
-                &:last-child {
-                    padding-bottom: 70px;
                 }
             }
 
