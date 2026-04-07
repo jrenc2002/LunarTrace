@@ -187,10 +187,9 @@ export class ToolboxSearchCategory extends Blockly.ToolboxCategory {
     if (!this.flyoutItems_.length) {
       this.flyoutItems_.push({
         kind: 'label',
-        text:
-          query.length < 3
-            ? 'Type to search for blocks'
-            : 'No matching blocks found',
+        text: query
+          ? 'No matching blocks found'
+          : 'Type to search for blocks',
       });
     }
     this.parentToolbox_.refreshSelection();

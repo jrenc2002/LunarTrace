@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, ApplicationRef } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, throwError, from } from 'rxjs';
 import { catchError, map, switchMap } from 'rxjs/operators';
@@ -56,6 +56,7 @@ export class AuthService {
 
   private http = inject(HttpClient);
   private electronService = inject(ElectronService);
+  private appRef = inject(ApplicationRef);
 
   // 用户登录状态
   private isLoggedInSubject = new BehaviorSubject<boolean>(false);
@@ -70,7 +71,10 @@ export class AuthService {
   showUser = new BehaviorSubject<any>(null);
 
   constructor() {
-    // 不在构造函数中立即初始化，等待ElectronService初始化完成
+    // 登录状态变化后强制触发全局变更检测
+    this.isLoggedInSubject.subscribe(() => {
+      setTimeout(() => this.appRef.tick());
+    });
   }
 
   /**

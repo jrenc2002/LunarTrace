@@ -97,6 +97,7 @@ export class LoginComponent implements OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe((isLoggedIn) => {
         this.showLogin = !isLoggedIn;
+        this.cdr.detectChanges();
       });
   }
 

@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy } from '@angular/core';
 import { CommonModule, Location } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { NzButtonModule } from 'ng-zorro-antd/button';
@@ -19,6 +19,10 @@ import { PlatformService } from '../../services/platform.service';
 import { NzRadioModule } from 'ng-zorro-antd/radio';
 import { CloudService } from '../../tools/cloud-space/services/cloud.service';
 import { SequentialImgDirective } from './sequential-img.directive';
+import { Subject } from 'rxjs';
+import { debounceTime, takeUntil } from 'rxjs/operators';
+import { createBoardSearchIndex, searchBoards } from '../../utils/fuzzy-search.utils';
+import type { AnyOrama } from '@orama/orama';
 
 @Component({
   selector: 'app-project-new',
@@ -39,7 +43,7 @@ import { SequentialImgDirective } from './sequential-img.directive';
   templateUrl: './project-new.component.html',
   styleUrl: './project-new.component.scss',
 })
-export class ProjectNewComponent {
+export class ProjectNewComponent implements OnDestroy {
   currentStep = 0;
 
   listMode = 'brand'; // brand | core | function
@@ -66,6 +70,10 @@ export class ProjectNewComponent {
 
   _boardList: any[] = [];
   boardList: any[] = [];
+
+  private searchSubject = new Subject<string>();
+  private destroy$ = new Subject<void>();
+  private searchIndex: AnyOrama | null = null;
 
   get resourceUrl() {
     return this.configService.getCurrentResourceUrl();
@@ -96,7 +104,17 @@ export class ProjectNewComponent {
     private cloudService: CloudService,
     private cd: ChangeDetectorRef,
     private translate: TranslateService
-  ) { }
+  ) {
+    this.searchSubject.pipe(
+      debounceTime(200),
+      takeUntil(this.destroy$)
+    ).subscribe(keyword => this.doSearch(keyword));
+  }
+
+  ngOnDestroy() {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
 
   async ngOnInit() {
     if (this.electronService.isElectron) {
@@ -136,15 +154,40 @@ export class ProjectNewComponent {
   }
 
   search(keyword = this.keyword) {
-    if (keyword) {
-      keyword = keyword.replace(/\s/g, '').toLowerCase();
-      let filteredBoardList = this._boardList.filter(item => item.fulltext.includes(keyword));
-      // 对搜索结果按使用次数排序
-      this.boardList = this.applyLocalization(this.configService.sortBoardsByUsage(filteredBoardList));
-    } else {
+    this.keyword = keyword;
+    this.searchSubject.next(keyword);
+  }
+
+  private doSearch(keyword: string) {
+    if (!keyword) {
       // 恢复完整列表（已按使用次数排序）
       this.boardList = this.applyLocalization(JSON.parse(JSON.stringify(this._boardList)));
+      if (this.boardList.length > 0) {
+        this.selectBoard(this.boardList[0]);
+      }
+      this.cd.detectChanges();
+      return;
     }
+
+    // 使用 Orama 进行模糊搜索
+    const localizedList = this.applyLocalization(JSON.parse(JSON.stringify(this._boardList)));
+    this.searchIndex = createBoardSearchIndex(localizedList);
+    const matchedNames = searchBoards(this.searchIndex, keyword);
+
+    // 按 Orama 返回的顺序（相关度排序）还原开发板对象
+    const nameIndexMap = new Map<string, number>();
+    matchedNames.forEach((name, i) => nameIndexMap.set(name, i));
+
+    this.boardList = localizedList
+      .filter(board => nameIndexMap.has(board.name))
+      .sort((a, b) => (nameIndexMap.get(a.name) ?? 0) - (nameIndexMap.get(b.name) ?? 0));
+
+    if (this.boardList.length > 0) {
+      this.selectBoard(this.boardList[0]);
+    } else {
+      this.currentBoard = null;
+    }
+    this.cd.detectChanges();
   }
 
   devmodes = [];
