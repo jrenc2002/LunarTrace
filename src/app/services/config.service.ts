@@ -4,6 +4,7 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { lastValueFrom, Subject } from 'rxjs';
 import { ElectronService } from './electron.service';
 import { API, setServerUrl, setRegistryUrl, setToolWebUrl } from '../configs/api.config';
+import { calculateSimilarity, extractKeywords } from '../utils/fuzzy-search.utils';
 
 @Injectable({
   providedIn: 'root',
@@ -834,14 +835,14 @@ export class ConfigService {
 
     // 3. 模糊匹配 - 计算相似度并找最佳匹配
     const candidates = this.libraryList.map(lib => {
-      const nameScore = this.calculateSimilarity(queryLower, lib.name?.toLowerCase() || '');
-      const nicknameScore = this.calculateSimilarity(queryLower, lib.nickname?.toLowerCase() || '');
+      const nameScore = calculateSimilarity(queryLower, lib.name?.toLowerCase() || '');
+      const nicknameScore = calculateSimilarity(queryLower, lib.nickname?.toLowerCase() || '');
       
       // 关键词匹配 - 提高权重
       let keywordScore = 0;
       if (lib.keywords && Array.isArray(lib.keywords)) {
         // 提取查询中的关键词（去除特殊字符、分割、提取有意义的部分）
-        const queryKeywords = this.extractKeywords(queryLower);
+        const queryKeywords = extractKeywords(queryLower);
         
         for (const queryKw of queryKeywords) {
           for (const libKw of lib.keywords) {
@@ -862,7 +863,7 @@ export class ConfigService {
       let descriptionScore = 0;
       if (lib.description) {
         const descLower = lib.description.toLowerCase();
-        const queryKeywords = this.extractKeywords(queryLower);
+        const queryKeywords = extractKeywords(queryLower);
         for (const queryKw of queryKeywords) {
           if (descLower.includes(queryKw)) {
             descriptionScore += 0.3;
@@ -920,15 +921,15 @@ export class ConfigService {
 
     // 3. 模糊匹配 - 计算相似度并找最佳匹配
     const candidates = this.boardList.map(board => {
-      const nameScore = this.calculateSimilarity(queryLower, board.name?.toLowerCase() || '');
-      const nicknameScore = this.calculateSimilarity(queryLower, board.nickname?.toLowerCase() || '');
-      const displayNameScore = this.calculateSimilarity(queryLower, board.displayName?.toLowerCase() || '');
+      const nameScore = calculateSimilarity(queryLower, board.name?.toLowerCase() || '');
+      const nicknameScore = calculateSimilarity(queryLower, board.nickname?.toLowerCase() || '');
+      const displayNameScore = calculateSimilarity(queryLower, board.displayName?.toLowerCase() || '');
       
       // 描述匹配
       let descriptionScore = 0;
       if (board.description) {
         const descLower = board.description.toLowerCase();
-        const queryKeywords = this.extractKeywords(queryLower);
+        const queryKeywords = extractKeywords(queryLower);
         for (const queryKw of queryKeywords) {
           if (descLower.includes(queryKw)) {
             descriptionScore += 0.3;
@@ -955,66 +956,6 @@ export class ConfigService {
     return { exists: false, board: null, fuzzyMatch: false, originalQuery: boardName };
   }
 
-  /**
-   * 提取查询字符串中的关键词
-   * 例如: "@aily-project/lib-oled-ssd1306" => ["aily", "project", "lib", "oled", "ssd1306"]
-   */
-  private extractKeywords(query: string): string[] {
-    if (!query) return [];
-    
-    // 移除常见的前缀/后缀
-    let cleaned = query
-      .replace(/@aily-project\//gi, '')  // 移除包前缀
-      .replace(/^lib-/gi, '')             // 移除lib-前缀
-      .replace(/\s+/g, ' ')               // 合并空格
-      .trim();
-    
-    // 按多种分隔符分割：连字符、下划线、空格等
-    const keywords = cleaned.split(/[-_\s\/]+/)
-      .filter(kw => kw.length >= 2)  // 过滤太短的词
-      .map(kw => kw.toLowerCase());
-    
-    return [...new Set(keywords)];  // 去重
-  }
-
-  /**
-   * 计算两个字符串的相似度（Dice系数 + 包含关系）
-   */
-  private calculateSimilarity(str1: string, str2: string): number {
-    if (!str1 || !str2) return 0;
-    if (str1 === str2) return 1;
-    
-    // 包含关系检查
-    if (str1.includes(str2) || str2.includes(str1)) {
-      const shorter = str1.length < str2.length ? str1 : str2;
-      const longer = str1.length < str2.length ? str2 : str1;
-      return shorter.length / longer.length * 0.8 + 0.2;
-    }
-
-    // Dice 系数计算
-    const bigrams1 = this.getBigrams(str1);
-    const bigrams2 = this.getBigrams(str2);
-    
-    let intersection = 0;
-    for (const bigram of bigrams1) {
-      if (bigrams2.has(bigram)) {
-        intersection++;
-      }
-    }
-    
-    return (2 * intersection) / (bigrams1.size + bigrams2.size);
-  }
-
-  /**
-   * 获取字符串的 bigrams 集合
-   */
-  private getBigrams(str: string): Set<string> {
-    const bigrams = new Set<string>();
-    for (let i = 0; i < str.length - 1; i++) {
-      bigrams.add(str.substring(i, i + 2));
-    }
-    return bigrams;
-  }
 }
 
 interface AppConfig {

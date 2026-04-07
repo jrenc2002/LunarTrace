@@ -39,7 +39,11 @@
       {
         "from": "electron",
         "to": "electron",
-        "filter": ["**/*", "!package-lock.json", "!.gitignore"]
+        "filter": [
+          "**/*",
+          "!package-lock.json",
+          "!.gitignore"
+        ]
       },
       {
         "from": "electron/node_modules",
@@ -157,6 +161,8 @@
     "@lydell/node-pty": "^1.1.0",
     "@modelcontextprotocol/sdk": "^1.25.1",
     "@ngx-translate/core": "^16.0.3",
+    "@orama/orama": "^3.1.18",
+    "@orama/tokenizers": "^3.1.18",
     "@splidejs/splide": "^4.1.4",
     "@tanstack/angular-virtual": "^4.0.6",
     "@types/uuid": "^10.0.0",

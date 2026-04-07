@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, EventEmitter, Output } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, OnDestroy, Output } from '@angular/core';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzToolTipModule } from 'ng-zorro-antd/tooltip';
@@ -8,6 +8,8 @@ import { CommonModule } from '@angular/common';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
+import { Subject } from 'rxjs';
+import { debounceTime, takeUntil } from 'rxjs/operators';
 import { NpmService } from '../../../../services/npm.service';
 import { ConfigService } from '../../../../services/config.service';
 import { ProjectService } from '../../../../services/project.service';
@@ -19,6 +21,8 @@ import { BlocklyService } from '../../services/blockly.service';
 import { PlatformService } from '../../../../services/platform.service';
 import { WorkflowService } from '../../../../services/workflow.service';
 import { CrossPlatformCmdService } from '../../../../services/cross-platform-cmd.service';
+import { createLibrarySearchIndex, searchLibraries } from '../../../../utils/fuzzy-search.utils';
+import type { AnyOrama } from '@orama/orama';
 
 @Component({
   selector: 'app-lib-manager',
@@ -35,7 +39,7 @@ import { CrossPlatformCmdService } from '../../../../services/cross-platform-cmd
   templateUrl: './lib-manager.component.html',
   styleUrl: './lib-manager.component.scss'
 })
-export class LibManagerComponent {
+export class LibManagerComponent implements OnDestroy {
 
   @Output() close = new EventEmitter();
 
@@ -47,6 +51,10 @@ export class LibManagerComponent {
   installedPackageList: string[] = [];
 
   loading = false;
+
+  private searchSubject = new Subject<string>();
+  private destroy$ = new Subject<void>();
+  private searchIndex: AnyOrama | null = null;
 
   constructor(
     private npmService: NpmService,
@@ -63,6 +71,15 @@ export class LibManagerComponent {
     private platformService: PlatformService,
     private workflowService: WorkflowService,
   ) {
+    this.searchSubject.pipe(
+      debounceTime(200),
+      takeUntil(this.destroy$)
+    ).subscribe(keyword => this.doSearch(keyword));
+  }
+
+  ngOnDestroy() {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
   async ngOnInit() {
@@ -133,23 +150,44 @@ export class LibManagerComponent {
 
   async search(keyword = this.keyword) {
     this.keyword = keyword;
-    if (keyword) {
-      keyword = keyword.replace(/\s/g, '').toLowerCase();
-      // 使用indexOf过滤并记录关键词位置，然后按位置排序
-      let libraryList = await this.checkInstalled();
-      const matchedItems = libraryList
-        .map(item => {
-          const index = item.fulltext.indexOf(keyword);
-          return { item, index };
-        })
-        .filter(({ index }) => index !== -1)
-        .sort((a, b) => a.index - b.index)
-        .map(({ item }) => item);
+    this.searchSubject.next(keyword);
+  }
 
-      this.libraryList = this.applyLocalization(matchedItems);
-    } else {
+  private async doSearch(keyword: string) {
+    if (!keyword) {
       this.libraryList = this.applyLocalization(await this.checkInstalled());
+      this.cd.detectChanges();
+      return;
     }
+
+    const keywordLower = keyword.toLowerCase();
+    let libraryList = await this.checkInstalled();
+
+    // 特殊标签搜索（installed / lib-core 等）保持精确子串匹配
+    if (keywordLower === 'installed' || keywordLower === 'lib-core') {
+      const stripped = keywordLower.replace(/\s/g, '');
+      const matchedItems = libraryList
+        .filter(item => item.fulltext.indexOf(stripped) !== -1);
+      this.libraryList = this.applyLocalization(matchedItems);
+      this.cd.detectChanges();
+      return;
+    }
+
+    // 使用 Orama 进行模糊搜索
+    const localizedList = this.applyLocalization(libraryList);
+    this.searchIndex = createLibrarySearchIndex(localizedList);
+    const matchedNames = searchLibraries(this.searchIndex, keyword);
+
+    // 按 Orama 返回的顺序（相关度排序）还原库对象
+    const nameIndexMap = new Map<string, number>();
+    matchedNames.forEach((name, i) => nameIndexMap.set(name, i));
+
+    const results = localizedList
+      .filter(lib => nameIndexMap.has(lib.name))
+      .sort((a, b) => (nameIndexMap.get(a.name) ?? 0) - (nameIndexMap.get(b.name) ?? 0));
+
+    this.libraryList = results;
+    this.cd.detectChanges();
   }
 
   private getRandomTags(count: number): { key: string; label: string }[] {
