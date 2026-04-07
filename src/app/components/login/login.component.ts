@@ -152,6 +152,8 @@ export class LoginComponent implements OnDestroy {
           this.wechatQrcodeUrl = response.data.qrcode_url;
           this.wechatStatus = 'pending';
           this.wechatStatusMessage = this.translate.instant('LOGIN.WECHAT_SCAN') || '请使用微信扫码登录';
+
+          this.cdr.detectChanges();
           
           // 开始 60s 倒计时，到期自动刷新
           this.startWeChatQrcodeCountdown();
