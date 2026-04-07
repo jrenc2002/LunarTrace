@@ -104,16 +104,14 @@ export class AltchaComponent implements ControlValueAccessor, Validator, AfterVi
    */
   triggerVerification(): Promise<string> {
     return new Promise((resolve, reject) => {
-      // 检查是否已经验证
-      if (this.value && this.value !== '') {
-        resolve(this.value);
-        return;
-      }
+      // 清空旧状态，确保每次都重新获取新的 challenge
+      this.value = '';
+      this.onChange(this.value);
 
       // 等待组件就绪
       customElements.whenDefined('altcha-widget').then(() => {
         const el = this.altchaWidget.nativeElement as any;
-        
+
         // 设置一次性监听器
         const handleStateChange = (ev: Event) => {
           const { detail } = ev as CustomEvent;

@@ -68,14 +68,14 @@
                 <div class="ccenter">
                     <i class="fa-light fa-envelope"></i>
                 </div>
-                <input nz-input type="email" [placeholder]="'LOGIN.EMAIL_PLACEHOLDER' | translate"
+                <input nz-input type="email" [maxLength]="50" [placeholder]="'LOGIN.EMAIL_PLACEHOLDER' | translate"
                     [(ngModel)]="inputEmail" />
             </div>
             <div class="item">
                 <div class="ccenter">
                     <i class="fa-light fa-lock"></i>
                 </div>
-                <input nz-input type="text" [placeholder]="'LOGIN.CODE_PLACEHOLDER' | translate"
+                <input nz-input type="text" [maxLength]="8" [placeholder]="'LOGIN.CODE_PLACEHOLDER' | translate"
                     [(ngModel)]="inputCode" />
                 <button nz-button nzType="default" class="send-code-btn" [disabled]="isSendingCode || countdown > 0"
                     (click)="sendVerificationCode()">
@@ -86,7 +86,7 @@
                 <div class="ccenter">
                     <i class="fa-light fa-user-group"></i>
                 </div>
-                <input nz-input type="email" [placeholder]="'邀请码(选填)' | translate" [(ngModel)]="inputEmail" />
+                <input nz-input type="text" [maxLength]="11" [placeholder]="'邀请码(选填)' | translate" [(ngModel)]="inviteCode" />
             </div>
             <div class="actions">
                 <button nz-button nzType="primary" [nzLoading]="isWaiting" (click)="loginByEmail()">

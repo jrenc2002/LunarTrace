@@ -75,6 +75,7 @@ export class LoginComponent implements OnDestroy {
   // 邮箱登录相关
   inputEmail = '';
   inputCode = '';
+  inviteCode = '';
   isSendingCode = false;
   countdown = 0;
   private countdownTimer: any = null;
@@ -559,6 +560,7 @@ export class LoginComponent implements OnDestroy {
         next: (response) => {
           if (response.status === 200) {
             this.isSendingCode = true;
+            this.cdr.detectChanges();
             this.message.success(this.translate.instant('LOGIN.CODE_SENT'));
             this.startCountdown();
           } else {
@@ -588,9 +590,12 @@ export class LoginComponent implements OnDestroy {
     this.countdown = 60;
     this.countdownTimer = setInterval(() => {
       this.countdown--;
+      this.cdr.detectChanges();
       if (this.countdown <= 0) {
         clearInterval(this.countdownTimer);
+        this.isSendingCode = false;
         this.countdownTimer = null;
+        this.cdr.detectChanges();
       }
     }, 1000);
   }
@@ -617,7 +622,7 @@ export class LoginComponent implements OnDestroy {
     this.isWaiting = true;
 
     try {
-      this.authService.loginByEmail(this.inputEmail, this.inputCode).subscribe({
+      this.authService.loginByEmail(this.inputEmail, this.inputCode, this.inviteCode).subscribe({
         next: (response) => {
           if (response.status === 200 && response.data) {
             this.message.success(this.translate.instant('LOGIN.LOGIN_SUCCESS'));
