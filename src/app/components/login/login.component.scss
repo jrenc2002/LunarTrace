@@ -12,7 +12,7 @@
         background: #292929;
         width: 100%;
         padding: 15px;
-        border-radius: 5px;
+        border-radius: 10px;
     }
 
 }
@@ -20,10 +20,6 @@
 .description {
     width: 100%;
     min-height: 200px;
-}
-
-.phone-login-box {
-    width: 100%;
 }
 
 .header {
@@ -37,8 +33,7 @@
 }
 
 .line {
-    border-bottom: 0.5px solid #666;
-    margin-bottom: 10px;
+    border-bottom: 0.5px solid #444;
 }
 
 .btns {
@@ -48,12 +43,15 @@
     .item {
         flex-direction: column;
         padding: 15px;
+        width: 60px;
         cursor: pointer;
         color: #aaa;
         transition: all 0.3s;
+        font-size: 12px;
+        white-space: nowrap;
 
         i {
-            font-size: 30px;
+            font-size: 24px;
         }
 
         &:hover {
@@ -73,8 +71,8 @@
         }
 
         .icon {
-            width: 35px;
-            height: 35px;
+            width: 25px;
+            height: 25px;
         }
 
         .fa-mobile {
@@ -94,15 +92,13 @@
 .wechat {
     flex-direction: column;
     justify-content: flex-start;
-    height: 200px;
-    padding-top: 10px;
 
     .qrcode {
         width: 150px;
         height: 150px;
         border: 1px solid #666;
         border-radius: 3px;
-        margin-bottom: 15px;
+        margin-bottom: 10px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -151,8 +147,6 @@
 
 .agreement-section {
     margin-top: 15px;
-    padding-top: 10px;
-    border-top: 1px solid #444;
     text-align: center;
 
     .agreement-link {
@@ -195,16 +189,27 @@
         color: rgba(255, 255, 255, 0.85);
         line-height: 1.6;
 
-        h1, h2, h3 {
+        h1,
+        h2,
+        h3 {
             color: #fff;
             margin: 16px 0 8px;
         }
 
-        h1 { font-size: 20px; }
-        h2 { font-size: 16px; }
-        h3 { font-size: 14px; }
+        h1 {
+            font-size: 20px;
+        }
 
-        p, li {
+        h2 {
+            font-size: 16px;
+        }
+
+        h3 {
+            font-size: 14px;
+        }
+
+        p,
+        li {
             margin: 8px 0;
         }
 
@@ -219,8 +224,9 @@
     }
 }
 
-.phone-login-box {
-    margin-top: 23px;
+.mail-login-box {
+    margin-top: 20px;
+    height: 170px;
 
     .item {
         display: flex;
