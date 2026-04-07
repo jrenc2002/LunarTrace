@@ -112,14 +112,6 @@ export class LoginComponent implements OnDestroy {
 
   mode = 'mail'; // 默认选中邮箱登录
   select(mode) {
-    if (mode === 'wechat' && !this.showWeChatLogin) {
-      this.cleanupWeChatLogin();
-      if (this.mode === 'wechat') {
-        this.mode = '';
-      }
-      return;
-    }
-
     this.mode = mode;
     // 当选择微信登录时，若已勾选协议则初始化二维码
     if (mode === 'wechat') {
@@ -134,11 +126,6 @@ export class LoginComponent implements OnDestroy {
    * 初始化微信扫码登录
    */
   initWeChatLogin() {
-    if (!this.showWeChatLogin) {
-      this.cleanupWeChatLogin();
-      return;
-    }
-
     this.wechatStatus = 'loading';
     this.wechatQrcodeUrl = null;
     this.wechatTicket = null;
@@ -314,49 +301,6 @@ export class LoginComponent implements OnDestroy {
   getWeChatLoadingText(): string {
     const translated = this.translate.instant('LOGIN.WECHAT_LOADING');
     return translated !== 'LOGIN.WECHAT_LOADING' ? translated : '正在加载二维码...';
-  }
-
-  /**
-   * 获取微信错误文本
-   */
-  getWeChatErrorText(): string {
-    const translated = this.translate.instant('LOGIN.WECHAT_QRCODE_FAILED');
-    return translated !== 'LOGIN.WECHAT_QRCODE_FAILED' ? translated : '获取二维码失败';
-  }
-
-  /**
-   * 获取微信状态消息
-   */
-  getWeChatStatusMessage(): string {
-    if (this.wechatStatusMessage) {
-      return this.wechatStatusMessage;
-    }
-    const translated = this.translate.instant('LOGIN.WECHAT_SCAN');
-    return translated !== 'LOGIN.WECHAT_SCAN' ? translated : '请使用微信扫码登录';
-  }
-
-  /**
-   * 获取微信成功文本
-   */
-  getWeChatSuccessText(): string {
-    const translated = this.translate.instant('LOGIN.LOGIN_SUCCESS');
-    return translated !== 'LOGIN.LOGIN_SUCCESS' ? translated : '登录成功';
-  }
-
-  /**
-   * 获取微信刷新文本
-   */
-  getWeChatRefreshText(): string {
-    const translated = this.translate.instant('LOGIN.WECHAT_REFRESH');
-    return translated !== 'LOGIN.WECHAT_REFRESH' ? translated : '刷新二维码';
-  }
-
-  /**
-   * 获取微信重试文本
-   */
-  getWeChatRetryText(): string {
-    const translated = this.translate.instant('LOGIN.WECHAT_RETRY');
-    return translated !== 'LOGIN.WECHAT_RETRY' ? translated : '重试';
   }
 
   /**

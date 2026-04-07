@@ -588,7 +588,16 @@
         "AGREEMENT_REQUIRED": "Please agree to the User Agreement and Privacy Policy first",
         "MODAL_CLOSE": "Close",
         "AGREEMENT_LOAD_FAILED": "Failed to load User Agreement",
-        "PRIVACY_LOAD_FAILED": "Failed to load Privacy Policy"
+        "PRIVACY_LOAD_FAILED": "Failed to load Privacy Policy",
+        "WECHAT_QRCODE_FAILED": "Failed to get QRcode",
+        "WECHAT_REFRESH": "Refresh QR code",
+        "WECHAT_RETRY": "Retry",
+        "INVITE_CODE_PLACEHOLDER": "Invitation code (optional)",
+        "AGREEMENT_BY_LOGIN": "By logging in/registering, you agree to the",
+        "TERMS_OF_USE": "Terms of Use",
+        "OTHER_LOGIN_METHODS": "You can also log in with",
+        "GITHUB_CONTINUE": "Please click \"Continue\" on the GitHub authorization page to complete login",
+        "REGISTER": "Register"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "Feature coming soon",

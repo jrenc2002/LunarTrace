@@ -529,7 +529,16 @@
         "AGREEMENT_REQUIRED": "يرجى الموافقة على اتفاقية المستخدم وسياسة الخصوصية أولاً",
         "MODAL_CLOSE": "إغلاق",
         "AGREEMENT_LOAD_FAILED": "فشل تحميل اتفاقية المستخدم",
-        "PRIVACY_LOAD_FAILED": "فشل تحميل سياسة الخصوصية"
+        "PRIVACY_LOAD_FAILED": "فشل تحميل سياسة الخصوصية",
+        "WECHAT_QRCODE_FAILED": "فشل الحصول على رمز QR",
+        "WECHAT_REFRESH": "تحديث رمز QR",
+        "WECHAT_RETRY": "إعادة المحاولة",
+        "INVITE_CODE_PLACEHOLDER": "رمز الدعوة (اختياري)",
+        "AGREEMENT_BY_LOGIN": "بتسجيل الدخول/التسجيل، فإنك توافق على",
+        "TERMS_OF_USE": "شروط الاستخدام",
+        "OTHER_LOGIN_METHODS": "يمكنك أيضاً تسجيل الدخول باستخدام",
+        "GITHUB_CONTINUE": "يرجى النقر على \"Continue\" في صفحة تفويض GitHub لإكمال تسجيل الدخول",
+        "REGISTER": "تسجيل"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "الميزة قادمة قريباً"
