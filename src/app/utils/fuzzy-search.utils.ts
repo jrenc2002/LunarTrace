@@ -4,6 +4,7 @@
  */
 
 import { create, insert, search, type AnyOrama } from '@orama/orama';
+import { createTokenizer as createMandarinTokenizer } from '@orama/tokenizers/mandarin';
 
 /**
  * 获取字符串的 bigrams 集合
@@ -94,7 +95,7 @@ export interface LibrarySearchDoc {
  * 创建 Orama 搜索引擎实例，索引库列表
  */
 export function createLibrarySearchIndex(libraries: any[]): AnyOrama {
-  const db = create({ schema: LIBRARY_SCHEMA });
+  const db = create({ schema: LIBRARY_SCHEMA, components: { tokenizer: createMandarinTokenizer() } });
 
   for (const lib of libraries) {
     insert(db, {
@@ -150,7 +151,7 @@ const BOARD_SCHEMA = {
  * 创建 Orama 搜索引擎实例，索引开发板列表
  */
 export function createBoardSearchIndex(boards: any[]): AnyOrama {
-  const db = create({ schema: BOARD_SCHEMA });
+  const db = create({ schema: BOARD_SCHEMA, components: { tokenizer: createMandarinTokenizer() } });
 
   for (const board of boards) {
     insert(db, {
