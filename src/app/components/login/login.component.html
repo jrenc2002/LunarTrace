@@ -16,19 +16,17 @@
                 </div>
                 } @else if (wechatQrcodeUrl) {
                 <div class="qrcode">
-                    <img [src]="wechatQrcodeUrl" alt="微信扫码登录二维码" />
+                    <img [src]="wechatQrcodeUrl" />
                 </div>
                 } @else {
                 <div class="qrcode ccenter">
                     <div class="error-text">{{ 'LOGIN.WECHAT_QRCODE_FAILED' | translate }}</div>
                     @if (wechatStatus === 'expired') {
-                    <div class="refresh-btn btn link" (click)="refreshWeChatQrcode()"
-                        style="margin-top: 10px;">
+                    <div class="refresh-btn btn link" (click)="refreshWeChatQrcode()" style="margin-top: 10px;">
                         {{ 'LOGIN.WECHAT_REFRESH' | translate }}
                     </div>
                     } @else if (wechatStatus === 'error') {
-                    <div class="refresh-btn btn link" (click)="refreshWeChatQrcode()"
-                        style="margin-top: 10px;">
+                    <div class="refresh-btn btn link" (click)="refreshWeChatQrcode()" style="margin-top: 10px;">
                         {{ 'LOGIN.WECHAT_RETRY' | translate }}
                     </div>
                     }
@@ -80,19 +78,21 @@
                 <div class="ccenter">
                     <i class="fa-light fa-user-group"></i>
                 </div>
-                <input nz-input type="email" [placeholder]="'LOGIN.INVITE_CODE_PLACEHOLDER' | translate" [(ngModel)]="inputEmail" />
+                <input nz-input type="email" [placeholder]="'LOGIN.INVITE_CODE_PLACEHOLDER' | translate"
+                    [(ngModel)]="inputEmail" />
             </div>
             <div class="actions">
                 <button nz-button nzType="primary" [nzLoading]="isWaiting" (click)="loginByEmail()">
-                    {{ isWaiting ? ('LOGIN.LOGGING_IN' | translate) : ('LOGIN.LOGIN' | translate) + ' / ' + ('LOGIN.REGISTER' | translate) }}
+                    {{ isWaiting ? ('LOGIN.LOGGING_IN' | translate) : ('LOGIN.LOGIN' | translate) + ' / ' +
+                    ('LOGIN.REGISTER' | translate) }}
                 </button>
             </div>
         </div>
         }
         <div class="agreement-section">
-            <span>{{ 'LOGIN.AGREEMENT_BY_LOGIN' | translate }}</span>
+            <span>{{ 'LOGIN.AGREEMENT_BY_LOGIN' | translate }}</span>@if (!isZhLang) {<br>}
             <a class="agreement-link" (click)="showUserAgreement()">{{ 'LOGIN.TERMS_OF_USE' | translate }}</a>
-            <span>{{ 'LOGIN.AGREEMENT_AND' | translate }}</span>
+            <span style="margin: 0 2px;">{{ 'LOGIN.AGREEMENT_AND' | translate }}</span>
             <a class="agreement-link" (click)="showPrivacyPolicy()">{{ 'LOGIN.PRIVACY_POLICY' | translate }}</a>
         </div>
         <div class="line" style="margin-top: 13px;"></div>

@@ -13,7 +13,6 @@ import { AuthService } from '../../services/auth.service';
 import { ConfigService } from '../../services/config.service';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { ElectronService } from '../../services/electron.service';
-import { sha256Hex } from '../../utils/crypto.utils';
 import { AltchaComponent } from './altcha/altcha.component';
 
 @Component({
@@ -36,11 +35,7 @@ export class LoginComponent implements OnDestroy {
 
   @ViewChild(AltchaComponent) altchaComponent!: AltchaComponent;
 
-  showPhoneLogin = true;
-
   isWaiting = false;
-  inputUsername = '';
-  inputPassword = '';
   
   // 控制组件显隐：未登录时显示，已登录时隐藏
   showLogin = true;
@@ -98,12 +93,13 @@ export class LoginComponent implements OnDestroy {
       });
   }
 
-  onCloseDialog(): void {
-    // this.modal.close({ result: 'cancel' });
-  }
-
   get showWeChatLogin(): boolean {
     return this.getCurrentRegionKey() === 'cn';
+  }
+
+  get isZhLang(): boolean {
+    const lang = this.translate.currentLang || this.translate.defaultLang || 'en';
+    return lang === 'zh_cn' || lang === 'zh_hk' || lang === 'zh-CN' || lang === 'zh-HK';
   }
 
   private getCurrentRegionKey(): string {
@@ -296,30 +292,6 @@ export class LoginComponent implements OnDestroy {
   }
 
   /**
-   * 获取微信加载文本
-   */
-  getWeChatLoadingText(): string {
-    const translated = this.translate.instant('LOGIN.WECHAT_LOADING');
-    return translated !== 'LOGIN.WECHAT_LOADING' ? translated : '正在加载二维码...';
-  }
-
-  /**
-   * 获取倒计时提示文字
-   */
-  getWeChatCountdownHint(): string {
-    const translated = this.translate.instant('LOGIN.WECHAT_COUNTDOWN_HINT');
-    return translated !== 'LOGIN.WECHAT_COUNTDOWN_HINT' ? translated : '后自动刷新';
-  }
-
-  onButtonClick(action: string): void {
-    if (action === 'cancel') {
-      // this.modal.close({ result: 'cancel' });
-    } else if (action === 'agree') {
-      // this.modal.close({ result: 'agree' });
-    }
-  }
-
-  /**
    * 弹窗预览用户协议
    */
   showUserAgreement(): void {
@@ -423,55 +395,6 @@ export class LoginComponent implements OnDestroy {
     } catch (error) {
       console.error('GitHub 登录出错:', error);
       this.message.error(this.translate.instant('LOGIN.GITHUB_ERROR'));
-    }
-  }
-
-  async loginByPhone() {
-    if (!this.inputUsername || !this.inputPassword) {
-      this.message.warning(this.translate.instant('LOGIN.ENTER_CREDENTIALS'));
-      return;
-    }
-
-    // 立即显示加载状态，避免用户感觉按钮无响应
-    this.isWaiting = true;
-
-    const altchaToken = await this.verifyAltcha();
-    if (altchaToken === null) {
-      this.isWaiting = false;
-      return;
-    }
-
-    try {
-      const loginData = {
-        username: this.inputUsername,
-        password: await sha256Hex(this.inputPassword),
-        altcha: altchaToken,
-      };
-
-      this.authService.login(loginData).subscribe({
-        next: (response) => {
-          if (response.status === 200 && response.data) {
-            this.message.success(this.translate.instant('LOGIN.LOGIN_SUCCESS'));
-          } else {
-            this.message.error(
-              response.message || this.translate.instant('LOGIN.LOGIN_FAILED'),
-            );
-          }
-        },
-        error: (error) => {
-          console.error('登录错误:', error);
-          this.message.error(
-            this.translate.instant('LOGIN.LOGIN_NETWORK_ERROR'),
-          );
-        },
-        complete: () => {
-          this.isWaiting = false;
-        },
-      });
-    } catch (error) {
-      console.error('登录过程中出错:', error);
-      this.message.error(this.translate.instant('LOGIN.LOGIN_FAILED'));
-      this.isWaiting = false;
     }
   }
 
