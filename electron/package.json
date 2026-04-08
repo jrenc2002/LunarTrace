@@ -16,7 +16,6 @@
     "electron-updater": "^6.6.2",
     "electron-win-state": "^1.1.22",
     "glob": "^11.0.3",
-    "openocd-tool": "^0.0.1",
     "serialport": "^13.0.0"
   }
 }

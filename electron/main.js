@@ -490,7 +490,7 @@ const { initLogger, registerLoggerHandlers } = require("./logger");
 // tools
 const { registerToolsHandlers } = require("./tools");
 const { registerNotificationHandlers } = require("./notification");
-const { registerOpenocdHandlers } = require("./openocd");
+const { registerProbeRsHandlers } = require("./probe-rs");
 
 let mainWindow;
 let userConf;
@@ -1013,6 +1013,8 @@ function loadEnv() {
   process.env.AILY_7ZA_PATH = path.join(childPath, isWin32 ? "7za.exe" : "7zz");
   // rg path
   process.env.AILY_RG_PATH = path.join(childPath, isWin32 ? "rg.exe" : "rg");
+  // probe-rs path
+  process.env.AILY_PROBE_RS_PATH = path.join(childPath, "probe-rs", "probe-rs" + (isWin32 ? ".exe" : ""));
   // aily builder path
   process.env.AILY_BUILDER_PATH = path.join(childPath, "aily-builder");
   // 全局npm包路径
@@ -1257,7 +1259,7 @@ function createWindow() {
   registerMCPHandlers(mainWindow);
   registerToolsHandlers(mainWindow);
   registerNotificationHandlers(mainWindow);
-  registerOpenocdHandlers(mainWindow);
+  registerProbeRsHandlers(mainWindow);
 
   // 检查是否有待处理的OAuth回调
   // 注意：这里不再使用 setTimeout 自动发送，而是等待 renderer-ready 事件

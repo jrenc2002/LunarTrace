@@ -642,27 +642,28 @@ contextBridge.exposeInMainWorld("electronAPI", {
   base64: {
     atob: (b64String) => Buffer.from(b64String, 'base64').toString('binary'),
   },
-  // OpenOCD API - STM32/GD32 调试器检测与固件烧录
-  openocd: {
-    detectAll: () => ipcRenderer.invoke("openocd-detect-all"),
-    detectStlink: () => ipcRenderer.invoke("openocd-detect-stlink"),
-    detectDaplink: () => ipcRenderer.invoke("openocd-detect-daplink"),
+  // probe-rs API - 调试探针检测与固件烧录
+  probeRs: {
     /**
-     * 烧录固件
+     * 列出所有已连接的调试探针
+     * @returns {Promise<{success: boolean, count?: number, probes?: Array, error?: string}>}
+     */
+    list: () => ipcRenderer.invoke("probe-rs-list"),
+    /**
+     * 烧录固件到目标芯片
      * @param {Object} options
      * @param {string} options.firmwarePath - 固件文件路径 (.hex/.bin/.elf)
-     * @param {string} options.target - 目标芯片 (如 stm32f1x, stm32f4x, gd32e23x)
-     * @param {string} [options.interface] - 调试器接口 "stlink" | "cmsis-dap"，默认 "stlink"
-     * @param {string} [options.transport] - 传输协议 "swd" | "jtag"，默认 "swd"
-     * @param {number} [options.speed] - 适配器速度 kHz，默认 4000
-     * @param {number} [options.baseAddress] - .bin 文件的基地址，默认 0x08000000
-     * @param {boolean} [options.verify] - 烧录后校验，默认 true
-     * @param {boolean} [options.reset] - 烧录后复位，默认 true
-     * @param {boolean} [options.eraseAll] - 全片擦除，默认 false
-     * @param {number} [options.timeout] - 超时时间 ms，默认 60000
-     * @returns {Promise<{success: boolean, output?: string, error?: string}>}
+     * @param {string} [options.chip] - 目标芯片型号（如 STM32F407VGTx）
+     * @param {string} [options.probe] - 指定调试探针 vid:pid[:serial]
+     * @param {string} [options.protocol] - 调试协议 "swd" | "jtag"
+     * @param {number} [options.speed] - 通信速度 kHz
+     * @param {string} [options.format] - 固件格式 "elf" | "hex" | "bin"
+     * @param {number} [options.baseAddress] - BIN 文件烧录基地址
+     * @param {number} [options.skipBytes] - 跳过固件文件开头的字节数
+     * @param {boolean} [options.verify] - 烧录后校验
+     * @returns {Promise<{success: boolean, firmware?: string, chip?: string, message?: string, error?: string}>}
      */
-    flash: (options) => ipcRenderer.invoke("openocd-flash", options),
+    download: (options) => ipcRenderer.invoke("probe-rs-download", options),
   },
   // 日志 API - 将渲染进程的日志发送到主进程记录
   log: {
