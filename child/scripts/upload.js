@@ -158,7 +158,8 @@ async function main() {
         serialPort: initialSerialPort,
         uploadParam: configUploadParam,
         use_1200bps_touch,
-        wait_for_upload
+        wait_for_upload,
+        pnum
     } = config;
 
     // console.log('上传配置:', {
@@ -269,7 +270,8 @@ async function main() {
             baudRate,
             toolDependencies,
             SERIAL_PLACEHOLDER,
-            platform
+            platform,
+            pnum
         );
 
         // 10. 上传预处理：处理 1200bps touch 和 wait_for_upload
@@ -346,7 +348,7 @@ async function main() {
     }
 }
 
-async function processUploadParams(uploadParam, buildPath, toolsPath, sdkPath, baudRate, toolDependencies, serialPort, platform) {
+async function processUploadParams(uploadParam, buildPath, toolsPath, sdkPath, baudRate, toolDependencies, serialPort, platform, pnum) {
     // 1. 基础变量替换
     let paramString = uploadParam;
     
@@ -358,6 +360,11 @@ async function processUploadParams(uploadParam, buildPath, toolsPath, sdkPath, b
     // 替换 ${serial}
     if (paramString.includes('${serial}')) {
         paramString = paramString.replace(/\$\{serial\}/g, serialPort);
+    }
+
+    // 替换 ${pnum}（STM32.BOARD 选中的开发板型号，用于 probe-rs download）
+    if (pnum && paramString.includes('${pnum}')) {
+        paramString = paramString.replace(/\$\{pnum\}/g, pnum);
     }
 
     // 替换 ${boot_app0}

@@ -284,6 +284,9 @@ export class _UploaderService {
           window['fs'].mkdirSync(tempPath, { recursive: true });
         }
 
+        // 获取当前选中的 STM32.BOARD (pnum) 选项，用于 probe-rs download 参数
+        const pnum = this.projectService.currentStm32Config?.board || null;
+
         const uploadConfig = {
           currentProjectPath,
           buildPath,
@@ -292,7 +295,8 @@ export class _UploaderService {
           serialPort: capturedSerialPort,
           uploadParam: cleanParam, // 传递清理后的上传参数
           use_1200bps_touch,
-          wait_for_upload
+          wait_for_upload,
+          pnum
         };
 
         const configFilePath = window['path'].join(tempPath, 'upload-config.json');
