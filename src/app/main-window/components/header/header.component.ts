@@ -23,6 +23,7 @@ import { AuthService } from '../../../services/auth.service';
 import { BoardSelectorDialogComponent } from '../board-selector-dialog/board-selector-dialog.component';
 import { LoginDialogComponent } from '../login-dialog/login-dialog.component';
 import { PlatformService } from '../../../services/platform.service';
+import { OpenocdService } from '../../../services/openocd.service';
 // import { AppStoreService } from '../../../tools/app-store/app-store.service';
 import { AppItem } from '../../../tools/app-store/app-store.config';
 import { APP_LIST } from '../../../configs/tool.config';
@@ -111,6 +112,7 @@ export class HeaderComponent implements OnDestroy {
     private authService: AuthService,
     private translate: TranslateService,
     private platformService: PlatformService,
+    private openocdService: OpenocdService,
     // private appStoreService: AppStoreService
   ) { }
 
@@ -217,7 +219,9 @@ export class HeaderComponent implements OnDestroy {
 
   showPortList = false;
   configList: PortItem[] = []
-  boardKeywords = []; // 这个用来高亮显示正确开发板，如['arduino uno']，则端口菜单中如有包含'arduino uno'的串口则高亮显示
+  boardKeywords = [];
+  private cachedDebuggerItems: IMenuItem[] = [];
+  private portListGeneration = 0; // 这个用来高亮显示正确开发板，如['arduino uno']，则端口菜单中如有包含'arduino uno'的串口则高亮显示
   openPortList(event?: MouseEvent) {
     if (event) {
       this.calculatePortListPosition(event);
@@ -237,9 +241,9 @@ export class HeaderComponent implements OnDestroy {
     }
     let boardname = this.currentBoard.replace(' 2560', ' ').replace(' R3', '');
     this.boardKeywords = [boardname];
-    this.getDevicePortList();
+    // 如果已有缓存列表，先展示旧数据，再后台刷新
     this.showPortList = true;
-    // this.cd.detectChanges();
+    this.getDevicePortList();
   }
 
   closePortList() {
@@ -256,7 +260,8 @@ export class HeaderComponent implements OnDestroy {
     this.closePortList();
   }
 
-  async getDevicePortList() {
+  async getDevicePortList(skipDetect = false) {
+    const generation = ++this.portListGeneration;
     let portList0: IMenuItem[] = await this.serialService.getSerialPorts();
     if (portList0.length == 0) {
       portList0 = [
@@ -284,14 +289,46 @@ export class HeaderComponent implements OnDestroy {
     // 添加STM32相关配置选项
     if (this.projectService.currentBoardConfig['core'].indexOf('stm32') > -1 &&
       this.projectService.currentBoardConfig['description'].indexOf('Series') > -1) {
+      // 先用缓存的调试器设备填充，避免闪烁
+      if (this.cachedDebuggerItems.length > 0) {
+        portList0 = portList0.concat(this.cachedDebuggerItems);
+      }
+
       let temp = this.projectService.currentBoardConfig['type'].split(':');
       let board = temp[temp.length - 1];
-      // console.log('STM32开发板标识:', board);
       let stm32config = await this.projectService.updateStm32ConfigMenu(board);
       if (stm32config) {
         portList0 = portList0.concat(stm32config)
       }
-      // console.log('STM32配置选项:', stm32config);
+
+      // 异步检测 OpenOCD 设备，完成后更新缓存并重建列表
+      if (!skipDetect) {
+        this.openocdService.detectAll().then(result => {
+          if (generation !== this.portListGeneration) return;
+          const newDebuggerItems: IMenuItem[] = [];
+          if (result.success && result.devices && result.devices.length > 0) {
+            newDebuggerItems.push({ sep: true });
+            for (const device of result.devices) {
+              console.log('Detected device:', device);
+              const rawType = device.type.replace(/-/g, '');
+              const typeName = /stlink/i.test(rawType) ? 'STLink' : /daplink/i.test(rawType) ? 'DAPLink' : device.type;
+              newDebuggerItems.push({
+                name: typeName,
+                text: device.shortSerial || '',
+                type: 'debugger',
+                icon: 'fa-brands fa-usb',
+              });
+            }
+          }
+          // 仅在检测结果与缓存不同时才刷新
+          if (JSON.stringify(newDebuggerItems) !== JSON.stringify(this.cachedDebuggerItems)) {
+            this.cachedDebuggerItems = newDebuggerItems;
+            this.getDevicePortList(true); // 用新缓存重建列表，跳过再次检测
+          }
+        }).catch(e => {
+          console.warn('OpenOCD 设备检测失败:', e);
+        });
+      }
     }
 
     // 添加nRF5相关配置选项

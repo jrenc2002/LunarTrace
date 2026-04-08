@@ -373,6 +373,10 @@ export class BlocklyComponent implements OnInit, OnDestroy {
           isHandlingError = true;
           try {
             console.log(message, ...args);
+            if (!message) {
+              return
+            }
+
             // 保留原始错误输出功能
             originalError.apply(console, arguments);
             // 处理特定错误
@@ -411,7 +415,7 @@ export class BlocklyComponent implements OnInit, OnDestroy {
       const currentLang = this.translateService.currentLang || 'zh_cn';
       const locale = BLOCKLY_LOCALES[currentLang] || BLOCKLY_LOCALES['en'] || zhHans;
       Blockly.setLocale(locale);
-      
+
       // 在工作区创建前设置 block registry 拦截
       this.setupBlockRegistryInterception();
       // 获取当前blockly渲染器
@@ -430,10 +434,10 @@ export class BlocklyComponent implements OnInit, OnDestroy {
         this.minimap.init();
         // 禁用 minimap 内置的 mirror（Events.fromJson 重放会触发 custom field 的 "associated block is undefined"）
         // 仅使用 syncMinimap 的全量 XML 同步，避免 Events.fromJson 与 custom field 的兼容性问题
-        (this.minimap as any).mirror = () => {};
+        (this.minimap as any).mirror = () => { };
         // 将 focus region 的 update 替换为空实现：mirror 禁用后 minimap 仅由 syncMinimap 更新，空内容时原 update 会算出 NaN 导致 translate(NaN,NaN)；disableFocusRegion 会留下未移除的 resize 监听导致 "must be initialized" 报错
         const fr = (this.minimap as any).focusRegion;
-        if (fr) fr.update = () => {};
+        if (fr) fr.update = () => { };
       }
 
       this.workspace.addChangeListener(BlockDynamicConnection.finalizeConnections);
@@ -549,24 +553,24 @@ export class BlocklyComponent implements OnInit, OnDestroy {
   updateBlocklyLocale(lang: string) {
     // 获取对应的 Blockly 语言包
     const locale = BLOCKLY_LOCALES[lang] || BLOCKLY_LOCALES['en'] || zhHans;
-    
+
     // 设置 Blockly locale
     Blockly.setLocale(locale);
-    
+
     // 设置自定义消息（覆盖或补充）
     Blockly.Msg["CROSS_TAB_COPY"] = this.translateService.instant('BLOCKLY.CROSS_TAB_COPY') || "复制到指定位置";
-    
+
     // 自定义扩展的多语言消息（switch-case 等）
     Blockly.Msg["CONTROLS_SWITCH_CASE"] = this.translateService.instant('BLOCKLY.CONTROLS_SWITCH_CASE') || (lang.startsWith('zh') ? "情况" : "case");
     Blockly.Msg["CONTROLS_SWITCH_DO"] = this.translateService.instant('BLOCKLY.CONTROLS_SWITCH_DO') || (lang.startsWith('zh') ? "执行" : "do");
     Blockly.Msg["CONTROLS_SWITCH_DEFAULT"] = this.translateService.instant('BLOCKLY.CONTROLS_SWITCH_DEFAULT') || (lang.startsWith('zh') ? "默认执行" : "default");
-    
+
     // 如果工作区已存在，刷新工具箱以应用新语言
     if (this.workspace) {
       try {
         // 刷新工具箱
         this.workspace.refreshToolboxSelection();
-        
+
         // 重新渲染所有块以更新显示文本
         const blocks = this.workspace.getAllBlocks(false);
         blocks.forEach((block: any) => {
