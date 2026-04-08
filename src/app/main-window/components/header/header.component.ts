@@ -23,7 +23,7 @@ import { AuthService } from '../../../services/auth.service';
 import { BoardSelectorDialogComponent } from '../board-selector-dialog/board-selector-dialog.component';
 import { LoginDialogComponent } from '../login-dialog/login-dialog.component';
 import { PlatformService } from '../../../services/platform.service';
-import { OpenocdService } from '../../../services/openocd.service';
+import { ProbeRsService } from '../../../services/probe-rs.service';
 // import { AppStoreService } from '../../../tools/app-store/app-store.service';
 import { AppItem } from '../../../tools/app-store/app-store.config';
 import { APP_LIST } from '../../../configs/tool.config';
@@ -112,7 +112,7 @@ export class HeaderComponent implements OnDestroy {
     private authService: AuthService,
     private translate: TranslateService,
     private platformService: PlatformService,
-    private openocdService: OpenocdService,
+    private probeRsService: ProbeRsService,
     // private appStoreService: AppStoreService
   ) { }
 
@@ -222,6 +222,42 @@ export class HeaderComponent implements OnDestroy {
   boardKeywords = [];
   private cachedDebuggerItems: IMenuItem[] = [];
   private portListGeneration = 0; // 这个用来高亮显示正确开发板，如['arduino uno']，则端口菜单中如有包含'arduino uno'的串口则高亮显示
+
+  /**
+   * 异步检测调试探针，完成后更新缓存并重建端口列表
+   */
+  private detectProbes(generation: number, portList: IMenuItem[], skipDetect: boolean) {
+    if (!skipDetect) {
+      if (this.cachedDebuggerItems.length > 0) {
+        portList.push(...this.cachedDebuggerItems);
+      }
+      this.probeRsService.listProbes().then(result => {
+        if (generation !== this.portListGeneration) return;
+        const newDebuggerItems: IMenuItem[] = [];
+        if (result.success && result.probes && result.probes.length > 0) {
+          newDebuggerItems.push({ sep: true });
+          for (const probe of result.probes) {
+            console.log('Detected probe:', probe);
+            const typeName = probe.type || probe.name || 'Unknown';
+            newDebuggerItems.push({
+              name: typeName,
+              text: probe.shortSerial || '',
+              type: 'debugger',
+              icon: 'fa-brands fa-usb',
+            });
+          }
+        }
+        if (JSON.stringify(newDebuggerItems) !== JSON.stringify(this.cachedDebuggerItems)) {
+          this.cachedDebuggerItems = newDebuggerItems;
+          this.getDevicePortList(true);
+        }
+      }).catch(e => {
+        console.warn('调试探针检测失败:', e);
+      });
+    } else if (this.cachedDebuggerItems.length > 0) {
+      portList.push(...this.cachedDebuggerItems);
+    }
+  }
   openPortList(event?: MouseEvent) {
     if (event) {
       this.calculatePortListPosition(event);
@@ -301,38 +337,12 @@ export class HeaderComponent implements OnDestroy {
         portList0 = portList0.concat(stm32config)
       }
 
-      // 异步检测 OpenOCD 设备，完成后更新缓存并重建列表
-      if (!skipDetect) {
-        this.openocdService.detectAll().then(result => {
-          if (generation !== this.portListGeneration) return;
-          const newDebuggerItems: IMenuItem[] = [];
-          if (result.success && result.devices && result.devices.length > 0) {
-            newDebuggerItems.push({ sep: true });
-            for (const device of result.devices) {
-              console.log('Detected device:', device);
-              const rawType = device.type.replace(/-/g, '');
-              const typeName = /stlink/i.test(rawType) ? 'STLink' : /daplink/i.test(rawType) ? 'DAPLink' : device.type;
-              newDebuggerItems.push({
-                name: typeName,
-                text: device.shortSerial || '',
-                type: 'debugger',
-                icon: 'fa-brands fa-usb',
-              });
-            }
-          }
-          // 仅在检测结果与缓存不同时才刷新
-          if (JSON.stringify(newDebuggerItems) !== JSON.stringify(this.cachedDebuggerItems)) {
-            this.cachedDebuggerItems = newDebuggerItems;
-            this.getDevicePortList(true); // 用新缓存重建列表，跳过再次检测
-          }
-        }).catch(e => {
-          console.warn('OpenOCD 设备检测失败:', e);
-        });
-      }
+      // 异步检测调试探针，完成后更新缓存并重建列表
+      this.detectProbes(generation, portList0, skipDetect);
     }
 
     // 添加nRF5相关配置选项
-    if (this.projectService.currentBoardConfig['core'].indexOf('nRF5') > -1) {
+    if (this.projectService.currentBoardConfig['core'].indexOf('nrf5') > -1) {
       let temp = this.projectService.currentBoardConfig['type'].split(':');
       let board = temp[temp.length - 1];
       // console.log('nRF5开发板标识:', board);
@@ -341,6 +351,9 @@ export class HeaderComponent implements OnDestroy {
         portList0 = portList0.concat(nrf5config)
       }
       // console.log('nRF5配置选项:', nrf5config);
+
+      // 异步检测调试探针（nRF52）
+      this.detectProbes(generation, portList0, skipDetect);
     }
 
     // 添加切换开发板功能
