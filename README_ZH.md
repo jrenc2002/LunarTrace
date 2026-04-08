@@ -102,3 +102,12 @@ AI可以根据用户程序和需求生成模组连线图，方便用户参考。
 3. 基于本软件的衍生品，不得移除本项目相关权利人、赞助者信息，且必须保证相关信息出现在软件启动页；
 4. 在无授权的情况下，不得移除本项目附带的线上服务内容、及用户协议。
 
+## Sponsors
+
+<table>
+  <tr>
+    <td><a href="https://signpath.io/"><img src="https://signpath.org/assets/favicon-50x50.png" alt="SignPath" width="32" /></a></td>
+    <td>由 <a href="https://signpath.io/">SignPath.io</a> 提供 Windows 免费代码签名，证书由 <a href="https://signpath.org/">SignPath Foundation</a> 颁发</td>
+  </tr>
+</table>
+
