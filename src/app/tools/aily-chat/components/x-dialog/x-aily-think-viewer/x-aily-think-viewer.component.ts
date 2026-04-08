@@ -224,6 +224,9 @@ export class XAilyThinkViewerComponent implements AfterViewChecked, OnChanges, O
 
     if (this.data.isComplete === true) {
       this._stopPolling();
+      this._renderNow(raw, true);
+      this.thinkExpanded = false;
+      return;
     }
 
     if (!this.data.isComplete) {

@@ -112,3 +112,12 @@ Other content can be found in [package.json](./package.json)
 2. Hardware works developed using this software are not restricted by the GPL, and users may decide on their own release and usage methods.
 3. For derivatives based on this software, information about relevant rights holders and sponsors of this project must not be removed, and such information must appear on the software startup page.
 4. Without authorization, the online service content and user agreement attached to this project must not be removed.
+
+## Sponsors
+
+<table>
+  <tr>
+    <td><a href="https://signpath.io/"><img src="https://signpath.org/assets/favicon-50x50.png" alt="SignPath" width="32" /></a></td>
+    <td>Free code signing on Windows provided by <a href="https://signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a></td>
+  </tr>
+</table>

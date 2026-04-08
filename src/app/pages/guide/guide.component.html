@@ -28,7 +28,12 @@
       <div class="menu-box">
         @for(project of recentlyProjects; track $index) {
         <div class="project btn link" (click)="openProjectByPath(project)">
-          <div>{{project.nickname || project.name}}</div>
+          <div class="project-info">
+            <div class="name">{{project.nickname || project.name}}</div>
+            <div class="delete-btn" (click)="removeProject($event, project)">
+              <i class="fa-regular fa-xmark"></i>
+            </div>
+          </div>
           <div class="path ellipsis">{{project.path}}</div>
         </div>
         }

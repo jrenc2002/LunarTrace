@@ -49,6 +49,26 @@ export class LoginComponent implements OnDestroy {
   wechatQrcodeCountdown = 60; // 二维码 60s 倒计时
   private wechatQrcodeTimer: ReturnType<typeof setInterval> | null = null;
 
+  // 登录时绑定微信相关
+  loginBindMode = false;
+  pendingWechatBindTicket: string | null = null;
+  loginBindQrTicket: string | null = null;
+  loginBindQrcodeUrl: string | null = null;
+  loginBindStatus: 'loading' | 'pending' | 'scanned' | 'confirmed' | 'expired' | 'error' = 'loading';
+  loginBindStatusMessage = '';
+  loginBindCountdown = 60;
+  private loginBindCheckSub: Subscription | null = null;
+  private loginBindCountdownTimer: ReturnType<typeof setInterval> | null = null;
+
+  // 微信登录后邮箱绑定相关
+  emailBindMode = false;
+  emailBindTicket: string | null = null;
+  emailBindEmail = '';
+  emailBindCode = '';
+  emailBindIsSendingCode = false;
+  emailBindCountdown = 0;
+  emailBindIsSubmitting = false;
+  private emailBindCountdownTimer: ReturnType<typeof setInterval> | null = null;
 
 
   // 协议文档路径：中文(zh_cn/zh_hk)用 zh 版本，其他语言用英文
@@ -70,6 +90,7 @@ export class LoginComponent implements OnDestroy {
   // 邮箱登录相关
   inputEmail = '';
   inputCode = '';
+  inviteCode = '';
   isSendingCode = false;
   countdown = 0;
   private countdownTimer: any = null;
@@ -89,7 +110,18 @@ export class LoginComponent implements OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe((isLoggedIn) => {
         this.showLogin = !isLoggedIn;
-        this.cdr.detectChanges();
+        setTimeout(() => this.cdr.detectChanges());
+      });
+
+    // 监听 GitHub OAuth 需要绑定微信的信号
+    this.authService.needsWechatBind$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe((pendingTicket) => {
+        setTimeout(() => {
+          this.message.info('请先绑定微信后再继续登录');
+          this.enterLoginBindMode(pendingTicket);
+          this.cdr.detectChanges();
+        });
       });
   }
 
@@ -135,6 +167,8 @@ export class LoginComponent implements OnDestroy {
           this.wechatQrcodeUrl = response.data.qrcode_url;
           this.wechatStatus = 'pending';
           this.wechatStatusMessage = this.translate.instant('LOGIN.WECHAT_SCAN') || '请使用微信扫码登录';
+
+          this.cdr.detectChanges();
           
           // 开始 60s 倒计时，到期自动刷新
           this.startWeChatQrcodeCountdown();
@@ -145,12 +179,14 @@ export class LoginComponent implements OnDestroy {
           this.wechatStatusMessage = response.message || this.translate.instant('LOGIN.WECHAT_QRCODE_FAILED') || '获取二维码失败';
           this.message.error(this.wechatStatusMessage);
         }
+        this.cdr.detectChanges();
       },
       error: (error) => {
         console.error('获取微信二维码失败:', error);
         this.wechatStatus = 'error';
         this.wechatStatusMessage = this.translate.instant('LOGIN.WECHAT_QRCODE_FAILED') || '获取二维码失败';
         this.message.error(this.wechatStatusMessage);
+        this.cdr.detectChanges();
       }
     });
   }
@@ -206,6 +242,17 @@ export class LoginComponent implements OnDestroy {
                   this.message.error(this.translate.instant('LOGIN.LOGIN_FAILED') || '登录失败');
                 });
               }
+            } else if (status === 'needs_email_bind' || status === 'unbound') {
+              // 需要绑定邮箱
+              this.clearWeChatQrcodeTimer();
+              this.cleanupWeChatStatusCheck();
+              this.emailBindMode = true;
+              this.emailBindTicket = this.wechatTicket;
+              this.wechatStatus = 'pending';
+              this.cdr.detectChanges();
+              setTimeout(() => {
+                this.message.info(response.data.message || '当前微信需要补全邮箱后继续登录。');
+              });
             } else if (status === 'expired') {
               // 二维码已过期
               this.wechatStatus = 'expired';
@@ -282,11 +329,6 @@ export class LoginComponent implements OnDestroy {
    * 刷新微信二维码
    */
   refreshWeChatQrcode() {
-    if (!this.showWeChatLogin) {
-      this.cleanupWeChatLogin();
-      return;
-    }
-
     this.cleanupWeChatLogin();
     this.initWeChatLogin();
   }
@@ -424,6 +466,7 @@ export class LoginComponent implements OnDestroy {
         next: (response) => {
           if (response.status === 200) {
             this.isSendingCode = true;
+            this.cdr.detectChanges();
             this.message.success(this.translate.instant('LOGIN.CODE_SENT'));
             this.startCountdown();
           } else {
@@ -453,9 +496,12 @@ export class LoginComponent implements OnDestroy {
     this.countdown = 60;
     this.countdownTimer = setInterval(() => {
       this.countdown--;
+      this.cdr.detectChanges();
       if (this.countdown <= 0) {
         clearInterval(this.countdownTimer);
+        this.isSendingCode = false;
         this.countdownTimer = null;
+        this.cdr.detectChanges();
       }
     }, 1000);
   }
@@ -482,9 +528,17 @@ export class LoginComponent implements OnDestroy {
     this.isWaiting = true;
 
     try {
-      this.authService.loginByEmail(this.inputEmail, this.inputCode).subscribe({
+      this.authService.loginByEmail(this.inputEmail, this.inputCode, this.inviteCode).subscribe({
         next: (response) => {
           if (response.status === 200 && response.data) {
+            // 检查是否需要绑定微信
+            if ((response.data as any).status === 'needs_wechat_bind' && (response.data as any).pending_ticket) {
+              this.message.info((response.data as any).message || '请先绑定微信后再继续登录');
+              this.enterLoginBindMode((response.data as any).pending_ticket);
+              this.isWaiting = false;
+              this.cdr.detectChanges();
+              return;
+            }
             this.message.success(this.translate.instant('LOGIN.LOGIN_SUCCESS'));
           } else {
             this.message.error(
@@ -513,8 +567,308 @@ export class LoginComponent implements OnDestroy {
     this.destroy$.next();
     this.destroy$.complete();
     this.cleanupWeChatLogin();
+    this.cleanupLoginBind();
+    this.cleanupEmailBind();
     if (this.countdownTimer) {
       clearInterval(this.countdownTimer);
     }
+  }
+
+  // ==================== 登录时绑定微信 ====================
+
+  /**
+   * 进入登录绑定微信模式
+   */
+  enterLoginBindMode(pendingTicket: string): void {
+    this.loginBindMode = true;
+    this.pendingWechatBindTicket = pendingTicket;
+    this.cleanupWeChatLogin();
+    this.initWeChatLoginBind(pendingTicket);
+  }
+
+  /**
+   * 退出登录绑定微信模式
+   */
+  exitLoginBindMode(): void {
+    this.cleanupLoginBind();
+    this.loginBindMode = false;
+    this.pendingWechatBindTicket = null;
+    this.loginBindQrTicket = null;
+    this.loginBindQrcodeUrl = null;
+    this.loginBindStatus = 'loading';
+    this.loginBindStatusMessage = '';
+    this.mode = 'mail';
+    this.cdr.detectChanges();
+  }
+
+  /**
+   * 获取登录绑定微信的二维码
+   */
+  initWeChatLoginBind(pendingTicket: string): void {
+    this.loginBindStatus = 'loading';
+    this.loginBindQrcodeUrl = null;
+    this.loginBindQrTicket = null;
+    this.loginBindStatusMessage = '';
+
+    this.authService.getWeChatLoginBindQrcode(pendingTicket).subscribe({
+      next: (response) => {
+        if (response.status === 200 && response.data) {
+          this.loginBindQrTicket = response.data.ticket;
+          this.loginBindQrcodeUrl = response.data.qrcode_url;
+          this.loginBindStatus = 'pending';
+          this.loginBindStatusMessage = this.translate.instant('LOGIN.WECHAT_BIND_SCAN') || '请使用微信扫码绑定';
+          this.startLoginBindCountdown();
+          this.startWeChatLoginBindCheck();
+        } else {
+          this.loginBindStatus = 'error';
+          this.loginBindStatusMessage = response.message || '获取二维码失败';
+          this.message.error(this.loginBindStatusMessage);
+        }
+        this.cdr.detectChanges();
+      },
+      error: (error) => {
+        console.error('获取登录绑定二维码失败:', error);
+        this.loginBindStatus = 'error';
+        this.loginBindStatusMessage = '获取二维码失败';
+        this.message.error(this.loginBindStatusMessage);
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  /**
+   * 开始轮询登录绑定状态
+   */
+  startWeChatLoginBindCheck(): void {
+    this.stopLoginBindCheck();
+    if (!this.loginBindQrTicket) return;
+
+    this.loginBindCheckSub = interval(2000)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        if (!this.loginBindQrTicket) return;
+
+        this.authService.checkWeChatLoginBindStatus(this.loginBindQrTicket).subscribe({
+          next: (response) => {
+            if (response.status !== 200 || !response.data) return;
+
+            const data = response.data;
+            if (data.status === 'pending') {
+              // still waiting
+            } else if (data.status === 'scanned') {
+              this.loginBindStatus = 'scanned';
+              this.loginBindStatusMessage = '已扫码，正在处理...';
+              this.cdr.detectChanges();
+            } else if (data.status === 'confirmed') {
+              this.loginBindStatus = 'confirmed';
+              this.cleanupLoginBind();
+
+              this.authService.handleWeChatOAuthSuccess({
+                access_token: data.access_token!,
+                refresh_token: data.refresh_token,
+                user: data.user,
+              }).then(() => {
+                this.message.success(
+                  data.is_new_user
+                    ? (this.translate.instant('LOGIN.WECHAT_REGISTER_SUCCESS') || '注册成功')
+                    : (this.translate.instant('LOGIN.LOGIN_SUCCESS') || '登录成功')
+                );
+                this.loginBindMode = false;
+                this.cdr.detectChanges();
+              }).catch((err) => {
+                console.error('处理微信绑定登录成功数据失败:', err);
+                this.message.error(this.translate.instant('LOGIN.LOGIN_FAILED') || '登录失败');
+              });
+            } else if (data.status === 'error') {
+              this.loginBindStatus = 'error';
+              this.loginBindStatusMessage = data.message || '绑定失败';
+              this.cleanupLoginBind();
+              this.message.error(this.loginBindStatusMessage);
+              this.cdr.detectChanges();
+            }
+          },
+          error: (error) => {
+            if (error.status === 404) {
+              this.loginBindStatus = 'expired';
+              this.loginBindStatusMessage = '二维码已过期，请重试';
+              this.cleanupLoginBind();
+              this.cdr.detectChanges();
+            }
+          },
+        });
+      });
+  }
+
+  /**
+   * 刷新登录绑定二维码
+   */
+  refreshLoginBindQrcode(): void {
+    if (this.pendingWechatBindTicket) {
+      this.cleanupLoginBind();
+      this.initWeChatLoginBind(this.pendingWechatBindTicket);
+    }
+  }
+
+  private startLoginBindCountdown(): void {
+    this.clearLoginBindCountdown();
+    this.loginBindCountdown = 60;
+    this.loginBindCountdownTimer = setInterval(() => {
+      this.loginBindCountdown--;
+      if (this.loginBindCountdown <= 0) {
+        this.clearLoginBindCountdown();
+        this.loginBindStatus = 'expired';
+        this.loginBindStatusMessage = '二维码已过期，请刷新';
+        this.stopLoginBindCheck();
+        this.cdr.detectChanges();
+      }
+    }, 1000);
+  }
+
+  private stopLoginBindCheck(): void {
+    if (this.loginBindCheckSub) {
+      this.loginBindCheckSub.unsubscribe();
+      this.loginBindCheckSub = null;
+    }
+  }
+
+  private clearLoginBindCountdown(): void {
+    if (this.loginBindCountdownTimer) {
+      clearInterval(this.loginBindCountdownTimer);
+      this.loginBindCountdownTimer = null;
+    }
+  }
+
+  private cleanupLoginBind(): void {
+    this.stopLoginBindCheck();
+    this.clearLoginBindCountdown();
+  }
+
+  // ==================== 微信登录后邮箱绑定 ====================
+
+  /**
+   * 退出邮箱绑定模式
+   */
+  exitEmailBindMode(): void {
+    this.cleanupEmailBind();
+    this.emailBindMode = false;
+    this.emailBindTicket = null;
+    this.emailBindEmail = '';
+    this.emailBindCode = '';
+    this.emailBindIsSendingCode = false;
+    this.emailBindIsSubmitting = false;
+    this.mode = 'mail';
+    this.cdr.detectChanges();
+  }
+
+  /**
+   * 邮箱绑定 - 发送验证码
+   */
+  async sendEmailBindCode(): Promise<void> {
+    if (!this.emailBindEmail) {
+      this.message.warning(this.translate.instant('LOGIN.ENTER_EMAIL'));
+      return;
+    }
+    if (this.emailBindIsSendingCode || this.emailBindCountdown > 0) {
+      return;
+    }
+
+    const altchaToken = await this.verifyAltcha();
+    if (altchaToken === null) {
+      return;
+    }
+
+    this.authService.sendEmailCode(this.emailBindEmail, altchaToken).subscribe({
+      next: (response) => {
+        if (response.status === 200) {
+          this.emailBindIsSendingCode = true;
+          this.cdr.detectChanges();
+          this.message.success(this.translate.instant('LOGIN.CODE_SENT'));
+          this.startEmailBindCountdown();
+        } else {
+          this.message.error(response.message || this.translate.instant('LOGIN.CODE_SEND_FAILED'));
+        }
+      },
+      error: () => {
+        this.message.error(this.translate.instant('LOGIN.CODE_SEND_FAILED'));
+      },
+    });
+  }
+
+  /**
+   * 邮箱绑定 - 提交绑定
+   */
+  submitEmailBind(): void {
+    if (!this.emailBindEmail || !this.emailBindCode || !this.emailBindTicket) {
+      this.message.warning('请填写邮箱和验证码');
+      return;
+    }
+
+    this.emailBindIsSubmitting = true;
+    this.cdr.detectChanges();
+
+    this.authService.completeWechatEmailBindLogin(
+      this.emailBindTicket,
+      this.emailBindEmail,
+      this.emailBindCode,
+    ).subscribe({
+      next: (response) => {
+        if (response.status === 200 && response.data) {
+          this.authService.handleWeChatOAuthSuccess({
+            access_token: response.data.access_token,
+            refresh_token: response.data.refresh_token,
+            user: response.data.user,
+          }).then(() => {
+            this.message.success(
+              response.data.is_new_user
+                ? (this.translate.instant('LOGIN.WECHAT_REGISTER_SUCCESS') || '注册成功')
+                : (this.translate.instant('LOGIN.LOGIN_SUCCESS') || '登录成功')
+            );
+            this.emailBindMode = false;
+            this.cdr.detectChanges();
+          }).catch((err) => {
+            console.error('处理邮箱绑定登录成功数据失败:', err);
+            this.message.error(this.translate.instant('LOGIN.LOGIN_FAILED') || '登录失败');
+            this.emailBindIsSubmitting = false;
+            this.cdr.detectChanges();
+          });
+        } else {
+          this.message.error(response.message || '绑定失败');
+          this.emailBindIsSubmitting = false;
+          this.cdr.detectChanges();
+        }
+      },
+      error: (error) => {
+        console.error('邮箱绑定登录失败:', error);
+        const msg = error?.error?.messages || error?.error?.message || '绑定失败，请重试';
+        this.message.error(msg);
+        this.emailBindIsSubmitting = false;
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  private startEmailBindCountdown(): void {
+    this.clearEmailBindCountdown();
+    this.emailBindCountdown = 60;
+    this.emailBindCountdownTimer = setInterval(() => {
+      this.emailBindCountdown--;
+      this.cdr.detectChanges();
+      if (this.emailBindCountdown <= 0) {
+        this.clearEmailBindCountdown();
+        this.emailBindIsSendingCode = false;
+        this.cdr.detectChanges();
+      }
+    }, 1000);
+  }
+
+  private clearEmailBindCountdown(): void {
+    if (this.emailBindCountdownTimer) {
+      clearInterval(this.emailBindCountdownTimer);
+      this.emailBindCountdownTimer = null;
+    }
+  }
+
+  private cleanupEmailBind(): void {
+    this.clearEmailBindCountdown();
   }
 }

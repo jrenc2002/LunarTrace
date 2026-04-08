@@ -3,6 +3,95 @@
     <div class="inner">
         <!-- 隐藏的 altcha 组件用于隐式验证 -->
         <app-altcha style="display: none;"></app-altcha>
+        @if (loginBindMode) {
+        <div class="header">{{ 'LOGIN.WECHAT_BIND_REQUIRED' | translate }}</div>
+        <div class="line"></div>
+        <div class="mail-login-box">
+            <div class="wechat ccenter">
+                @if (loginBindStatus === 'loading') {
+                <div class="qrcode ccenter">
+                    <div class="loading-icon lloading ccenter">
+                        <i class="fa-light fa-spinner-third"></i>
+                    </div>
+                </div>
+                } @else if (loginBindQrcodeUrl) {
+                <div class="qrcode">
+                    <img [src]="loginBindQrcodeUrl" alt="微信扫码绑定二维码" />
+                </div>
+                } @else {
+                <div class="qrcode ccenter">
+                    <div class="error-text">{{ loginBindStatusMessage }}</div>
+                    @if (loginBindStatus === 'expired') {
+                    <div class="refresh-btn btn link" (click)="refreshLoginBindQrcode()" style="margin-top: 10px;">
+                        刷新二维码
+                    </div>
+                    } @else if (loginBindStatus === 'error') {
+                    <div class="refresh-btn btn link" (click)="refreshLoginBindQrcode()" style="margin-top: 10px;">
+                        重试
+                    </div>
+                    }
+                </div>
+                }
+                <div class="wechat-status">
+                    @if (loginBindStatus === 'pending') {
+                    <div class="status-message">{{ loginBindStatusMessage }}
+                        @if (loginBindCountdown > 0) {
+                        <span>({{ loginBindCountdown }}s)</span>
+                        }
+                    </div>
+                    } @else if (loginBindStatus === 'scanned') {
+                    <div class="status-message">{{ loginBindStatusMessage }}</div>
+                    }
+                </div>
+            </div>
+            <div class="compliance-notice">
+                <i class="fa-solid fa-shield-halved"></i>
+                <span>按照《生成式人工智能服务管理暂行办法》要求，您需要绑定微信进行实名，才能使用AI服务</span>
+            </div>
+            <div class="actions" style="margin-top: 10px;">
+                <button nz-button nzType="default" (click)="exitLoginBindMode()">
+                    <i class="fa-light fa-arrow-left"></i> {{ 'LOGIN.BACK_TO_LOGIN' | translate }}
+                </button>
+            </div>
+        </div>
+        } @else if (emailBindMode) {
+        <div class="header">补全邮箱</div>
+        <div class="line"></div>
+        <div class="mail-login-box">
+            <div class="email-bind-tip" style="text-align: center; margin-bottom: 12px; color: #666; font-size: 13px;">
+                当前微信需要补全邮箱后继续登录
+            </div>
+            <div class="item">
+                <div class="ccenter">
+                    <i class="fa-light fa-envelope"></i>
+                </div>
+                <input nz-input type="email" [maxLength]="50" placeholder="请输入邮箱"
+                    [(ngModel)]="emailBindEmail" />
+            </div>
+            <div class="item">
+                <div class="ccenter">
+                    <i class="fa-light fa-lock"></i>
+                </div>
+                <input nz-input type="text" [maxLength]="8" placeholder="请输入验证码"
+                    [(ngModel)]="emailBindCode" />
+                <button nz-button nzType="default" class="send-code-btn"
+                    [disabled]="emailBindIsSendingCode || emailBindCountdown > 0"
+                    (click)="sendEmailBindCode()">
+                    {{ emailBindCountdown > 0 ? (emailBindCountdown + 's') : ('LOGIN.SEND_CODE' | translate) }}
+                </button>
+            </div>
+            <div class="actions">
+                <button nz-button nzType="primary" [nzLoading]="emailBindIsSubmitting" (click)="submitEmailBind()">
+                    确认绑定
+                </button>
+            </div>
+            <div class="actions" style="margin-top: 10px;">
+                <button nz-button nzType="default" (click)="exitEmailBindMode()">
+                    <i class="fa-light fa-arrow-left"></i> {{ 'LOGIN.BACK_TO_LOGIN' | translate }}
+                </button>
+            </div>
+        </div>
+        } @else {
         <div class="header">{{ 'LOGIN.HEADER' | translate }}</div>
         <div class="line"></div>
         @if (mode === 'wechat') {
@@ -60,14 +149,14 @@
                 <div class="ccenter">
                     <i class="fa-light fa-envelope"></i>
                 </div>
-                <input nz-input type="email" [placeholder]="'LOGIN.EMAIL_PLACEHOLDER' | translate"
+                <input nz-input type="email" [maxLength]="50" [placeholder]="'LOGIN.EMAIL_PLACEHOLDER' | translate"
                     [(ngModel)]="inputEmail" />
             </div>
             <div class="item">
                 <div class="ccenter">
                     <i class="fa-light fa-lock"></i>
                 </div>
-                <input nz-input type="text" [placeholder]="'LOGIN.CODE_PLACEHOLDER' | translate"
+                <input nz-input type="text" [maxLength]="8" [placeholder]="'LOGIN.CODE_PLACEHOLDER' | translate"
                     [(ngModel)]="inputCode" />
                 <button nz-button nzType="default" class="send-code-btn" [disabled]="isSendingCode || countdown > 0"
                     (click)="sendVerificationCode()">
@@ -78,8 +167,8 @@
                 <div class="ccenter">
                     <i class="fa-light fa-user-group"></i>
                 </div>
-                <input nz-input type="email" [placeholder]="'LOGIN.INVITE_CODE_PLACEHOLDER' | translate"
-                    [(ngModel)]="inputEmail" />
+                <input nz-input type="email" [maxLength]="11" [placeholder]="'LOGIN.INVITE_CODE_PLACEHOLDER' | translate"
+                    [(ngModel)]="inviteCode" />
             </div>
             <div class="actions">
                 <button nz-button nzType="primary" [nzLoading]="isWaiting" (click)="loginByEmail()">
@@ -113,6 +202,7 @@
                 Github
             </div>
         </div>
+        }
     </div>
 </div>
 }

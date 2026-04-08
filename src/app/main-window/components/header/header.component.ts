@@ -60,9 +60,11 @@ export class HeaderComponent implements OnDestroy {
   private unsubscribeMaximizeChanged?: () => void;
   private unsubscribeCloseRequest?: () => void;
   private unsaveDialogOpen = false; // 标记未保存对话框是否已打开
+  private selectDebounceTimer: ReturnType<typeof setTimeout> | null = null; // 防抖计时器
+  private lastSelectedSubItemKey: string | null = null; // 上次选择子菜单项的key（用于判断重复选择）
 
   get projectData() {
-    return this.projectService.currentPackageData;
+    return this.projectService.currentPackageData || { path: '', name: '' };
   }
 
   get openToolList() {
@@ -819,64 +821,78 @@ export class HeaderComponent implements OnDestroy {
   // 选择子菜单项-修改编译上传配置
   async selectSubItem(subItem: IMenuItem) {
     console.log('选择子菜单项:', subItem);
-    let packageJson = await this.projectService.getPackageJson();
-    packageJson['projectConfig'] = packageJson['projectConfig'] || {};
 
-    // // 判断是否为PartitionScheme并且值为'custom'，如果是则弹出文件选择
-    // if (subItem.key === 'PartitionScheme' && subItem.data.toLowerCase() === 'custom') {
-    //   const folderPath = await window['ipcRenderer'].invoke('select-file', {
-    //     title: '选择分区文件',
-    //     path: this.projectService.currentProjectPath,
-    //   });
-
-    //   // console.log('选中的分区文件路径：', folderPath);
-
-    //   if (!folderPath) {
-    //     this.message.warning('未选择分区文件，已取消');
-    //     return;
-    //   }
-
-    //   // 执行复制操作，复制到项目根目录下的 'partitions.csv'
-    //   const destPath = window['path'].join(this.projectService.currentProjectPath, 'partitions.csv');
-    //   if (folderPath != destPath) {
-    //     // console.log('复制分区文件到项目目录:', destPath);
-    //     try {
-    //       window['fs'].copySync(folderPath, destPath);
-    //     } catch (error) {
-    //       console.warn('复制分区文件失败:', error);
-    //       this.message.error('复制分区文件失败');
-    //       return;
-    //     }
-    //   }
-    // }
-
-    packageJson['projectConfig'][subItem.key] = subItem.data;
-    this.projectService.setPackageJson(packageJson);
-    // 判断是否是STM32，是则更新项目配置
-    if (this.projectService.currentBoardConfig['core'].indexOf('stm32') > -1 &&
-      this.projectService.currentBoardConfig['description'].indexOf('Series') > -1) {
-      // 如果subItem包含pnum variant字段，则调用比较函数
-      if (subItem.key === 'pnum' && subItem.extra?.build.variant) {
-        let newPinConfig = subItem;
-        this.projectService.compareStm32PinConfig(newPinConfig)
-      }
+    if (this.lastSelectedSubItemKey === (subItem.key + '_' + subItem.name)) {
+      return;
     }
 
-    // 判断是否是nRF5的softdevice选择，如果是则直接烧录softdevice
-    if (this.projectService.currentBoardConfig['core']?.indexOf('nRF5') > -1 &&
-      subItem.key === 'softdevice') {
-      // 检查串口是否已选择
-      if (!this.serialService.currentPort) {
-        this.message.warning(this.translate.instant('NRF5.SELECT_PORT_FIRST') || '请先选择串口');
-        return;
-      }
-
-      // 通过 UploaderService 调用烧录方法（使用 ActionService 分发到 _UploaderService）
-      await this.uploaderService.flashSoftdevice(subItem.data, this.serialService.currentPort);
+    if (this.selectDebounceTimer !== null) {
+      clearTimeout(this.selectDebounceTimer);
     }
 
-    // 触发预编译操作：配置变更后自动触发预编译
-    this.builderService.triggerPreprocess('config-changed');
+    this.selectDebounceTimer = setTimeout(async () => {
+      this.selectDebounceTimer = null;
+      this.lastSelectedSubItemKey = subItem.key + '_' + subItem.name;
+
+      let packageJson = await this.projectService.getPackageJson();
+      packageJson['projectConfig'] = packageJson['projectConfig'] || {};
+
+      // // 判断是否为PartitionScheme并且值为'custom'，如果是则弹出文件选择
+      // if (subItem.key === 'PartitionScheme' && subItem.data.toLowerCase() === 'custom') {
+      //   const folderPath = await window['ipcRenderer'].invoke('select-file', {
+      //     title: '选择分区文件',
+      //     path: this.projectService.currentProjectPath,
+      //   });
+
+      //   // console.log('选中的分区文件路径：', folderPath);
+
+      //   if (!folderPath) {
+      //     this.message.warning('未选择分区文件，已取消');
+      //     return;
+      //   }
+
+      //   // 执行复制操作，复制到项目根目录下的 'partitions.csv'
+      //   const destPath = window['path'].join(this.projectService.currentProjectPath, 'partitions.csv');
+      //   if (folderPath != destPath) {
+      //     // console.log('复制分区文件到项目目录:', destPath);
+      //     try {
+      //       window['fs'].copySync(folderPath, destPath);
+      //     } catch (error) {
+      //       console.warn('复制分区文件失败:', error);
+      //       this.message.error('复制分区文件失败');
+      //       return;
+      //     }
+      //   }
+      // }
+
+      packageJson['projectConfig'][subItem.key] = subItem.data;
+      this.projectService.setPackageJson(packageJson);
+      // 判断是否是STM32，是则更新项目配置
+      if (this.projectService.currentBoardConfig['core'].indexOf('stm32') > -1 &&
+        this.projectService.currentBoardConfig['description'].indexOf('Series') > -1) {
+        // 如果subItem包含pnum variant字段，则调用比较函数
+        if (subItem.key === 'pnum' && subItem.extra?.build.variant) {
+          let newPinConfig = subItem;
+          this.projectService.compareStm32PinConfig(newPinConfig)
+        }
+      }
+
+      // 判断是否是nRF5的softdevice选择，如果是则直接烧录softdevice
+      if (this.projectService.currentBoardConfig['core']?.indexOf('nRF5') > -1 &&
+        subItem.key === 'softdevice') {
+        // 检查串口是否已选择
+        if (!this.serialService.currentPort) {
+          this.message.warning(this.translate.instant('NRF5.SELECT_PORT_FIRST') || '请先选择串口');
+          return;
+        }
+
+        // 通过 UploaderService 调用烧录方法（使用 ActionService 分发到 _UploaderService）
+        await this.uploaderService.flashSoftdevice(subItem.data, this.serialService.currentPort);
+      }
+
+      // 触发预编译操作：配置变更后自动触发预编译
+      this.builderService.triggerPreprocess('config-changed');
+    }, 500);
   }
 
   showUser = false;

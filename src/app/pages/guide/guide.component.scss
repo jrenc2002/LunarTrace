@@ -83,11 +83,42 @@
     height: 40px;
     line-height: 14px;
 
+    .name {
+      white-space: break-spaces;
+      word-break: break-all;
+    }
+
     .path {
       color: #999;
       margin-top: 5px;
       font-size: 10px;
       line-height: 13px;
+    }
+
+    &:hover {
+      .delete-btn {
+        display: block;
+      }
+    }
+  }
+
+  .project-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+
+    .delete-btn {
+      cursor: pointer;
+      color: #999;
+      font-size: 12px;
+      margin-left: 5px;
+      display: none;
+    }
+
+    .delete-btn:hover {
+      color: red;
+      transition: all 0.2s;
     }
   }
 }
