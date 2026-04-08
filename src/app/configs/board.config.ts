@@ -40,6 +40,11 @@ export const BRAND_LIST = [
         img: 'brands\\stmicroelectronics.webp',
     },
     {
+        name: 'Nordic Semiconductor',
+        value: 'Nordic Semiconductor',
+        img: 'brands\\nordic.webp',
+    },
+    {
         name: 'Seekfree',
         value: 'seekfree',
         img: 'sponsor\\seekfree\\logo.webp',
