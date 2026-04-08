@@ -77,6 +77,10 @@ export class AppComponent implements OnInit, OnDestroy {
             let errorMessage = 'GitHub 登录超时，请重试';
 
             switch (result.error) {
+              case 'needs_wechat_bind':
+                // 需要绑定微信，通知登录组件
+                this.authService.emitNeedsWechatBind(result.data?.pending_ticket);
+                return;
               case 'timeout':
               case 'invalid_state':
                 errorMessage = '登录状态无效或已超时，请重试';

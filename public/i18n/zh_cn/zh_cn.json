@@ -597,7 +597,12 @@
         "TERMS_OF_USE": "使用条款",
         "OTHER_LOGIN_METHODS": "您还可以使用以下账号登录",
         "GITHUB_CONTINUE": "请在Github授权页面点击\"Continue\"完成登录",
-        "REGISTER": "注册"
+        "REGISTER": "注册",
+        "WECHAT_BIND_REQUIRED": "需要绑定微信",
+        "WECHAT_BIND_SCAN": "请使用微信扫码绑定",
+        "WECHAT_BIND_SUCCESS": "绑定成功",
+        "WECHAT_BIND_CONFLICT": "该微信已绑定其他账号",
+        "BACK_TO_LOGIN": "返回登录"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "功能即将上线",
