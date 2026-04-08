@@ -511,6 +511,9 @@
         "PHONE_BETA_ONLY": "La connexion par téléphone est réservée aux testeurs bêta AI",
         "PHONE_PLACEHOLDER": "Entrez le numéro de téléphone",
         "PASSWORD_PLACEHOLDER": "Entrez le mot de passe",
+        "EMAIL_PLACEHOLDER": "Entrez l'adresse e-mail",
+        "CODE_PLACEHOLDER": "Entrez le code de vérification",
+        "SEND_CODE": "Envoyer le code",
         "CODE_SENDING": "Veuillez d'abord obtenir le code de vérification",
         "LOGGING_IN": "Connexion en cours...",
         "LOGIN": "Connexion",
@@ -529,7 +532,16 @@
         "AGREEMENT_REQUIRED": "Veuillez accepter les conditions d'utilisation et la politique de confidentialité",
         "MODAL_CLOSE": "Fermer",
         "AGREEMENT_LOAD_FAILED": "Échec du chargement des conditions d'utilisation",
-        "PRIVACY_LOAD_FAILED": "Échec du chargement de la politique de confidentialité"
+        "PRIVACY_LOAD_FAILED": "Échec du chargement de la politique de confidentialité",
+        "WECHAT_QRCODE_FAILED": "Échec de l'obtention du code QR",
+        "WECHAT_REFRESH": "Actualiser le code QR",
+        "WECHAT_RETRY": "Réessayer",
+        "INVITE_CODE_PLACEHOLDER": "Code d'invitation (facultatif)",
+        "AGREEMENT_BY_LOGIN": "En vous connectant/inscrivant, vous acceptez les",
+        "TERMS_OF_USE": "Conditions d'utilisation",
+        "OTHER_LOGIN_METHODS": "Vous pouvez également vous connecter avec",
+        "GITHUB_CONTINUE": "Veuillez cliquer sur \"Continue\" sur la page d'autorisation GitHub pour terminer la connexion",
+        "REGISTER": "S'inscrire"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "Fonctionnalité bientôt disponible"

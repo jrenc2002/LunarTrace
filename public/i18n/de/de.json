@@ -511,6 +511,9 @@
         "PHONE_BETA_ONLY": "Telefonanmeldung ist nur für AI-Beta-Tester",
         "PHONE_PLACEHOLDER": "Telefonnummer eingeben",
         "PASSWORD_PLACEHOLDER": "Passwort eingeben",
+        "EMAIL_PLACEHOLDER": "E-Mail-Adresse eingeben",
+        "CODE_PLACEHOLDER": "Bestätigungscode eingeben",
+        "SEND_CODE": "Code senden",
         "CODE_SENDING": "Bitte zuerst den Bestätigungscode abrufen",
         "LOGGING_IN": "Anmeldung...",
         "LOGIN": "Anmelden",
@@ -529,7 +532,16 @@
         "AGREEMENT_REQUIRED": "Bitte stimmen Sie den Nutzungsbedingungen und der Datenschutzrichtlinie zu",
         "MODAL_CLOSE": "Schließen",
         "AGREEMENT_LOAD_FAILED": "Nutzungsbedingungen konnten nicht geladen werden",
-        "PRIVACY_LOAD_FAILED": "Datenschutzrichtlinie konnte nicht geladen werden"
+        "PRIVACY_LOAD_FAILED": "Datenschutzrichtlinie konnte nicht geladen werden",
+        "WECHAT_QRCODE_FAILED": "QR-Code konnte nicht abgerufen werden",
+        "WECHAT_REFRESH": "QR-Code aktualisieren",
+        "WECHAT_RETRY": "Erneut versuchen",
+        "INVITE_CODE_PLACEHOLDER": "Einladungscode (optional)",
+        "AGREEMENT_BY_LOGIN": "Mit der Anmeldung/Registrierung stimmen Sie zu",
+        "TERMS_OF_USE": "Nutzungsbedingungen",
+        "OTHER_LOGIN_METHODS": "Sie können sich auch anmelden mit",
+        "GITHUB_CONTINUE": "Bitte klicken Sie auf \"Continue\" auf der GitHub-Autorisierungsseite, um die Anmeldung abzuschließen",
+        "REGISTER": "Registrieren"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "Funktion demnächst verfügbar"

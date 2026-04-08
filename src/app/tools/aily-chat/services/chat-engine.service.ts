@@ -28,6 +28,7 @@ import { EditCheckpointService } from './edit-checkpoint.service';
 import { ScrollManagerService } from './scroll-manager.service';
 import { ResourceManagerService } from './resource-manager.service';
 import { MenuManagerService } from './menu-manager.service';
+import { TodoUpdateService } from './todoUpdate.service';
 
 import { ChatMessage, Tool, ToolCallState, ResourceItem } from '../core/chat-types';
 import { AilyHost } from '../core/host';
@@ -204,6 +205,7 @@ export class ChatEngineService {
     public scrollManager: ScrollManagerService,
     public resourceManager: ResourceManagerService,
     public menuManager: MenuManagerService,
+    public todoUpdateService: TodoUpdateService,
   ) {
     // 初始化 viewAdapter（需要 ngZone 已注入）
     (this as any).viewAdapter = new ChatViewAdapter(

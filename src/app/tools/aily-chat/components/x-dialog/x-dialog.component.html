@@ -34,11 +34,6 @@
     [ngClass]="{ user: role === 'user', editable: canEditUserMessage && !isEditing }"
     (mouseenter)="onDialogMouseEnter()"
     (mouseleave)="onDialogMouseLeave()"
-    (click)="canEditUserMessage && !isEditing ? onUserMessageClick() : null"
-    nz-tooltip
-    [nzTooltipTitle]="(canEditUserMessage && !isEditing) ? ('AILY_CHAT.CLICK_TO_EDIT' | translate) : ''"
-    nzTooltipPlacement="bottom"
-    [nzTooltipOverlayStyle]="{ marginTop: '-10px', fontSize: '12px' }"
   >
     @if (canRenderCheckpointAnchor) {
       <div class="checkpoint-action-row" [class.expanded]="showCheckpointAnchor">
@@ -128,7 +123,15 @@
         </div>
       </div>
     } @else {
-      <div class="content" [class.thinking]="content==='[thinking...]'">
+      <div
+        class="content"
+        [class.thinking]="content==='[thinking...]'"
+        (click)="canEditUserMessage && !isEditing ? onUserMessageClick() : null"
+        nz-tooltip
+        [nzTooltipTitle]="(canEditUserMessage && !isEditing) ? ('AILY_CHAT.CLICK_TO_EDIT' | translate) : ''"
+        nzTooltipPlacement="bottom"
+        [nzTooltipOverlayStyle]="{ marginTop: '-10px', fontSize: '12px' }"
+      >
         @if (streamContent()) {
           <x-markdown
             [content]="streamContent()"

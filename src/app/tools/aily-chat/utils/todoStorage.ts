@@ -1,4 +1,4 @@
-﻿import { AilyHost } from '../core/host';
+import { AilyHost } from '../core/host';
 export interface TodoItem {
   id: number
   content: string
@@ -290,6 +290,16 @@ export function deleteTodo(id: number, sessionId: string = 'default'): TodoItem[
 export function clearTodos(sessionId: string = 'default'): void {
   setTodos([], sessionId)
   updateMetrics(sessionId, 'clearTodos')
+}
+
+/**
+ * 临时清理：仅清内存缓存，不写磁盘，用于取消/新建会话时避免磁盘 IO
+ */
+export function clearTodosCache(sessionId: string = 'default'): void {
+  const cacheKey = sessionId || 'default'
+  todoCache.set(cacheKey, [])
+  cacheTimestamp.set(cacheKey, Date.now())
+  updateMetrics(sessionId, 'clearTodosCache')
 }
 
 export function getTodoById(id: number, sessionId: string = 'default'): TodoItem | undefined {

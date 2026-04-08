@@ -511,6 +511,9 @@
         "PHONE_BETA_ONLY": "El inicio de sesión por teléfono es solo para probadores beta de AI",
         "PHONE_PLACEHOLDER": "Ingrese número de teléfono",
         "PASSWORD_PLACEHOLDER": "Ingrese contraseña",
+        "EMAIL_PLACEHOLDER": "Ingrese correo electrónico",
+        "CODE_PLACEHOLDER": "Ingrese código de verificación",
+        "SEND_CODE": "Enviar código",
         "CODE_SENDING": "Por favor, obtenga el código de verificación primero",
         "LOGGING_IN": "Iniciando sesión...",
         "LOGIN": "Iniciar sesión",
@@ -529,7 +532,16 @@
         "AGREEMENT_REQUIRED": "Por favor, acepte el Acuerdo de Usuario y la Política de Privacidad primero",
         "MODAL_CLOSE": "Cerrar",
         "AGREEMENT_LOAD_FAILED": "Error al cargar el Acuerdo de Usuario",
-        "PRIVACY_LOAD_FAILED": "Error al cargar la Política de Privacidad"
+        "PRIVACY_LOAD_FAILED": "Error al cargar la Política de Privacidad",
+        "WECHAT_QRCODE_FAILED": "Error al obtener el código QR",
+        "WECHAT_REFRESH": "Actualizar código QR",
+        "WECHAT_RETRY": "Reintentar",
+        "INVITE_CODE_PLACEHOLDER": "Código de invitación (opcional)",
+        "AGREEMENT_BY_LOGIN": "Al iniciar sesión/registrarse, acepta los",
+        "TERMS_OF_USE": "Términos de uso",
+        "OTHER_LOGIN_METHODS": "También puede iniciar sesión con",
+        "GITHUB_CONTINUE": "Haga clic en \"Continue\" en la página de autorización de GitHub para completar el inicio de sesión",
+        "REGISTER": "Registrarse"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "Función próximamente"

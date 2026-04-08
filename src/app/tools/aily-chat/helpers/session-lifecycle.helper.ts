@@ -10,6 +10,7 @@ import { SkillRegistry } from '../core/skill-registry';
 import { clearSessionApprovals } from '../core/tool-approval';
 import { markContentAsHistory as _markContentAsHistory } from '../services/content-sanitizer.service';
 import { isTransientNetworkError } from '../services/http-error-handler.service';
+import { clearTodosCache } from '../utils/todoStorage';
 
 export class SessionLifecycleHelper {
   constructor(private engine: ChatEngineService) {}
@@ -323,6 +324,9 @@ export class SessionLifecycleHelper {
     this.engine.activeToolExecutions = 0;
     this.engine.sseStreamCompleted = false;
     clearSessionApprovals();
+    clearTodosCache(this.engine.sessionId);
+    const svc = (window as any)['todoUpdateService'];
+    if (svc) { svc.updateTodoData(this.engine.sessionId, []); }
     try {
       await this.stopAndCloseSession(true);
       this.engine.chatService.currentSessionId = '';
@@ -405,6 +409,11 @@ export class SessionLifecycleHelper {
       // 新会话无历史数据，确保清除旧 checkpoint 状态
       this.engine.editCheckpointService?.clear();
       this.engine.editCheckpointService?.dismissSummary();
+    }
+
+    // 加载历史后刷新 TODO 数据到 TodoUpdateService，触发 floating-todo 组件更新
+    if (this.engine.sessionId) {
+      this.engine.todoUpdateService.refreshTodoData(this.engine.sessionId);
     }
   }
 

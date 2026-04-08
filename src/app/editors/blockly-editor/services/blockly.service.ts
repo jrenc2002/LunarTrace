@@ -79,7 +79,7 @@ export class BlocklyService {
 
   // 加载blockly的json数据
   loadAbiJson(jsonData) {
-    jsonData.blocks.blocks.forEach(block => {
+    jsonData.blocks?.blocks?.forEach(block => {
       const ailyIcons = this.iconsMap.get(block.type);
       if (ailyIcons) block.icons = ailyIcons;
     });
