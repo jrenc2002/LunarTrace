@@ -1,6 +1,6 @@
 import { Injectable, inject, ApplicationRef } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { BehaviorSubject, Observable, throwError, from } from 'rxjs';
+import { BehaviorSubject, Observable, Subject, throwError, from } from 'rxjs';
 import { catchError, map, switchMap } from 'rxjs/operators';
 import { API } from '../configs/api.config';
 import { ElectronService } from './electron.service';
@@ -62,6 +62,15 @@ export class AuthService {
   private isLoggedInSubject = new BehaviorSubject<boolean>(false);
   public isLoggedIn$ = this.isLoggedInSubject.asObservable();
   get isLoggedIn(): boolean { return this.isLoggedInSubject.value; }
+
+  // 登录时需要绑定微信的信号
+  private needsWechatBindSubject = new Subject<string>();
+  public needsWechatBind$ = this.needsWechatBindSubject.asObservable();
+
+  /** 由 app.component 调用，通知登录组件进入微信绑定模式 */
+  emitNeedsWechatBind(pendingTicket: string): void {
+    this.needsWechatBindSubject.next(pendingTicket);
+  }
 
   // 用户信息
   private userInfoSubject = new BehaviorSubject<any>(null);
@@ -169,6 +178,10 @@ export class AuthService {
     return this.http.post<LoginResponse>(API.loginByEmail, { email, code, device_id: 'pc', invite_code: inviteCode }).pipe(
       map((response) => {
         if (response.status === 200 && response.data) {
+          // 需要绑定微信时不保存 token
+          if ((response.data as any).status === 'needs_wechat_bind') {
+            return response;
+          }
           this.saveToken2(response.data.access_token);
           this.getMe(response.data.access_token);
           this.isLoggedInSubject.next(true);
@@ -927,6 +940,16 @@ export class AuthService {
       // 清理状态
       this.clearOAuthState();
 
+      // 检查是否需要绑定微信
+      if (tokenData?.status === 'needs_wechat_bind') {
+        return {
+          success: false,
+          error: 'needs_wechat_bind',
+          data: tokenData,
+          message: tokenData.message || '请先绑定微信后再继续登录'
+        };
+      }
+
       // 处理成功结果
       await this.handleGitHubOAuthSuccess(tokenData);
 
@@ -1001,6 +1024,30 @@ export class AuthService {
       console.error('处理微信 OAuth 成功数据失败:', error);
       throw error;
     }
+  }
+
+  /**
+   * 获取登录绑定微信的二维码
+   */
+  getWeChatLoginBindQrcode(pendingTicket: string): Observable<CommonResponse & { data: { ticket: string; qrcode_url: string; expires_in: number } }> {
+    return this.http.get<CommonResponse & { data: { ticket: string; qrcode_url: string; expires_in: number } }>(
+      API.wechatLoginBindQrcode,
+      { params: { pending_ticket: pendingTicket } }
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  /**
+   * 检查登录绑定微信的状态
+   */
+  checkWeChatLoginBindStatus(ticket: string): Observable<CommonResponse & { data: { status: string; access_token?: string; refresh_token?: string; token_type?: string; is_new_user?: boolean; user?: any; message?: string } }> {
+    return this.http.get<CommonResponse & { data: { status: string; access_token?: string; refresh_token?: string; token_type?: string; is_new_user?: boolean; user?: any; message?: string } }>(
+      API.wechatLoginBindCheck,
+      { params: { ticket } }
+    ).pipe(
+      catchError(this.handleError)
+    );
   }
 
   /**

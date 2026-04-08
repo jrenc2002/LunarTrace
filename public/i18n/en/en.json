@@ -597,7 +597,12 @@
         "TERMS_OF_USE": "Terms of Use",
         "OTHER_LOGIN_METHODS": "You can also log in with",
         "GITHUB_CONTINUE": "Please click \"Continue\" on the GitHub authorization page to complete login",
-        "REGISTER": "Register"
+        "REGISTER": "Register",
+        "WECHAT_BIND_REQUIRED": "WeChat Binding Required",
+        "WECHAT_BIND_SCAN": "Scan QR code with WeChat to bind",
+        "WECHAT_BIND_SUCCESS": "Binding successful",
+        "WECHAT_BIND_CONFLICT": "This WeChat is already bound to another account",
+        "BACK_TO_LOGIN": "Back to Login"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "Feature coming soon",
