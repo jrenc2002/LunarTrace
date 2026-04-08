@@ -166,6 +166,15 @@ export class AuthService {
    * 发送邮箱验证码
    */
   sendEmailCode(email: string, altcha: string): Observable<CommonResponse> {
+    // Mock 模式下直接返回成功
+    if (this.getWechatMockScenario()) {
+      return new Observable(observer => {
+        setTimeout(() => {
+          observer.next({ status: 200, message: 'mock: 验证码已发送' } as CommonResponse);
+          observer.complete();
+        }, 200);
+      });
+    }
     return this.http.post<CommonResponse>(API.sendEmailCode, { email, altcha, device_id: 'pc' }).pipe(
       catchError(this.handleError)
     );
@@ -985,10 +994,40 @@ export class AuthService {
     }
   }
 
+  // ==================== 微信登录 Mock ====================
+  private wechatMockCallCount = new Map<string, number>();
+
+  private getWechatMockScenario(): 'confirmed' | 'needs_email_bind' | null {
+    const scenario = sessionStorage.getItem('wechat_login_mock_scenario');
+    if (scenario === 'confirmed' || scenario === 'needs_email_bind') {
+      return scenario;
+    }
+    return null;
+  }
+
   /**
    * 获取微信扫码二维码
    */
   getWeChatQrcode(): Observable<CommonResponse & { data: { ticket: string; qrcode_url: string; expires_in: number } }> {
+    const mock = this.getWechatMockScenario();
+    if (mock) {
+      const ticket = `mock_ticket_${Date.now()}`;
+      this.wechatMockCallCount.set(ticket, 0);
+      return new Observable(observer => {
+        setTimeout(() => {
+          observer.next({
+            status: 200,
+            message: 'mock',
+            data: {
+              ticket,
+              qrcode_url: `https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent('mock:' + ticket)}`,
+              expires_in: 300,
+            },
+          } as any);
+          observer.complete();
+        }, 400);
+      });
+    }
     return this.http.get<CommonResponse & { data: { ticket: string; qrcode_url: string; expires_in: number } }>(API.wechatQrcode).pipe(
       catchError(this.handleError)
     );
@@ -998,6 +1037,39 @@ export class AuthService {
    * 检查微信扫码状态
    */
   checkWeChatStatus(ticket: string): Observable<CommonResponse & { data: { status: string; access_token?: string; refresh_token?: string; token_type?: string; is_new_user?: boolean; user?: any; message?: string } }> {
+    const mock = this.getWechatMockScenario();
+    if (mock && ticket.startsWith('mock_ticket_')) {
+      const count = this.wechatMockCallCount.get(ticket) || 0;
+      this.wechatMockCallCount.set(ticket, count + 1);
+
+      let data: any;
+      if (count < 2) {
+        data = { status: 'pending', message: '等待扫码' };
+      } else if (count < 4) {
+        data = { status: 'scanned', message: '已扫码，请在手机上确认' };
+      } else if (mock === 'needs_email_bind') {
+        data = { status: 'needs_email_bind', message: '当前微信需要补全邮箱后继续登录。' };
+        this.wechatMockCallCount.delete(ticket);
+      } else {
+        data = {
+          status: 'confirmed',
+          access_token: `mock_access_${Date.now()}`,
+          refresh_token: `mock_refresh_${Date.now()}`,
+          token_type: 'bearer',
+          is_new_user: false,
+          user: { id: 'mock_user', email: 'mock@example.com', nickname: 'Mock用户', groups: ['basic'] },
+        };
+        this.wechatMockCallCount.delete(ticket);
+      }
+
+      return new Observable(observer => {
+        setTimeout(() => {
+          observer.next({ status: 200, message: 'mock', data } as any);
+          observer.complete();
+        }, 300);
+      });
+    }
+
     return this.http.get<CommonResponse & { data: { status: string; access_token?: string; refresh_token?: string; token_type?: string; is_new_user?: boolean; user?: any; message?: string } }>(
       API.wechatCheck,
       { params: { ticket } }
@@ -1045,6 +1117,42 @@ export class AuthService {
     return this.http.get<CommonResponse & { data: { status: string; access_token?: string; refresh_token?: string; token_type?: string; is_new_user?: boolean; user?: any; message?: string } }>(
       API.wechatLoginBindCheck,
       { params: { ticket } }
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  /**
+   * 微信登录后补全邮箱绑定
+   */
+  completeWechatEmailBindLogin(ticket: string, email: string, code: string, invite_code?: string): Observable<CommonResponse & { data: { access_token: string; refresh_token?: string; token_type?: string; is_new_user?: boolean; user?: any } }> {
+    // Mock 模式
+    if (this.getWechatMockScenario() && ticket.startsWith('mock_ticket_')) {
+      return new Observable(observer => {
+        setTimeout(() => {
+          observer.next({
+            status: 200,
+            message: 'mock',
+            data: {
+              access_token: `mock_access_${Date.now()}`,
+              refresh_token: `mock_refresh_${Date.now()}`,
+              token_type: 'bearer',
+              is_new_user: false,
+              user: { id: 'mock_user', email, nickname: email.split('@')[0] || 'Mock用户', groups: ['basic'] },
+            },
+          } as any);
+          observer.complete();
+        }, 300);
+      });
+    }
+
+    const body: any = { ticket, email, code };
+    if (invite_code) {
+      body.invite_code = invite_code;
+    }
+    return this.http.post<CommonResponse & { data: { access_token: string; refresh_token?: string; token_type?: string; is_new_user?: boolean; user?: any } }>(
+      API.wechatCompleteEmailBind,
+      body
     ).pipe(
       catchError(this.handleError)
     );
