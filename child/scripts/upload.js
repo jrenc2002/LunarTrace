@@ -400,6 +400,18 @@ async function processUploadParams(uploadParam, buildPath, toolsPath, sdkPath, b
     let commandPath = await findFile(toolsPath, toolFileName, toolVersion);
     // console.log("Command Path: ", commandPath);
     
+    // 如果在 toolsPath 中未找到，尝试从 PATH 环境变量中查找
+    if (!commandPath && process.env.PATH) {
+        const pathDirs = process.env.PATH.split(path.delimiter);
+        for (const dir of pathDirs) {
+            const candidate = path.join(dir, toolFileName);
+            if (fs.existsSync(candidate)) {
+                commandPath = candidate;
+                break;
+            }
+        }
+    }
+
     if (!commandPath) {
         throw new Error(`无法找到可执行文件: ${toolFileName}`);
     }

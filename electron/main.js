@@ -1041,6 +1041,11 @@ function loadEnv() {
   if (fs.existsSync(ninjaPath)) {
     process.env.PATH = `${process.env.PATH}${path.delimiter}${ninjaPath}`;
   }
+  // 将 probe-rs 添加到 PATH 中
+  const probeRsDir = path.join(childPath, 'probe-rs');
+  if (fs.existsSync(probeRsDir)) {
+    process.env.PATH = `${process.env.PATH}${path.delimiter}${probeRsDir}`;
+  }
 
   // 当前系统语言
   process.env.AILY_SYSTEM_LANG = app.getLocale();
