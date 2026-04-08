@@ -179,12 +179,14 @@ export class LoginComponent implements OnDestroy {
           this.wechatStatusMessage = response.message || this.translate.instant('LOGIN.WECHAT_QRCODE_FAILED') || '获取二维码失败';
           this.message.error(this.wechatStatusMessage);
         }
+        this.cdr.detectChanges();
       },
       error: (error) => {
         console.error('获取微信二维码失败:', error);
         this.wechatStatus = 'error';
         this.wechatStatusMessage = this.translate.instant('LOGIN.WECHAT_QRCODE_FAILED') || '获取二维码失败';
         this.message.error(this.wechatStatusMessage);
+        this.cdr.detectChanges();
       }
     });
   }
@@ -327,11 +329,6 @@ export class LoginComponent implements OnDestroy {
    * 刷新微信二维码
    */
   refreshWeChatQrcode() {
-    if (!this.showWeChatLogin) {
-      this.cleanupWeChatLogin();
-      return;
-    }
-
     this.cleanupWeChatLogin();
     this.initWeChatLogin();
   }
