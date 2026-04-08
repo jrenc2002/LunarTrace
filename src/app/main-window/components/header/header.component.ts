@@ -327,10 +327,8 @@ export class HeaderComponent implements OnDestroy {
     // 添加STM32相关配置选项
     if (this.projectService.currentBoardConfig['core'].indexOf('stm32') > -1 &&
       this.projectService.currentBoardConfig['description'].indexOf('Series') > -1) {
-      // 先用缓存的调试器设备填充，避免闪烁
-      if (this.cachedDebuggerItems.length > 0) {
-        portList0 = portList0.concat(this.cachedDebuggerItems);
-      }
+      // 异步检测调试探针，完成后更新缓存并重建列表
+      this.detectProbes(generation, portList0, skipDetect);
 
       let temp = this.projectService.currentBoardConfig['type'].split(':');
       let board = temp[temp.length - 1];
@@ -338,13 +336,13 @@ export class HeaderComponent implements OnDestroy {
       if (stm32config) {
         portList0 = portList0.concat(stm32config)
       }
-
-      // 异步检测调试探针，完成后更新缓存并重建列表
-      this.detectProbes(generation, portList0, skipDetect);
     }
 
     // 添加nRF5相关配置选项
     if (this.projectService.currentBoardConfig['core'].indexOf('nrf5') > -1) {
+      // 异步检测调试探针（nRF52）
+      this.detectProbes(generation, portList0, skipDetect);
+
       let temp = this.projectService.currentBoardConfig['type'].split(':');
       let board = temp[temp.length - 1];
       // console.log('nRF5开发板标识:', board);
@@ -352,10 +350,6 @@ export class HeaderComponent implements OnDestroy {
       if (nrf5config) {
         portList0 = portList0.concat(nrf5config)
       }
-      // console.log('nRF5配置选项:', nrf5config);
-
-      // 异步检测调试探针（nRF52）
-      this.detectProbes(generation, portList0, skipDetect);
     }
 
     // 添加切换开发板功能
