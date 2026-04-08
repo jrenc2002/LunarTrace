@@ -507,6 +507,9 @@
         "PHONE_BETA_ONLY": "전화번호 로그인은 AI 베타 테스터 전용입니다",
         "PHONE_PLACEHOLDER": "전화번호 입력",
         "PASSWORD_PLACEHOLDER": "비밀번호 입력",
+        "EMAIL_PLACEHOLDER": "이메일 주소 입력",
+        "CODE_PLACEHOLDER": "인증 코드 입력",
+        "SEND_CODE": "인증 코드 받기",
         "CODE_SENDING": "먼저 인증 코드를 받으세요",
         "LOGGING_IN": "로그인 중...",
         "LOGIN": "로그인",
@@ -525,7 +528,16 @@
         "AGREEMENT_REQUIRED": "이용약관 및 개인정보 처리방침에 먼저 동의해 주세요",
         "MODAL_CLOSE": "닫기",
         "AGREEMENT_LOAD_FAILED": "이용약관 로드 실패",
-        "PRIVACY_LOAD_FAILED": "개인정보 처리방침 로드 실패"
+        "PRIVACY_LOAD_FAILED": "개인정보 처리방침 로드 실패",
+        "WECHAT_QRCODE_FAILED": "QR 코드를 가져오지 못했습니다",
+        "WECHAT_REFRESH": "QR 코드 새로고침",
+        "WECHAT_RETRY": "다시 시도",
+        "INVITE_CODE_PLACEHOLDER": "초대 코드 (선택사항)",
+        "AGREEMENT_BY_LOGIN": "로그인/가입 시 다음에 동의하는 것으로 간주됩니다",
+        "TERMS_OF_USE": "이용약관",
+        "OTHER_LOGIN_METHODS": "다음 계정으로도 로그인할 수 있습니다",
+        "GITHUB_CONTINUE": "GitHub 인증 페이지에서 \"Continue\"를 클릭하여 로그인을 완료하세요",
+        "REGISTER": "가입"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "기능 출시 예정"

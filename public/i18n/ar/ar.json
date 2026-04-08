@@ -511,6 +511,9 @@
         "PHONE_BETA_ONLY": "تسجيل الدخول بالهاتف مخصص لمختبري AI بيتا فقط",
         "PHONE_PLACEHOLDER": "أدخل رقم الهاتف",
         "PASSWORD_PLACEHOLDER": "أدخل كلمة المرور",
+        "EMAIL_PLACEHOLDER": "أدخل عنوان البريد الإلكتروني",
+        "CODE_PLACEHOLDER": "أدخل رمز التحقق",
+        "SEND_CODE": "إرسال الرمز",
         "CODE_SENDING": "يرجى الحصول على رمز التحقق أولاً",
         "LOGGING_IN": "جاري تسجيل الدخول...",
         "LOGIN": "تسجيل الدخول",
@@ -529,7 +532,16 @@
         "AGREEMENT_REQUIRED": "يرجى الموافقة على اتفاقية المستخدم وسياسة الخصوصية أولاً",
         "MODAL_CLOSE": "إغلاق",
         "AGREEMENT_LOAD_FAILED": "فشل تحميل اتفاقية المستخدم",
-        "PRIVACY_LOAD_FAILED": "فشل تحميل سياسة الخصوصية"
+        "PRIVACY_LOAD_FAILED": "فشل تحميل سياسة الخصوصية",
+        "WECHAT_QRCODE_FAILED": "فشل الحصول على رمز QR",
+        "WECHAT_REFRESH": "تحديث رمز QR",
+        "WECHAT_RETRY": "إعادة المحاولة",
+        "INVITE_CODE_PLACEHOLDER": "رمز الدعوة (اختياري)",
+        "AGREEMENT_BY_LOGIN": "بتسجيل الدخول/التسجيل، فإنك توافق على",
+        "TERMS_OF_USE": "شروط الاستخدام",
+        "OTHER_LOGIN_METHODS": "يمكنك أيضاً تسجيل الدخول باستخدام",
+        "GITHUB_CONTINUE": "يرجى النقر على \"Continue\" في صفحة تفويض GitHub لإكمال تسجيل الدخول",
+        "REGISTER": "تسجيل"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "الميزة قادمة قريباً"

@@ -511,6 +511,9 @@
         "PHONE_BETA_ONLY": "電話番号ログインはAIベータテスター専用です",
         "PHONE_PLACEHOLDER": "電話番号を入力",
         "PASSWORD_PLACEHOLDER": "パスワードを入力",
+        "EMAIL_PLACEHOLDER": "メールアドレスを入力",
+        "CODE_PLACEHOLDER": "確認コードを入力",
+        "SEND_CODE": "確認コードを送信",
         "CODE_SENDING": "まず確認コードを取得してください",
         "LOGGING_IN": "ログイン中...",
         "LOGIN": "ログイン",
@@ -529,7 +532,16 @@
         "AGREEMENT_REQUIRED": "利用規約とプライバシーポリシーに同意してください",
         "MODAL_CLOSE": "閉じる",
         "AGREEMENT_LOAD_FAILED": "利用規約の読み込みに失敗しました",
-        "PRIVACY_LOAD_FAILED": "プライバシーポリシーの読み込みに失敗しました"
+        "PRIVACY_LOAD_FAILED": "プライバシーポリシーの読み込みに失敗しました",
+        "WECHAT_QRCODE_FAILED": "QRコードの取得に失敗しました",
+        "WECHAT_REFRESH": "QRコードを更新",
+        "WECHAT_RETRY": "再試行",
+        "INVITE_CODE_PLACEHOLDER": "招待コード（任意）",
+        "AGREEMENT_BY_LOGIN": "ログイン/登録により、以下に同意したものとみなされます",
+        "TERMS_OF_USE": "利用規約",
+        "OTHER_LOGIN_METHODS": "以下のアカウントでもログインできます",
+        "GITHUB_CONTINUE": "GitHub認証ページで\"Continue\"をクリックしてログインを完了してください",
+        "REGISTER": "登録"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "機能は近日公開予定"

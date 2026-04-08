@@ -511,6 +511,9 @@
         "PHONE_BETA_ONLY": "手機號登錄僅限AI功能內測用戶使用",
         "PHONE_PLACEHOLDER": "請輸入手機號",
         "PASSWORD_PLACEHOLDER": "請輸入密碼",
+        "EMAIL_PLACEHOLDER": "請輸入電郵地址",
+        "CODE_PLACEHOLDER": "請輸入驗證碼",
+        "SEND_CODE": "取得驗證碼",
         "CODE_SENDING": "請先獲取驗證碼",
         "LOGGING_IN": "登錄中...",
         "LOGIN": "登錄",
@@ -529,7 +532,16 @@
         "AGREEMENT_REQUIRED": "請先勾選同意用戶協議和隱私政策",
         "MODAL_CLOSE": "關閉",
         "AGREEMENT_LOAD_FAILED": "加載用戶協議失敗",
-        "PRIVACY_LOAD_FAILED": "加載隱私政策失敗"
+        "PRIVACY_LOAD_FAILED": "加載隱私政策失敗",
+        "WECHAT_QRCODE_FAILED": "獲取二維碼失敗",
+        "WECHAT_REFRESH": "刷新二維碼",
+        "WECHAT_RETRY": "重試",
+        "INVITE_CODE_PLACEHOLDER": "邀請碼（選填）",
+        "AGREEMENT_BY_LOGIN": "登入/註冊即表示同意",
+        "TERMS_OF_USE": "使用條款",
+        "OTHER_LOGIN_METHODS": "您還可以使用以下帳號登入",
+        "GITHUB_CONTINUE": "請在Github授權頁面點擊\"Continue\"完成登入",
+        "REGISTER": "註冊"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "功能即將上線"

@@ -17,20 +17,11 @@
 
 }
 
-.description {
-    width: 100%;
-    min-height: 200px;
-}
-
 .header {
     text-align: center;
     margin-bottom: 10px;
 }
 
-
-.text2 {
-    color: #ccc;
-}
 
 .line {
     border-bottom: 0.5px solid #444;
@@ -76,17 +67,6 @@
             height: 25px;
         }
 
-        .fa-mobile {
-            font-size: 28px;
-        }
-    }
-}
-
-.login-btn {
-    margin-top: 15px;
-
-    button {
-        width: 100%;
     }
 }
 
@@ -101,6 +81,7 @@
         border-radius: 3px;
         margin-bottom: 10px;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
         overflow: hidden;
@@ -122,7 +103,6 @@
             color: #ff4d4f;
             font-size: 14px;
             text-align: center;
-            padding: 10px;
         }
     }
 
@@ -147,7 +127,7 @@
 }
 
 .agreement-section {
-    margin-top: 15px;
+    margin: 15px -15px 0 -15px;
     text-align: center;
 
     .agreement-link {
@@ -162,72 +142,9 @@
     }
 }
 
-.agreement-prompt {
-    color: #999;
-    font-size: 14px;
-    text-align: center;
-    padding: 20px;
-}
-
-// 协议预览弹窗样式
-::ng-deep .agreement-preview-modal {
-    .ant-modal-content {
-        background: #1f1f1f !important;
-    }
-
-    .ant-modal-header {
-        background: transparent;
-        border-bottom: 1px solid #333;
-    }
-
-    .ant-modal-title {
-        color: #fff;
-    }
-
-    .agreement-modal-content {
-        max-height: 60vh;
-        overflow-y: auto;
-        color: rgba(255, 255, 255, 0.85);
-        line-height: 1.6;
-
-        h1,
-        h2,
-        h3 {
-            color: #fff;
-            margin: 16px 0 8px;
-        }
-
-        h1 {
-            font-size: 20px;
-        }
-
-        h2 {
-            font-size: 16px;
-        }
-
-        h3 {
-            font-size: 14px;
-        }
-
-        p,
-        li {
-            margin: 8px 0;
-        }
-
-        ul {
-            padding-left: 24px;
-        }
-
-        hr {
-            border-color: #444;
-            margin: 16px 0;
-        }
-    }
-}
-
 .mail-login-box {
     margin-top: 20px;
-    height: 170px;
+    min-height: 175px;
 
     .item {
         display: flex;
@@ -247,10 +164,6 @@
             background: #363636;
             color: rgba(255, 255, 255, 0.7) !important;
             flex: 1;
-
-            &[type="password"] {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            }
         }
 
         .send-code-btn {
@@ -276,9 +189,4 @@
         }
     }
 
-    .username {
-        font-weight: 500;
-        font-size: 16px;
-        line-height: 32px;
-    }
 }

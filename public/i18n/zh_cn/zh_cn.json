@@ -588,7 +588,16 @@
         "AGREEMENT_REQUIRED": "请先勾选同意用户协议和隐私政策",
         "MODAL_CLOSE": "关闭",
         "AGREEMENT_LOAD_FAILED": "加载用户协议失败",
-        "PRIVACY_LOAD_FAILED": "加载隐私政策失败"
+        "PRIVACY_LOAD_FAILED": "加载隐私政策失败",
+        "WECHAT_QRCODE_FAILED": "获取二维码失败",
+        "WECHAT_REFRESH": "刷新二维码",
+        "WECHAT_RETRY": "重试",
+        "INVITE_CODE_PLACEHOLDER": "邀请码(选填)",
+        "AGREEMENT_BY_LOGIN": "登录/注册即表示同意",
+        "TERMS_OF_USE": "使用条款",
+        "OTHER_LOGIN_METHODS": "您还可以使用以下账号登录",
+        "GITHUB_CONTINUE": "请在Github授权页面点击\"Continue\"完成登录",
+        "REGISTER": "注册"
     },
     "COMMON": {
         "FEATURE_COMING_SOON": "功能即将上线",
