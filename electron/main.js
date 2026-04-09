@@ -779,6 +779,11 @@ async function getFastestUrl(urls, item_key='') {
 // 初始化最快服务器配置（非阻塞异步方式，不影响启动速度）
 // 现在改为基于 region 配置，检测各个区域的服务延迟来自动选择最优区域
 function initFastestServersAsync() {
+  // 如果当前区域是 localhost，跳过自动节点检测
+  if (process.env.AILY_REGION === 'localhost') {
+    console.log('[节点检测] 当前区域为 localhost，跳过自动节点检测');
+    return;
+  }
   const configPath = path.join(__dirname, 'config', "config.json");
   if (!fs.existsSync(configPath)) return;
   

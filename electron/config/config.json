@@ -8,7 +8,7 @@
     "darwin": "~/Library/aily-project"
   },
   "project_path": "%HOMEPATH%\\Documents\\aily-project",
-  "region": "cn",
+  "region": "localhost",
   "regions": {
     "cn": {
       "name": "China",
@@ -33,7 +33,7 @@
     "localhost": {
       "name": "Local",
       "enabled": true,
-      "api_server": "https://api.yysc.tech",
+      "api_server": "http://localhost:3000",
       "web": "https://aily.pro",
       "tool_web": "https://tool.aily.pro",
       "npm_registry": "http://localhost:4873",
