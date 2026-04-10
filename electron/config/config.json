@@ -36,7 +36,7 @@
       "api_server": "http://localhost:3000",
       "web": "https://aily.pro",
       "tool_web": "https://tool.aily.pro",
-      "npm_registry": "http://localhost:4873",
+      "npm_registry": "https://registry.yysc.tech",
       "resource": "http://localhost:4874",
       "updater": ""
     }
