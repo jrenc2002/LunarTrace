@@ -42,6 +42,38 @@
       height: 32px;
     }
 
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      height: 32px;
+      gap: 8px;
+
+      .brand-logo-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 7px;
+        background: linear-gradient(135deg, #00c4ff, #3a7eff);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        font-weight: 700;
+        color: #fff;
+        flex-shrink: 0;
+        box-shadow: 0 4px 16px rgba(58, 126, 255, 0.4);
+      }
+
+      .brand-logo-text {
+        font-size: 20px;
+        font-weight: 700;
+        background: linear-gradient(90deg, #00c4ff, #3a7eff);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        letter-spacing: 3px;
+      }
+    }
+
     .version {
       color: #888888;
       font-size: 12px;

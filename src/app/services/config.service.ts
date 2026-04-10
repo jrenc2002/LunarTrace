@@ -79,6 +79,10 @@ export class ConfigService {
     let defaultConfigFile = window['fs'].readFileSync(`${defaultConfigFilePath}/config/config.json`);
     this.data = await JSON.parse(defaultConfigFile);
 
+    // 在合并用户配置前，记住项目默认配置中的 region（用于判断开发模式）
+    const projectDefaultRegion = this.data.region;
+    console.log('[ConfigService][DEBUG] 项目默认 region (合并前):', projectDefaultRegion);
+
     this.data["selectedLanguage"] = this.get_lang_filename(window['platform'].lang);
 
     let userConfData;
@@ -86,35 +90,68 @@ export class ConfigService {
     // 检查配置文件是否存在，如果不存在则创建一个默认的配置文件
     if (this.electronService.exists(`${configFilePath}/config.json`)) {
       userConfData = JSON.parse(this.electronService.readFile(`${configFilePath}/config.json`));
+      console.log('[ConfigService][DEBUG] 用户配置 region:', userConfData?.region, '| 用户配置文件路径:', configFilePath + '/config.json');
     } else {
       userConfData = {};
+      console.log('[ConfigService][DEBUG] 用户配置文件不存在，使用空对象');
     }
 
     // 合并用户配置和默认配置
+    // ── regions（区域 URL 定义）只以项目默认 config.json 为准，不允许被用户配置文件覆盖 ──
+    const defaultRegions = this.data.regions;
     this.data = { ...this.data, ...userConfData };
+    if (defaultRegions) {
+      this.data.regions = defaultRegions;
+      console.log('[ConfigService][DEBUG] 已还原 regions 为项目默认值，regions["localhost"].api_server:', defaultRegions['localhost']?.api_server);
+    }
     this.configReloaded$.next();
 
+    console.log('[ConfigService][DEBUG] 合并后 region:', this.data.region);
+
     // 使用Electron检测到的最优区域覆盖配置
-    if (this.electronService.isElectron) {
+    // ── 如果项目默认 config.json 显式指定了 localhost 区域，跳过远程节点检测覆盖 ──
+    // ── 使用 projectDefaultRegion（合并前的值）来判断，避免被用户配置文件覆盖 ──
+    const localRegionKey = projectDefaultRegion;
+    const isExplicitLocal = localRegionKey === 'localhost'
+      || (this.data.regions?.[localRegionKey]?.api_server?.includes('localhost'))
+      || (this.data.regions?.[localRegionKey]?.api_server?.includes('127.0.0.1'));
+
+    console.log('[ConfigService][DEBUG] localRegionKey:', localRegionKey,
+      '| regions[localRegionKey].api_server:', this.data.regions?.[localRegionKey]?.api_server,
+      '| isExplicitLocal:', isExplicitLocal);
+
+    if (this.electronService.isElectron && !isExplicitLocal) {
       try {
         // 获取当前区域
         const region = await this.electronService.electron.ipcRenderer.invoke('env-get', 'AILY_REGION');
+        console.log('[ConfigService][DEBUG] AILY_REGION (来自主进程节点检测):', region);
         if (region && this.data.regions && this.data.regions[region]) {
           this.data.region = region;
           // 更新 API 配置模块的缓存
           setRegistryUrl(this.data.regions[region].npm_registry);
           setServerUrl(this.data.regions[region].api_server);
+          console.log('[ConfigService][DEBUG] ✗ 已切换到远程区域:', region, '→ API:', this.data.regions[region].api_server);
         } else {
           // 使用默认区域
           const defaultRegion = this.data.region || 'cn';
           if (this.data.regions && this.data.regions[defaultRegion]) {
             setRegistryUrl(this.data.regions[defaultRegion].npm_registry);
             setServerUrl(this.data.regions[defaultRegion].api_server);
+            console.log('[ConfigService][DEBUG] ✗ 使用默认区域 (AILY_REGION 无效):', defaultRegion, '→ API:', this.data.regions[defaultRegion].api_server);
           }
         }
       } catch (e) {
         console.error('Failed to get env vars', e);
       }
+    } else if (isExplicitLocal && defaultRegions?.[localRegionKey]) {
+      // 本地开发模式：强制使用项目默认 config.json 中的 localhost 区域配置
+      // 注意：直接使用 defaultRegions（合并前保存的原始值），不使用 this.data.regions（可能被用户配置污染）
+      this.data.region = localRegionKey;
+      setServerUrl(defaultRegions[localRegionKey].api_server);
+      setRegistryUrl(defaultRegions[localRegionKey].npm_registry);
+      console.log('[ConfigService][DEBUG] ✓ localhost 开发模式，强制 API:', defaultRegions[localRegionKey].api_server);
+    } else {
+      console.log('[ConfigService][DEBUG] ✗ 未进入任何分支（isElectron=false？）isElectron:', this.electronService.isElectron);
     }
 
     // 添加当前系统类型到data中

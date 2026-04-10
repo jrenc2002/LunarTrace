@@ -1,9 +1,9 @@
 {
   "name": "aily-blockly",
-  "productName": "aily blockly",
+  "productName": "迭物",
   "version": "0.9.38",
   "author": "coloz",
-  "description": "aily blockly dev",
+  "description": "迭物 - 智能硬件编程工具",
   "main": "electron/main.js",
   "build": {
     "publish": [
@@ -24,7 +24,7 @@
     ],
     "protocols": [
       {
-        "name": "Aily Blockly OAuth",
+        "name": "迭物 OAuth",
         "schemes": [
           "ailyblockly"
         ]
@@ -77,8 +77,8 @@
       "fileAssociations": [
         {
           "ext": "abi",
-          "name": "Aily Blockly Project",
-          "description": "Aily Blockly Project File",
+          "name": "迭物 项目",
+          "description": "迭物 项目文件",
           "icon": "public/icon.ico",
           "role": "Editor"
         }
@@ -96,8 +96,8 @@
       "fileAssociations": [
         {
           "ext": "abi",
-          "name": "Aily Blockly Project",
-          "description": "Aily Blockly Project File",
+          "name": "迭物 项目",
+          "description": "迭物 项目文件",
           "role": "Editor"
         }
       ],
@@ -113,8 +113,8 @@
       "fileAssociations": [
         {
           "ext": "abi",
-          "name": "Aily Blockly Project",
-          "description": "Aily Blockly Project File",
+          "name": "迭物 项目",
+          "description": "迭物 项目文件",
           "mimeType": "application/x-aily-blockly-project"
         }
       ]

@@ -140,14 +140,18 @@ export class LoginComponent implements OnDestroy {
 
   mode = 'mail'; // 默认选中邮箱登录
   select(mode) {
-    this.mode = mode;
-    // 当选择微信登录时，若已勾选协议则初始化二维码
+    // 微信登录尚未开放，展示提示后不切换模式
     if (mode === 'wechat') {
-      this.initWeChatLogin();
-    } else {
-      // 切换到其他登录方式时，清理微信登录状态
-      this.cleanupWeChatLogin();
+      this.modal.info({
+        nzTitle: '微信登录',
+        nzContent: '微信登录功能正在开发中，敬请期待！',
+        nzOkText: '知道了',
+      });
+      return;
     }
+    this.mode = mode;
+    // 切换到其他登录方式时，清理微信登录状态
+    this.cleanupWeChatLogin();
   }
 
   /**
@@ -531,14 +535,15 @@ export class LoginComponent implements OnDestroy {
       this.authService.loginByEmail(this.inputEmail, this.inputCode, this.inviteCode).subscribe({
         next: (response) => {
           if (response.status === 200 && response.data) {
-            // 检查是否需要绑定微信
-            if ((response.data as any).status === 'needs_wechat_bind' && (response.data as any).pending_ticket) {
-              this.message.info((response.data as any).message || '请先绑定微信后再继续登录');
-              this.enterLoginBindMode((response.data as any).pending_ticket);
-              this.isWaiting = false;
-              this.cdr.detectChanges();
-              return;
-            }
+            // ── 微信绑定暂时禁用：当前自托管后端不强制绑定微信
+            // ── 恢复时去掉下面注释，后续启用微信 OAuth 时需要整体打开
+            // if ((response.data as any).status === 'needs_wechat_bind' && (response.data as any).pending_ticket) {
+            //   this.message.info((response.data as any).message || '请先绑定微信后再继续登录');
+            //   this.enterLoginBindMode((response.data as any).pending_ticket);
+            //   this.isWaiting = false;
+            //   this.cdr.detectChanges();
+            //   return;
+            // }
             this.message.success(this.translate.instant('LOGIN.LOGIN_SUCCESS'));
           } else {
             this.message.error(

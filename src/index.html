@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 
 <head>
   <meta charset="utf-8">
-  <title>aily blockly</title>
+  <title>迭物</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
@@ -31,24 +31,53 @@
       flex-direction: column;
       border-radius: 5px;
     }
-    .loading-box .text {
+    .loading-box .brand-icon-wrap {
+      width: 72px;
+      height: 72px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #00c4ff, #3a7eff);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+      box-shadow: 0 8px 32px rgba(58, 126, 255, 0.35);
+    }
+    .loading-box .brand-icon-wrap .brand-char {
       color: #fff;
-      margin-left: 12px;
-      margin-top: 5px;
-      font-size: 18px;
+      font-size: 38px;
+      font-weight: 700;
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1;
+    }
+    .loading-box .brand-name {
+      font-size: 22px;
+      font-weight: 700;
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(90deg, #00c4ff, #3a7eff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 20px;
+      letter-spacing: 4px;
+    }
+    .loading-box .text {
+      color: rgba(255,255,255,0.45);
+      margin-top: 10px;
+      font-size: 13px;
+      letter-spacing: 1px;
     }
     .ball-grid-beat {
-      width: 57px;
-      height: 57px;
+      width: 45px;
+      height: 45px;
     }
     .ball-grid-beat > div {
       display: inline-block;
       float: left;
-      width: 15px;
-      height: 15px;
-      margin: 2px;
+      width: 12px;
+      height: 12px;
+      margin: 1.5px;
       border-radius: 100%;
-      background-color: #fff;
+      background-color: #3a7eff;
       animation: ball-grid-beat 1.3s ease infinite;
     }
     .ball-grid-beat > div:nth-child(1) { animation-delay: 0.36s; animation-duration: 1.18s; }
@@ -62,8 +91,8 @@
     .ball-grid-beat > div:nth-child(9) { animation-delay: 0.04s; animation-duration: 1.01s; }
     @keyframes ball-grid-beat {
       0%, 50%, 100% { transform: scale(1); opacity: 1; }
-      25% { transform: scale(0.5); opacity: 0.5; }
-      75% { transform: scale(0.5); opacity: 0.5; }
+      25% { transform: scale(0.5); opacity: 0.3; }
+      75% { transform: scale(0.5); opacity: 0.3; }
     }
   </style>
 </head>
@@ -71,6 +100,10 @@
 <body spellcheck="false">
   <app-root class="ddark">
     <div class="loading-box">
+      <div class="brand-icon-wrap">
+        <span class="brand-char">迭</span>
+      </div>
+      <div class="brand-name">迭物</div>
       <div class="loader">
         <div class="ball-grid-beat">
           <div></div>
@@ -84,7 +117,7 @@
           <div></div>
         </div>
       </div>
-      <div class="text">Loading...</div>
+      <div class="text">正在启动...</div>
     </div>
   </app-root>
 </body>

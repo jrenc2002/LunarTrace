@@ -193,9 +193,10 @@
                 <div class="icon ccenter"><i class="fa-solid fa-circle-envelope"></i></div>
                 Mail
             </div>
-            <div class="item ccenter" (click)="select('wechat')" [ngClass]="{'wechat-active':mode=='wechat'}">
+            <div class="item ccenter" (click)="select('wechat')" [ngClass]="{'wechat-active':mode=='wechat'}" style="position:relative;">
                 <div class="icon ccenter"><i class="fa-brands fa-weixin"></i></div>
                 WeChat
+                <span style="position:absolute;top:2px;right:2px;font-size:9px;background:#faad14;color:#fff;padding:1px 4px;border-radius:4px;line-height:15px;">开发中</span>
             </div>
             <div class="item ccenter" (click)="select('github');loginByGithub()" [ngClass]="{'active':mode=='github'}">
                 <div class="icon ccenter"><i class="fa-brands fa-github"></i></div>

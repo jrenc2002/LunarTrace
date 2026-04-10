@@ -1,3 +1,11 @@
+/* ===== 迭物品牌色彩系统 ===== */
+:root {
+  --brand-primary: #3a7eff;
+  --brand-secondary: #00c4ff;
+  --brand-gradient: linear-gradient(135deg, #00c4ff, #3a7eff);
+  --brand-glow: rgba(58, 126, 255, 0.35);
+}
+
 body {
   width: 100vw;
   height: 100vh;

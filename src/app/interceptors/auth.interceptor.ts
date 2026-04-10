@@ -27,7 +27,11 @@ export const authInterceptor: HttpInterceptorFn = (req: HttpRequest<any>, next: 
   return from(addTokenHeader(req, authService)).pipe(
     switchMap(request => next(request)),
     catchError(error => {
-      if (error instanceof HttpErrorResponse && !req.url.includes('auth/login') && error.status === 401) {
+      if (error instanceof HttpErrorResponse && error.status === 401
+        && !req.url.includes('auth/login')
+        && !req.url.includes('auth/me')
+        && !req.url.includes('auth/verify')
+        && !req.url.includes('auth/refresh')) {
         return handle401Error(authService);
       }
       return throwError(() => error);

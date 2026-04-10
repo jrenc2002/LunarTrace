@@ -97,30 +97,28 @@ export class AuthService {
       // console.log('初始化认证状态:', { token });
 
       if (token) {
-        // 延迟执行避免循环依赖
+        // 找到 token 立即乐观登录，避免页面重载时因后端暂时不可达而被踢出
+        this.isLoggedInSubject.next(true);
+
+        // 后台验证并刷新用户信息
         setTimeout(() => {
           this.getMe(token).then(userInfo => {
             // console.log('获取用户信息:', userInfo);
             if (userInfo) {
               this.userInfoSubject.next(userInfo);
-              this.isLoggedInSubject.next(true);
-            } else {
-              this.isLoggedInSubject.next(false);
+              // isLoggedIn 已为 true，无需再次 next
             }
-
             // console.log('认证状态:', this.isLoggedInSubject.value);
           }).catch(error => {
-            this.isLoggedInSubject.next(false);
+            // 仅在 token 真正失效（401/403）时登出；
+            // 网络错误 / 后端重启中 保持已登录，下次请求再降级处理
+            const status = error?.status ?? error?.error?.statusCode ?? 0;
+            if (status === 401 || status === 403) {
+              this.isLoggedInSubject.next(false);
+              this.clearAuthData();
+            }
           });
         }, 0);
-        // 验证 token 是否有效
-        // const isValid = await this.verifyToken(token);
-        // if (isValid) {
-        //   this.isLoggedInSubject.next(true);
-        //   this.userInfoSubject.next(userInfo);
-        // } else {
-        //   await this.clearAuthData();
-        // }
       }
     } catch (error) {
       await this.clearAuthData();
@@ -187,10 +185,11 @@ export class AuthService {
     return this.http.post<LoginResponse>(API.loginByEmail, { email, code, device_id: 'pc', invite_code: inviteCode }).pipe(
       map((response) => {
         if (response.status === 200 && response.data) {
-          // 需要绑定微信时不保存 token
-          if ((response.data as any).status === 'needs_wechat_bind') {
-            return response;
-          }
+          // ── 微信绑定暂时禁用：当前自托管后端不强制绑定微信
+          // ── 恢复时去掉下面注释，后续启用微信 OAuth 时需要整体打开
+          // if ((response.data as any).status === 'needs_wechat_bind') {
+          //   return response;
+          // }
           this.saveToken2(response.data.access_token);
           this.getMe(response.data.access_token);
           this.isLoggedInSubject.next(true);
@@ -243,6 +242,7 @@ export class AuthService {
    * 获取当前登录用户信息
    */
   private getMe(token: string): Promise<any> {
+    console.log('[AuthService][DEBUG] getMe → URL:', API.me);
     return new Promise((resolve, reject) => {
       this.http.get<CommonResponse>(API.me, {
         headers: { Authorization: `Bearer ${token}` }
@@ -419,19 +419,20 @@ export class AuthService {
           }
         }
 
-        // 加密token（如果支持safeStorage）
-        let encryptedToken = token;
-        if ((window as any).electronAPI?.safeStorage) {
-          try {
-            const encrypted = (window as any).electronAPI.safeStorage.encryptString(token);
-            encryptedToken = encrypted.toString('base64');
-          } catch (error) {
-            // console.warn('token加密失败，使用明文存储:', error);
-          }
-        }
+        // ── safeStorage 加密暂时禁用：getToken2 中的解密已注释，
+        // ── 保持存取一致避免读出乱码。后续恢复加密时需同步打开 getToken2 的解密逻辑
+        // let encryptedToken = token;
+        // if ((window as any).electronAPI?.safeStorage) {
+        //   try {
+        //     const encrypted = (window as any).electronAPI.safeStorage.encryptString(token);
+        //     encryptedToken = encrypted.toString('base64');
+        //   } catch (error) {
+        //     // console.warn('token加密失败，使用明文存储:', error);
+        //   }
+        // }
 
-        // 更新token
-        authData.access_token = encryptedToken;
+        // 更新token（明文存储）
+        authData.access_token = token;
         authData.updated_at = new Date().toISOString();
 
         // 写入文件
@@ -892,6 +893,7 @@ export class AuthService {
       device_id: 'pc'
     };
 
+    console.log('[AuthService][DEBUG] exchangeGitHubToken → URL:', API.githubTokenExchange);
     return this.http.post<CommonResponse>(API.githubTokenExchange, requestData).pipe(
       map(response => {
         if (response.status === 200 && response.data) {
@@ -949,15 +951,16 @@ export class AuthService {
       // 清理状态
       this.clearOAuthState();
 
-      // 检查是否需要绑定微信
-      if (tokenData?.status === 'needs_wechat_bind') {
-        return {
-          success: false,
-          error: 'needs_wechat_bind',
-          data: tokenData,
-          message: tokenData.message || '请先绑定微信后再继续登录'
-        };
-      }
+      // ── 微信绑定暂时禁用：当前自托管后端不强制绑定微信
+      // ── 恢复时去掉下面注释，后续启用微信 OAuth 时需要整体打开
+      // if (tokenData?.status === 'needs_wechat_bind') {
+      //   return {
+      //     success: false,
+      //     error: 'needs_wechat_bind',
+      //     data: tokenData,
+      //     message: tokenData.message || '请先绑定微信后再继续登录'
+      //   };
+      // }
 
       // 处理成功结果
       await this.handleGitHubOAuthSuccess(tokenData);
